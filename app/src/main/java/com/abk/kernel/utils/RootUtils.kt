@@ -514,7 +514,7 @@ object RootUtils {
             }
         } catch (error: Throwable) {
             Log.w(TAG, "root command failed", error)
-            val line = "管理器未激活"
+            val line = "Manager not activated"
             onOutput?.invoke(line)
             ShellResult(false, listOf(line))
         }

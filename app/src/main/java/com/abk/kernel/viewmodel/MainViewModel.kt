@@ -461,7 +461,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         abkRuntimeStatus = null,
                         abkRuntimeLoading = false,
-                        abkRuntimeError = runtimeError ?: "管理器未激活"
+                        abkRuntimeError = runtimeError ?: "Manager not activated"
                     )
                 }
             }
@@ -507,7 +507,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         rootGrantApps = emptyList(),
                         rootGrantRuntimeBackend = backendAtRequest,
                         rootGrantLoading = false,
-                        rootGrantError = diagnostic ?: "管理器未激活"
+                        rootGrantError = diagnostic ?: "Manager not activated"
                     )
                 } else {
                     it.copy(
@@ -915,7 +915,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun AbkRuntimeModule.displayNameForRuntime(): String =
-        name.ifBlank { id.ifBlank { "模块" } }
+        name.ifBlank { id.ifBlank { "Module" } }
 
     private suspend fun applyInitialBuildConfigIfNeeded(recommended: KernelBuildConfig?): KernelBuildConfig? {
         if (recommended == null || hasSavedBuildConfig) return null
@@ -1789,7 +1789,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             asset.name,
             asset.sizeBytes,
             PREBUILT_GKI_RUN_ID,
-            "预编译 GKI"
+            "Prebuilt GKI"
         ) { pct ->
             NotificationUtils.notifyDownloadProgress(getApplication(), pct, asset.name)
             _uiState.update { s ->
@@ -2863,7 +2863,7 @@ private fun String.moduleCatalogFallbackName(): String = trim()
     .substringAfterLast('/')
     .removeSuffix(".git")
     .removeSuffix(".json")
-    .ifBlank { "模块仓库" }
+    .ifBlank { "Module Repository" }
 
 private fun padBase64Url(value: String): String =
     value + "=".repeat((4 - value.length % 4) % 4)
@@ -3124,7 +3124,7 @@ private fun parseBuildParameterSummary(
                 summarySeen = true
                 return@forEach
             }
-            if (!summarySeen && !line.contains("Android 版本")) return@forEach
+            if (!summarySeen && !line.contains("Android version")) return@forEach
             if (summarySeen && values.isNotEmpty() && line.all { it == '=' || it.isWhitespace() }) return@forEach
 
             val separator = listOf(line.indexOf(':'), line.indexOf('：'))
@@ -3178,12 +3178,12 @@ private fun normalizeBuildSummaryLabel(label: String): String? {
     val compact = label.replace(Regex("\\s+"), "").lowercase()
     return when {
         compact.contains("android版本") -> "androidVersion"
-        compact.contains("内核版本") -> "kernelVersion"
-        compact.contains("子版本号") -> "subLevel"
-        compact.contains("补丁级别") -> "osPatchLevel"
+        compact.contains("Kernel version") -> "kernelVersion"
+        compact.contains("Sub-level") -> "subLevel"
+        compact.contains("Patch level") -> "osPatchLevel"
         compact.contains("ksu变体") -> "ksuVariant"
         compact.contains("ksu分支") -> "ksuBranch"
-        compact.contains("构建时间") -> "buildTime"
+        compact.contains("Build time") -> "buildTime"
         compact.contains("susfs状态") -> "susfsEnabled"
         compact.contains("zram增强") -> "zramEnabled"
         compact.contains("zram完整算法") -> "zramFullAlgo"
@@ -3195,19 +3195,19 @@ private fun normalizeBuildSummaryLabel(label: String): String? {
         compact.contains("kpm功能") -> "kpmEnabled"
         compact.contains("kpm密码") -> "kpmPassword"
         compact.contains("re-kernel") || compact.contains("rekernel") -> "reKernelEnabled"
-        compact.contains("虚拟化支持") -> "virtualizationSupport"
-        compact.contains("自定义注入") -> "customInjection"
+        compact.contains("Virtualization support") -> "virtualizationSupport"
+        compact.contains("Custom injection") -> "customInjection"
         compact.contains("stockconfig") -> "stockConfig"
         else -> null
     }
 }
 
 private fun sanitizeBuildSummaryValue(key: String, value: String): String {
-    if (key != "kpmPassword") return value.ifBlank { "无" }
+    if (key != "kpmPassword") return value.ifBlank { "None" }
     val normalized = value.trim().lowercase()
     return when {
         normalized.isBlank() -> "默认"
-        normalized in setOf("默认", "default", "无", "none", "not set") -> "默认"
+        normalized in setOf("默认", "default", "None", "none", "not set") -> "默认"
         else -> "已设置"
     }
 }
@@ -3272,7 +3272,7 @@ private fun isPrebuiltGkiReleaseCandidate(release: GitHubReleaseSummary): Boolea
         "anykernel",
         "ak3",
         "kernel image",
-        "内核镜像",
+        "Kernel image",
         "刷写包"
     )
     if (strongPrebuiltTerms.any { haystack.contains(it) }) return true
@@ -3282,7 +3282,7 @@ private fun isPrebuiltGkiReleaseCandidate(release: GitHubReleaseSummary): Boolea
         "apk",
         "app",
         "android application",
-        "应用",
+        "Apply",
         "客户端",
         "abk"
     )

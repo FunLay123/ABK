@@ -296,11 +296,11 @@ private fun TermsText(text: String) {
 private enum class AbkTab(val label: String) {
     Status("当前状态"),
     Build("构建内核"),
-    Modules("模块仓库"),
-    Flash("刷写"),
+    Modules("Module Repository"),
+    Flash("Flash"),
     RuntimeHome("首页"),
-    InstalledModules("已安装模块"),
-    RootAuth("超级用户"),
+    InstalledModules("Installed modules"),
+    RootAuth("Superuser"),
     Settings("设置")
 }
 

@@ -654,7 +654,7 @@ class GitHubRepository(
         .trimEnd('/')
         .substringAfterLast('/')
         .removeSuffix(".git")
-        .ifBlank { "模块仓库" }
+        .ifBlank { "Module Repository" }
 
     private companion object {
         const val DEFAULT_LOG_BUFFER_SIZE = 8 * 1024

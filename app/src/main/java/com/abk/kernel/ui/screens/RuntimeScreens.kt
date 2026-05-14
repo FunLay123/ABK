@@ -85,10 +85,10 @@ fun RuntimeHomeScreen(
                 scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onClick = { vm.refreshAbkRuntimeStatus() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新运行态信息")
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh runtime info")
                     }
                     IconButton(onClick = onSwitchToClassic) {
-                        Icon(Icons.Default.SwapHoriz, contentDescription = "切换到完整导航")
+                        Icon(Icons.Default.SwapHoriz, contentDescription = "Switch to full navigation")
                     }
                 }
             )
@@ -163,7 +163,7 @@ fun InstalledModulesScreen(
             "${'$'} module install",
             "source: $uri",
             "",
-            "正在复制模块文件..."
+            "Copying module file…"
         )
         scope.launch {
             var stagedName = "module.zip"
@@ -176,14 +176,14 @@ fun InstalledModulesScreen(
                         stagedPath = it.absolutePath
                     }
                     appendInstallLog("file: $stagedPath")
-                    appendInstallLog("等待 root shell 返回，请不要退出应用...")
+                    appendInstallLog("Waiting for root shell. Do not close the app…")
                     if (!RootUtils.refreshRootState()) {
-                        RootUtils.ShellResult(false, listOf("管理器未激活"))
+                        RootUtils.ShellResult(false, listOf("Manager not activated"))
                     } else {
                         RootUtils.installModule(stagedPath, ::appendInstallLog)
                     }
                 }.getOrElse {
-                    RootUtils.ShellResult(false, listOf("模块文件读取失败"))
+                    RootUtils.ShellResult(false, listOf("Module file read failed"))
                 }.also {
                     stagedFile?.delete()
                 }
@@ -192,10 +192,10 @@ fun InstalledModulesScreen(
             installSuccess = result.success
             installLog = listOf(
                 "${'$'} module install $stagedName",
-                "file: ${stagedPath.ifBlank { "未创建临时文件" }}",
+                "file: ${stagedPath.ifBlank { "temp file not created" }}",
                 ""
             ) + result.output.ifEmpty {
-                listOf(if (result.success) "模块安装完成，无输出。" else "模块安装失败，但未返回日志。")
+                listOf(if (result.success) "Module installation complete, no output." else "Module installation failed, no log returned.")
             }
             if (result.success) vm.refreshAbkRuntimeStatus()
         }
@@ -266,11 +266,11 @@ fun InstalledModulesScreen(
         containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         topBar = {
             ExpressiveTopBar(
-                title = "已安装模块",
+                title = "Installed modules",
                 scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onClick = { vm.refreshAbkRuntimeStatus() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新已安装模块")
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh installed modules")
                     }
                 }
             )
@@ -283,7 +283,7 @@ fun InstalledModulesScreen(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             ) {
-                Icon(Icons.Default.UploadFile, contentDescription = "安装模块")
+                Icon(Icons.Default.UploadFile, contentDescription = "Install module")
             }
         }
     ) { padding ->
@@ -304,14 +304,14 @@ fun InstalledModulesScreen(
 
             state.abkRuntimeError?.let {
                 RuntimeErrorCard(
-                    message = if (state.abkRuntimeStatus == null) it else "操作未完成，请刷新后重试",
+                    message = if (state.abkRuntimeStatus == null) it else "Operation incomplete. Refresh and try again.",
                     onRefresh = vm::refreshAbkRuntimeStatus
                 )
             }
 
             if (state.abkRuntimeStatus != null && modules.isEmpty()) {
                 Text(
-                    text = if (query.isBlank()) "当前内核没有上报 ABK 外部模块" else "没有匹配的模块",
+                    text = if (query.isBlank()) "No ABK external modules reported by current kernel" else "No matching modules",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 24.dp)
@@ -343,7 +343,7 @@ fun InstalledModulesScreen(
             onDismissRequest = vm::dismissRuntimeModuleActionOutput,
             confirmButton = {
                 TextButton(onClick = vm::dismissRuntimeModuleActionOutput) {
-                    Text("关闭")
+                    Text("Off")
                 }
             },
             title = { Text(state.abkRuntimeModuleActionTitle.orEmpty()) },
@@ -353,7 +353,7 @@ fun InstalledModulesScreen(
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
                     Text(
-                        text = state.abkRuntimeModuleActionOutput.ifEmpty { listOf("等待输出...") }.joinToString("\n"),
+                        text = state.abkRuntimeModuleActionOutput.ifEmpty { listOf("Waiting for output…") }.joinToString("\n"),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -410,11 +410,11 @@ private fun RuntimeStatusHeader(
     onRefresh: () -> Unit
 ) {
     ExpressiveHeroCard(
-        title = if (runtimeStatus != null) "管理器已激活" else "管理器未激活",
+        title = if (runtimeStatus != null) "Manager activated" else "Manager not activated",
         subtitle = runtimeStatus?.let {
             val managerName = it.manager?.displayName?.takeIf { name -> name.isNotBlank() } ?: "Root"
             "$managerName · ABK ${it.abkVersion.ifBlank { "unknown" }} · ${it.modules.size} 个模块"
-        } ?: (error ?: "安装并启用支持管理器的内核后可查看运行态信息"),
+        } ?: (error ?: "Install and enable a manager-compatible kernel to view runtime info"),
         icon = if (runtimeStatus != null) Icons.Default.CheckCircle else Icons.Default.Error,
         containerColor = if (runtimeStatus != null) {
             MaterialTheme.colorScheme.primaryContainer
@@ -454,7 +454,7 @@ private fun RuntimeStatusHeader(
                 } else {
                     Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("重新检测")
+                    Text("Re-check")
                 }
             }
         }
@@ -466,19 +466,19 @@ private fun RuntimeManagerCard(runtimeStatus: AbkRuntimeStatus) {
     val manager = runtimeStatus.manager ?: return
     val backend = runtimeStatus.runtimeBackend
     ExpressiveSectionCard(
-        title = "内核管理器",
-        subtitle = "编译身份与当前运行后端",
+        title = "Kernel manager",
+        subtitle = "Build identity and current runtime backend",
         icon = Icons.Default.Memory
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            RuntimeInfoRow("类型", manager.displayName.ifBlank { manager.variant })
-            RuntimeInfoRow("版本", manager.version)
-            RuntimeInfoRow("来源", runtimeBackendLabel(manager.backend))
+            RuntimeInfoRow("Type", manager.displayName.ifBlank { manager.variant })
+            RuntimeInfoRow("Version", manager.version)
+            RuntimeInfoRow("Source", runtimeBackendLabel(manager.backend))
             if (backend != null && backend != manager) {
                 Spacer(Modifier.height(2.dp))
-                RuntimeInfoRow("运行后端", backend.displayName.ifBlank { backend.variant })
-                RuntimeInfoRow("后端版本", backend.version)
-                RuntimeInfoRow("兼容层", runtimeBackendLabel(backend.backend))
+                RuntimeInfoRow("Runtime backend", backend.displayName.ifBlank { backend.variant })
+                RuntimeInfoRow("Backend version", backend.version)
+                RuntimeInfoRow("Compat layer", runtimeBackendLabel(backend.backend))
             }
             val diagnostics = manager.diagnostics
                 .plus(backend?.diagnostics.orEmpty())
@@ -512,13 +512,13 @@ private fun RuntimeBuildParametersCard(runtimeStatus: AbkRuntimeStatus) {
     val build = runtimeStatus.build
     val systemKernelVersion = remember { RootUtils.getKernelVersion() }
     ExpressiveSectionCard(
-        title = "当前内核编译参数",
-        subtitle = "来自编译器写入的构建记录",
+        title = "Current kernel build parameters",
+        subtitle = "From compiler-written build record",
         icon = Icons.Default.Tune
     ) {
         if (build == null) {
             Text(
-                text = "当前设备输出为旧版 schema，未包含编译参数。",
+                text = "Current device output uses an older schema without build parameters.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -527,14 +527,14 @@ private fun RuntimeBuildParametersCard(runtimeStatus: AbkRuntimeStatus) {
 
         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
             RuntimeInfoRow("Android", build.androidVersion)
-            RuntimeInfoRow("目标内核", listOf(build.kernelVersion, build.subLevel).filter { it.isNotBlank() }.joinToString("."))
-            RuntimeInfoRow("内核版本", systemKernelVersion)
-            RuntimeInfoRow("补丁级别", build.osPatchLevel)
-            RuntimeInfoRow("修订版本", build.revision)
+            RuntimeInfoRow("Target kernel", listOf(build.kernelVersion, build.subLevel).filter { it.isNotBlank() }.joinToString("."))
+            RuntimeInfoRow("Kernel version", systemKernelVersion)
+            RuntimeInfoRow("Patch level", build.osPatchLevel)
+            RuntimeInfoRow("Revision", build.revision)
             RuntimeInfoRow("KSU", listOf(build.kernelsuVariant, build.kernelsuBranch).filter { it.isNotBlank() }.joinToString(" / "))
-            RuntimeInfoRow("构建时间", build.buildTime)
-            RuntimeInfoRow("虚拟化", build.virtualizationSupport)
-            RuntimeInfoRow("ZRAM 额外算法", build.zramExtraAlgos)
+            RuntimeInfoRow("Build time", build.buildTime)
+            RuntimeInfoRow("Virtualization", build.virtualizationSupport)
+            RuntimeInfoRow("ZRAM extra algorithms", build.zramExtraAlgos)
             RuntimeInfoRow("ABK", listOf(runtimeStatus.abkVersion, runtimeStatus.abkCommit).filter { it.isNotBlank() }.joinToString(" · "))
             RuntimeFeatureChips(build)
         }
@@ -547,7 +547,7 @@ private fun RuntimeFeatureChips(build: AbkRuntimeBuildInfo) {
         .filterValues { it }
         .keys
         .map(::runtimeFeatureLabel)
-        .ifEmpty { listOf("基础配置") }
+        .ifEmpty { listOf("Base config") }
     Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -603,7 +603,7 @@ private fun RuntimeErrorCard(
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {
-                Text("重新检测")
+                Text("Re-check")
             }
         }
     }
@@ -616,7 +616,7 @@ private fun RuntimeModuleSearchField(value: String, onValueChange: (String) -> U
         onValueChange = onValueChange,
         modifier = Modifier.fillMaxWidth(),
         leadingIcon = { Icon(Icons.Default.Search, null) },
-        placeholder = { Text("搜索已安装模块") },
+        placeholder = { Text("Search installed modules") },
         singleLine = true,
         shape = RoundedCornerShape(14.dp)
     )
@@ -658,7 +658,7 @@ private fun InstalledRuntimeModuleCard(
                     if (module.version.isNotBlank()) {
                         Text(
                             text = buildString {
-                                append("版本: ")
+                                append("Version: ")
                                 append(module.version)
                                 if (module.versionCode > 0) append(" (${module.versionCode})")
                             },
@@ -668,7 +668,7 @@ private fun InstalledRuntimeModuleCard(
                     }
                     if (module.author.isNotBlank()) {
                         Text(
-                            text = "作者: ${module.author}",
+                            text = "Author: ${module.author}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -703,16 +703,16 @@ private fun InstalledRuntimeModuleCard(
                 RuntimeModuleChip(runtimeModuleTypeLabel(module), secondary = true)
                 if (module.stage.isNotBlank()) RuntimeModuleChip(module.stage, secondary = true)
                 if (module.source.isNotBlank()) RuntimeModuleChip(runtimeModuleSourceLabel(module.source), secondary = true)
-                RuntimeModuleChip(if (module.enabled) "已启用" else "已关闭", secondary = !module.enabled)
-                if (module.update) RuntimeModuleChip("待更新", secondary = true)
-                if (module.remove) RuntimeModuleChip("待卸载", secondary = true)
+                RuntimeModuleChip(if (module.enabled) "Enabled" else "Disabled", secondary = !module.enabled)
+                if (module.update) RuntimeModuleChip("Update pending", secondary = true)
+                if (module.remove) RuntimeModuleChip("Removal pending", secondary = true)
                 if (module.hasWebUi) RuntimeModuleChip("WebUI", secondary = true)
                 if (module.actionSupported || module.hasActionScript) RuntimeModuleChip("Action", secondary = true)
                 RuntimeModuleChip(
                     when {
-                        module.readonly -> "只读"
-                        module.controllable -> "可控制"
-                        else -> "仅元数据"
+                        module.readonly -> "Read-only"
+                        module.controllable -> "Controllable"
+                        else -> "Metadata only"
                     },
                     secondary = !module.controllable || module.readonly
                 )
@@ -742,7 +742,7 @@ private fun InstalledRuntimeModuleCard(
                             onClick = onOpenWebUi,
                             enabled = module.enabled && !module.remove && !module.update
                         ) {
-                            Icon(Icons.Default.Web, contentDescription = "打开 WebUI")
+                            Icon(Icons.Default.Web, contentDescription = "Open WebUI")
                         }
                     }
                     if (module.actionSupported) {
@@ -750,7 +750,7 @@ private fun InstalledRuntimeModuleCard(
                             onClick = onRunAction,
                             enabled = module.enabled && !actionInFlight
                         ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = "执行 Action")
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Run action")
                         }
                     }
                 }
@@ -872,7 +872,7 @@ private fun RuntimeModuleInstallDialog(
                 else -> Icon(Icons.Default.UploadFile, null)
             }
         },
-        title = { Text(if (running) "正在安装模块" else "安装模块") },
+        title = { Text(if (running) "Installing module…" else "Install module") },
         text = {
             Surface(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 190.dp, max = 360.dp),
@@ -888,7 +888,7 @@ private fun RuntimeModuleInstallDialog(
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    logLines.ifEmpty { listOf("等待输出...") }.forEach { line ->
+                    logLines.ifEmpty { listOf("Waiting for output…") }.forEach { line ->
                         Text(
                             text = line,
                             style = MaterialTheme.typography.labelSmall,
@@ -901,10 +901,10 @@ private fun RuntimeModuleInstallDialog(
         },
         confirmButton = {
             if (running) {
-                TextButton(onClick = {}, enabled = false) { Text("执行中") }
+                TextButton(onClick = {}, enabled = false) { Text("Running") }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onClose) { Text("关闭") }
+                    TextButton(onClick = onClose) { Text("Off") }
                     if (success == true) {
                         Button(
                             onClick = onReboot,
@@ -912,7 +912,7 @@ private fun RuntimeModuleInstallDialog(
                         ) {
                             Icon(Icons.Default.RestartAlt, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("重启")
+                            Text("Reboot")
                         }
                     }
                 }
@@ -976,42 +976,42 @@ private fun runtimeFeatureLabel(key: String): String = when (key) {
     "use_bbg" -> "BBG"
     "use_ddk" -> "DDK"
     "use_ntsync" -> "NTsync"
-    "use_networking" -> "网络增强"
+    "use_networking" -> "Networking"
     "use_kpm" -> "KPM"
     "use_rekernel" -> "Re-Kernel"
     "enable_susfs" -> "SUSFS"
     "supp_op" -> "SukiSU SUS_SU"
-    "zram_full_algo" -> "ZRAM 完整算法"
-    "cancel_susfs" -> "SUSFS 已取消"
+    "zram_full_algo" -> "ZRAM full algorithms"
+    "cancel_susfs" -> "SUSFS cancelled"
     else -> key
 }
 
 private fun runtimeCapabilityLabel(key: String): String =
     if (key == internalRuntimeControlCapability()) {
-        "ABK 控制"
+        "ABK control"
     } else {
         when (key) {
             "root_shell" -> "Root Shell"
-            "native_manager" -> "原生管理器"
-            "root_policy" -> "授权配置"
-            "superuser_profiles" -> "授权列表"
+            "native_manager" -> "Native manager"
+            "root_policy" -> "Auth config"
+            "superuser_profiles" -> "Auth list"
             "lkm" -> "LKM"
             "late_load" -> "Late Load"
-            "safe_mode" -> "安全模式"
-            "modules" -> "模块列表"
-            "module_control" -> "模块控制"
+            "safe_mode" -> "Safe mode"
+            "modules" -> "Module list"
+            "module_control" -> "Module control"
             "susfs" -> "SUSFS"
             "kpm" -> "KPM"
-            "features" -> "功能开关"
+            "features" -> "Feature Toggles"
             else -> key
         }
     }
 
 private fun runtimeBackendLabel(backend: String): String = when (backend) {
-    "native" -> "原生控制"
-    "ksud" -> "KSU 兼容"
-    "su" -> "通用 su"
-    "kernel" -> "内核运行态"
+    "native" -> "Native control"
+    "ksud" -> "KSU compat"
+    "su" -> "Generic su"
+    "kernel" -> "Kernel runtime"
     else -> backend
 }
 
@@ -1031,8 +1031,8 @@ private fun runtimeModuleSourceLabel(source: String): String {
 }
 
 private fun runtimeModuleTypeLabel(module: AbkRuntimeModule): String = when (module.normalizedType()) {
-    "standard" -> "普通模块"
-    "builtin" -> "预编译模块"
+    "standard" -> "Standard module"
+    "builtin" -> "Built-in module"
     "kpm" -> "KPM"
     else -> module.normalizedType()
 }
