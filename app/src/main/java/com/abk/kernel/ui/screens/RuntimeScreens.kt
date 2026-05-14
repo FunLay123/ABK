@@ -768,12 +768,12 @@ private fun RuntimeModuleFileAccessDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.FolderOpen, null) },
-        title = { Text("需要文件访问权限") },
+        title = { Text("File Access Permission Required") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("部分机型会把模块 zip 选择导向厂商安全选择器，可能无法返回真实文件。")
+                Text("On some devices, the module zip picker may be redirected to a manufacturer security picker, which may not return the actual file path.")
                 Text(
-                    text = "授予所有文件访问权限后，ABK 会继续打开模块选择器；如果不想授权，也可以继续使用系统文件选择器。",
+                    text = "After granting all files access, ABK will proceed to open the module picker. If you prefer not to grant access, you can continue using the system file picker instead.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -781,12 +781,12 @@ private fun RuntimeModuleFileAccessDialog(
         },
         confirmButton = {
             Button(onClick = onGrantAccess) {
-                Text("授予权限")
+                Text("Grant Permission")
             }
         },
         dismissButton = {
             TextButton(onClick = onUseSystemPicker) {
-                Text("系统选择器")
+                Text("System Picker")
             }
         }
     )
@@ -802,7 +802,7 @@ private fun RuntimeModuleInstallConfirmDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.UploadFile, null) },
-        title = { Text("确认刷写模块") },
+        title = { Text("Confirm Module Flash") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -820,7 +820,7 @@ private fun RuntimeModuleInstallConfirmDialog(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "确认后会调用当前系统可用的模块安装器，安装完成通常需要重启后生效。",
+                    text = "After confirming, the available module installer on your system will be invoked. Changes typically take effect after a reboot.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -830,12 +830,12 @@ private fun RuntimeModuleInstallConfirmDialog(
             Button(onClick = onConfirm) {
                 Icon(Icons.Default.UploadFile, null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("确认刷写")
+                Text("Confirm Flash")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text("Cancel")
             }
         }
     )
