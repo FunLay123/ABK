@@ -151,7 +151,7 @@ object RootUtils {
     ): ShellResult {
         val source = File(apkPath)
         if (!source.isFile) {
-            val line = "APK 文件不存在: $apkPath"
+            val line = "APK file not found: $apkPath"
             onOutput?.invoke(line)
             return ShellResult(false, listOf(line))
         }
@@ -265,7 +265,7 @@ object RootUtils {
         return if (status != null) {
             ShellResult(true, listOf(status))
         } else {
-            ShellResult(false, listOf("未激活"))
+            ShellResult(false, listOf("Not activated"))
         }
     }
 
@@ -403,7 +403,7 @@ object RootUtils {
         return if (AbkKsuNative.controlCommand(command)) {
             ShellResult(true, emptyList())
         } else {
-            ShellResult(false, listOf("未激活"))
+            ShellResult(false, listOf("Not activated"))
         }
     }
 
