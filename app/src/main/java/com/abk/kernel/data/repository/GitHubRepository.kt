@@ -93,7 +93,7 @@ class GitHubRepository(
                 }
             }
 
-            Result.Error("无法读取 module.conf: $lastError")
+            Result.Error("Failed to read module.conf: $lastError")
         }
 
     suspend fun fetchModuleCatalog(repositoryUrl: String): Result<ModuleCatalogFetchResult> =
@@ -508,7 +508,7 @@ class GitHubRepository(
 
     private fun parseModuleCatalogDocument(body: String, repositoryUrl: String): ParsedModuleCatalogDocument {
         val root = JsonParser.parseString(body)
-        val document = root.asJsonObjectOrNull() ?: error("根节点必须是 JSON 对象")
+        val document = root.asJsonObjectOrNull() ?: error("Root node must be a JSON object")
         val rawModules = document.arrayOrEmpty("modules")
         val modules = rawModules.mapNotNull { element ->
             element.asJsonObjectOrNull()?.let(::sanitizeCatalogItem)
@@ -556,7 +556,7 @@ class GitHubRepository(
     private fun parseExternalModuleConf(body: String): ExternalModuleMetadata {
         val values = parseShellLikeConf(body)
         val name = values["ABK_MODULE_NAME"].orEmpty().trim()
-        if (name.isBlank()) error("缺少 ABK_MODULE_NAME")
+        if (name.isBlank()) error("Missing ABK_MODULE_NAME")
         val supportedStages = values["ABK_MODULE_SUPPORTED_STAGES"]
             ?.takeIf { it.isNotBlank() }
             ?.split(',')
