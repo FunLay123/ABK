@@ -1364,7 +1364,7 @@ private fun parseReleaseBodyParameterRows(body: String): List<Pair<String, Strin
         .mapNotNull(::parseReleaseBodyParameterRow)
         .filterNot { (label, value) ->
             val normalized = label.replace(Regex("\\s+"), "")
-            normalized == "项目" && value.replace(Regex("\\s+"), "") == "内容"
+            normalized == "Parameter" && value.replace(Regex("\\s+"), "") == "Value"
         }
         .toList()
 }
@@ -1397,26 +1397,26 @@ private fun parseReleaseBodyParameterRow(line: String): Pair<String, String>? {
 private fun normalizeReleaseParameterLabel(label: String): String? {
     val compact = label.replace(Regex("\\s+"), "").lowercase()
     return when {
-        compact.contains("android版本") || compact.contains("androidversion") -> "androidVersion"
-        compact.contains("Kernel version") -> "kernelVersion"
-        compact.contains("Sub-level") -> "subLevel"
-        compact.contains("Patch level") -> "osPatchLevel"
-        compact.contains("ksu变体") || compact.contains("ksuvariant") -> "ksuVariant"
-        compact.contains("ksu分支") || compact.contains("ksubranch") -> "ksuBranch"
-        compact.contains("Build time") -> "buildTime"
-        compact.contains("susfs状态") || compact.contains("susfsenabled") -> "susfsEnabled"
-        compact.contains("zram增强") || compact.contains("zramenabled") -> "zramEnabled"
-        compact.contains("zram完整算法") || compact.contains("zramfullalgo") -> "zramFullAlgo"
-        compact.contains("zram额外算法") || compact.contains("zramextraalgos") -> "zramExtraAlgos"
-        compact.contains("bbg补丁") || compact.contains("bbgenabled") -> "bbgEnabled"
+        compact.contains("androidversion") -> "androidVersion"
+        compact.contains("kernelversion") -> "kernelVersion"
+        compact.contains("sub-level") || compact.contains("sublevel") -> "subLevel"
+        compact.contains("patchlevel") || compact.contains("ospatchlevel") -> "osPatchLevel"
+        compact.contains("ksuvariant") -> "ksuVariant"
+        compact.contains("ksubranch") -> "ksuBranch"
+        compact.contains("buildtime") -> "buildTime"
+        compact.contains("susfsenabled") -> "susfsEnabled"
+        compact.contains("zramenabled") -> "zramEnabled"
+        compact.contains("zramfullalgo") -> "zramFullAlgo"
+        compact.contains("zramextraalgos") -> "zramExtraAlgos"
+        compact.contains("bbgenabled") -> "bbgEnabled"
         compact.contains("ddklsm") -> "ddkLsm"
-        compact.contains("ntsync补丁") || compact.contains("ntsynced") -> "ntsyncEnabled"
-        compact.contains("Networking") || compact.contains("networking增强") || compact.contains("networing增强") -> "networkingEnabled"
-        compact.contains("kpm功能") || compact.contains("kpmenabled") -> "kpmEnabled"
-        compact.contains("kpm密码") || compact.contains("kpmpassword") -> "kpmPassword"
+        compact.contains("ntsyncenabled") || compact.contains("ntsynced") -> "ntsyncEnabled"
+        compact.contains("networkingenabled") || compact.contains("networking") -> "networkingEnabled"
+        compact.contains("kpmenabled") -> "kpmEnabled"
+        compact.contains("kpmpassword") -> "kpmPassword"
         compact.contains("re-kernel") || compact.contains("rekernel") -> "reKernelEnabled"
-        compact.contains("Virtualization support") -> "virtualizationSupport"
-        compact == "Custom injection" -> "customInjection"
+        compact.contains("virtualizationsupport") -> "virtualizationSupport"
+        compact == "custominjection" -> "customInjection"
         compact.contains("stockconfig") -> "stockConfig"
         else -> null
     }
@@ -1427,7 +1427,7 @@ private fun sanitizeReleaseParameterValue(key: String, value: String): String {
     val normalized = value.trim().lowercase()
     return when {
         normalized.isBlank() -> "Default"
-        normalized in setOf("默认", "default", "None", "none", "not set", "Default") -> "Default"
+        normalized in setOf("default", "none", "not set") -> "Default"
         else -> "Set"
     }
 }
