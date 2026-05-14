@@ -1013,7 +1013,7 @@ fun BuildScreen(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     if (activeBuild || activeQueueCount > 0 || state.buildQueueProcessing) {
-                        "加入队列"
+                        "Add to Queue"
                     } else {
                         stringResource(R.string.build_submit)
                     }
@@ -1239,7 +1239,7 @@ private fun BuildPlanToolsCard(
                         ) {
                             Icon(Icons.Default.Queue, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("队列")
+                            Text("Queue")
                         }
                         Button(
                             onClick = onShare,
