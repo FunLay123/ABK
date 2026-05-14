@@ -413,7 +413,7 @@ private fun RuntimeStatusHeader(
         title = if (runtimeStatus != null) "Manager activated" else "Manager not activated",
         subtitle = runtimeStatus?.let {
             val managerName = it.manager?.displayName?.takeIf { name -> name.isNotBlank() } ?: "Root"
-            "$managerName · ABK ${it.abkVersion.ifBlank { "unknown" }} · ${it.modules.size} 个模块"
+            "$managerName · ABK ${it.abkVersion.ifBlank { "unknown" }} · ${it.modules.size} modules"
         } ?: (error ?: "Install and enable a manager-compatible kernel to view runtime info"),
         icon = if (runtimeStatus != null) Icons.Default.CheckCircle else Icons.Default.Error,
         containerColor = if (runtimeStatus != null) {
