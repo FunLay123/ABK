@@ -40,7 +40,7 @@ class ModuleWebUiActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         if (moduleId.isBlank()) {
-            Toast.makeText(this, "模块不可用", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Module unavailable", Toast.LENGTH_SHORT).show()
             finish()
             return
         }
