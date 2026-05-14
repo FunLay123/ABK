@@ -1891,7 +1891,7 @@ private fun WorkflowRunCard(
                         } else {
                             Icon(
                                 Icons.Default.Cancel,
-                                contentDescription = "取消工作流",
+                                contentDescription = "Cancel workflow",
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
