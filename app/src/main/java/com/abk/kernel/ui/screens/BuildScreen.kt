@@ -1239,7 +1239,7 @@ private fun BuildPlanToolsCard(
                         ) {
                             Icon(Icons.Default.Queue, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("队列")
+                            Text("Queue")
                         }
                         Button(
                             onClick = onShare,
