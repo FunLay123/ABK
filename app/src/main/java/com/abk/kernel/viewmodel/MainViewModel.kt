@@ -3196,9 +3196,9 @@ private fun sanitizeBuildSummaryValue(key: String, value: String): String {
     if (key != "kpmPassword") return value.ifBlank { "None" }
     val normalized = value.trim().lowercase()
     return when {
-        normalized.isBlank() -> "默认"
+        normalized.isBlank() -> "Default"
         normalized in setOf("默认", "default", "None", "none", "not set") -> "默认"
-        else -> "已设置"
+        else -> "Set"
     }
 }
 
@@ -3257,13 +3257,13 @@ private fun isPrebuiltGkiReleaseCandidate(release: GitHubReleaseSummary): Boolea
         "gki",
         "prebuilt",
         "pre-built",
-        "预编译",
+        "Pre-built",
         "boot.img",
         "anykernel",
         "ak3",
         "kernel image",
         "Kernel image",
-        "刷写包"
+        "Flash package"
     )
     if (strongPrebuiltTerms.any { haystack.contains(it) }) return true
 
@@ -3273,7 +3273,7 @@ private fun isPrebuiltGkiReleaseCandidate(release: GitHubReleaseSummary): Boolea
         "app",
         "android application",
         "Apply",
-        "客户端",
+        "Client",
         "abk"
     )
     return appReleaseTerms.none { haystack.contains(it) } &&
@@ -3493,7 +3493,7 @@ private fun Artifact.toBuildArtifact(runId: Long): BuildArtifact = BuildArtifact
     expired = expired,
     createdAt = createdAt,
     runId = runId,
-    runTitle = "工作流 #$runId",
+    runTitle = "Workflow #$runId",
     runNumber = 0,
     runCreatedAt = createdAt
 )
