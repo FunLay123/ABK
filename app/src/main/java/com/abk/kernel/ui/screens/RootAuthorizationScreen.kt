@@ -1,22 +1,37 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class
+)
 
 package com.abk.kernel.ui.screens
 
 import android.graphics.drawable.Drawable
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -38,7 +53,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -48,9 +63,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -58,9 +75,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -75,13 +96,43 @@ import com.abk.kernel.ui.components.ExpressiveSwitch
 import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
+import kotlin.math.pow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.withContext
+
+private const val ROOT_AUTH_BACK_VISUAL_EXPONENT = 1.8f
+private const val ROOT_AUTH_BACK_SCALE_DELTA = 0.09f
+private const val ROOT_AUTH_BACK_SCRIM_ALPHA = 0.32f
+private const val ROOT_AUTH_DETAIL_EXIT_DELAY_MS = 280L
+private val ROOT_AUTH_BACK_MAX_OFFSET = 56.dp
+private val ROOT_AUTH_BACK_MAX_CORNER = 32.dp
 
 @Composable
-fun RootAuthorizationScreen(vm: MainViewModel) {
+fun RootAuthorizationScreen(
+    vm: MainViewModel,
+    outerPadding: PaddingValues = PaddingValues(0.dp),
+    onDetailPageVisibleChange: (Boolean) -> Unit = {}
+) {
     val state by vm.uiState.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
     var showSystemApps by rememberSaveable { mutableStateOf(false) }
     var selectedPackage by rememberSaveable { mutableStateOf<String?>(null) }
+    var detailBackProgress by remember { mutableFloatStateOf(0f) }
+    val motionScheme = MaterialTheme.motionScheme
+    val animatedDetailBackProgress by animateFloatAsState(
+        targetValue = detailBackProgress.coerceIn(0f, 1f),
+        animationSpec = motionScheme.fastSpatialSpec(),
+        label = "root-auth-detail-back-progress"
+    )
+    val visualDetailBackProgress = animatedDetailBackProgress
+        .coerceIn(0f, 1f)
+        .pow(ROOT_AUTH_BACK_VISUAL_EXPONENT)
+    val density = LocalDensity.current
+    val detailBackOffsetPx = with(density) { ROOT_AUTH_BACK_MAX_OFFSET.toPx() }
+    val detailBackCorner = with(density) { (ROOT_AUTH_BACK_MAX_CORNER.toPx() * visualDetailBackProgress).toDp() }
     val apps = remember(state.rootGrantApps, query, showSystemApps) {
         state.rootGrantApps
             .filter { showSystemApps || !it.isSystemApp }
@@ -105,104 +156,148 @@ fun RootAuthorizationScreen(vm: MainViewModel) {
         if (state.runtimeNavigationEnabled) vm.refreshRootGrantApps()
     }
 
-    BackHandler(enabled = selectedApp != null && canLeaveDetail) {
-        selectedPackage = null
+    LaunchedEffect(selectedApp != null) {
+        if (selectedApp != null) {
+            onDetailPageVisibleChange(true)
+        } else {
+            delay(ROOT_AUTH_DETAIL_EXIT_DELAY_MS)
+            detailBackProgress = 0f
+            onDetailPageVisibleChange(false)
+        }
     }
 
-    Scaffold(
-        containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
-        topBar = {
-            if (selectedApp == null) {
+    DisposableEffect(Unit) {
+        onDispose { onDetailPageVisibleChange(false) }
+    }
+
+    fun closeDetailPage() {
+        if (canLeaveDetail) selectedPackage = null
+    }
+
+    PredictiveBackHandler(
+        enabled = selectedApp != null && canLeaveDetail && state.predictiveBackEnabled
+    ) { progress ->
+        try {
+            progress.collect { backEvent ->
+                detailBackProgress = backEvent.progress.coerceIn(0f, 1f)
+            }
+            closeDetailPage()
+        } catch (_: CancellationException) {
+            detailBackProgress = 0f
+        }
+    }
+
+    BackHandler(enabled = selectedApp != null && canLeaveDetail && !state.predictiveBackEnabled) {
+        closeDetailPage()
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val childPageTopInset = outerPadding.calculateTopPadding()
+        val childPageBottomInset = outerPadding.calculateBottomPadding()
+        val childPageModifier = Modifier
+            .fillMaxWidth()
+            .height(maxHeight + childPageTopInset + childPageBottomInset)
+            .offset(y = -childPageTopInset)
+
+        Scaffold(
+            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
+            topBar = {
                 ExpressiveTopBar(
                     title = "Superuser",
                     scrollBehavior = scrollBehavior,
                     actions = {
-                        IconButton(onClick = vm::refreshRootGrantApps) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh grant list")
-                        }
-                    }
-                )
-            } else {
-                ExpressiveTopBar(
-                    title = selectedApp.label.ifBlank { selectedApp.packageName },
-                    navigationIcon = {
                         IconButton(
-                            enabled = canLeaveDetail,
-                            onClick = { selectedPackage = null }
+                            onClick = { vm.refreshRootGrantApps(force = true) },
+                            enabled = !state.rootGrantLoading
                         ) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back to grant list")
+                            if (state.rootGrantLoading) {
+                                LoadingIndicator(Modifier.size(22.dp))
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh authorization list")
+                            }
                         }
                     }
                 )
             }
-        }
-    ) { padding ->
-        if (selectedApp != null) {
-            RootGrantProfilePage(
-                app = selectedApp,
-                padding = padding,
-                saving = state.rootGrantSavingPackage == selectedApp.packageName,
-                onSave = { profile ->
-                    vm.saveRootGrantProfile(profile)
-                }
-            )
-        } else {
-            Column(
+        ) { padding ->
+            LazyColumn(
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize()
-                    .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = AbkScreenHorizontalPadding),
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+                contentPadding = PaddingValues(
+                    start = AbkScreenHorizontalPadding,
+                    end = AbkScreenHorizontalPadding,
+                    bottom = 80.dp
+                ),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    placeholder = { Text("Search apps") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(14.dp)
-                )
-
-                ExpressiveSectionCard(
-                    title = "Root Authorization",
-                    subtitle = "Manage kernel access profiles for other apps",
-                    icon = Icons.Default.AdminPanelSettings
-                ) {
-                    Row(
+                item(key = "search") {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Show system apps",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Switch(checked = showSystemApps, onCheckedChange = { showSystemApps = it })
-                    }
-                }
-
-                if (state.rootGrantLoading) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-
-                state.rootGrantError?.let {
-                    RootGrantMessageCard(it, vm::refreshRootGrantApps)
-                }
-
-                if (!state.rootGrantLoading && apps.isEmpty()) {
-                    Text(
-                        text = if (query.isBlank()) "No apps to display" else "No matching apps",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 24.dp)
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        placeholder = { Text("Search apps") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp)
                     )
                 }
 
-                apps.forEach { app ->
+                item(key = "controls") {
+                    ExpressiveSectionCard(
+                        title = "Root Authorization",
+                        subtitle = "Manage kernel permission configuration for other apps",
+                        icon = Icons.Default.AdminPanelSettings
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Show system apps",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Switch(checked = showSystemApps, onCheckedChange = { showSystemApps = it })
+                        }
+                    }
+                }
+
+                if (state.rootGrantLoading && state.rootGrantApps.isEmpty()) {
+                    item(key = "initial-loading") {
+                        RootGrantInitialLoading()
+                    }
+                }
+
+                if (state.rootGrantLoading && state.rootGrantApps.isNotEmpty()) {
+                    item(key = "refreshing") {
+                        RootGrantRefreshingRow()
+                    }
+                }
+
+                state.rootGrantError?.let {
+                    item(key = "error") {
+                        RootGrantMessageCard(it) { vm.refreshRootGrantApps(force = true) }
+                    }
+                }
+
+                if (!state.rootGrantLoading && apps.isEmpty()) {
+                    item(key = "empty") {
+                        Text(
+                            text = if (query.isBlank()) "No apps to display" else "No matching apps",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 24.dp)
+                        )
+                    }
+                }
+
+                items(
+                    items = apps,
+                    key = { app -> "${app.uid}:${app.packageName}" }
+                ) { app ->
                     RootGrantAppCard(
                         app = app,
                         saving = state.rootGrantSavingPackage == app.packageName,
@@ -211,9 +306,147 @@ fun RootAuthorizationScreen(vm: MainViewModel) {
                         onOpen = { selectedPackage = app.packageName }
                     )
                 }
-
-                Spacer(Modifier.height(80.dp))
             }
+        }
+
+        AnimatedVisibility(
+            visible = selectedApp != null,
+            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()),
+            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()),
+            modifier = childPageModifier
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = ROOT_AUTH_BACK_SCRIM_ALPHA * visualDetailBackProgress))
+            )
+        }
+
+        AnimatedVisibility(
+            visible = selectedApp != null,
+            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
+                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
+            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
+                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            modifier = childPageModifier
+        ) {
+            selectedApp?.let { app ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            translationX = detailBackOffsetPx * visualDetailBackProgress
+                            scaleX = 1f - ROOT_AUTH_BACK_SCALE_DELTA * visualDetailBackProgress
+                            scaleY = 1f - ROOT_AUTH_BACK_SCALE_DELTA * visualDetailBackProgress
+                            alpha = 1f - 0.06f * visualDetailBackProgress
+                            shape = RoundedCornerShape(detailBackCorner)
+                            clip = visualDetailBackProgress > 0.01f
+                        }
+                ) {
+                    RootGrantDetailPageBackground(
+                        backgroundUri = state.customBackgroundUri,
+                        backgroundImageEnabled = state.backgroundImageEnabled
+                    )
+                    Scaffold(
+                        containerColor = Color.Transparent,
+                        topBar = {
+                            ExpressiveTopBar(
+                                title = app.label.ifBlank { app.packageName },
+                                navigationIcon = {
+                                    IconButton(
+                                        enabled = canLeaveDetail,
+                                        onClick = ::closeDetailPage
+                                    ) {
+                                        Icon(Icons.Default.ArrowBack, contentDescription = "Back to authorization list")
+                                    }
+                                }
+                            )
+                        }
+                    ) { padding ->
+                        RootGrantProfilePage(
+                            app = app,
+                            padding = padding,
+                            saving = state.rootGrantSavingPackage == app.packageName,
+                            onSave = { profile ->
+                                vm.saveRootGrantProfile(profile)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RootGrantInitialLoading() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 48.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            LoadingIndicator(Modifier.size(42.dp))
+            Text(
+                text = "Building authorization list",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun RootGrantRefreshingRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LoadingIndicator(Modifier.size(24.dp))
+        Text(
+            text = "Refreshing authorization list",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun RootGrantDetailPageBackground(
+    backgroundUri: String?,
+    backgroundImageEnabled: Boolean
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val hasBackground = backgroundImageEnabled && !backgroundUri.isNullOrBlank()
+    val scrimColor = if (colorScheme.surface.luminance() > 0.5f) {
+        colorScheme.surface.copy(alpha = 0.28f)
+    } else {
+        Color.Black.copy(alpha = 0.38f)
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colorScheme.surface)
+    ) {
+        if (hasBackground) {
+            AsyncImage(
+                model = backgroundUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(scrimColor)
+            )
         }
     }
 }
@@ -309,8 +542,11 @@ private fun AppIcon(
     cornerSize: Dp = 14.dp
 ) {
     val context = LocalContext.current
-    val drawable: Drawable? = remember(packageName) {
-        runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
+    var drawable by remember(packageName) { mutableStateOf<Drawable?>(null) }
+    LaunchedEffect(packageName) {
+        drawable = withContext(Dispatchers.IO) {
+            runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
+        }
     }
     val iconModifier = modifier.clip(RoundedCornerShape(cornerSize))
     if (drawable != null) {

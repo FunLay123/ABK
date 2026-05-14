@@ -19,6 +19,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
@@ -44,9 +45,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.abk.kernel.R
 import com.abk.kernel.data.model.BuildPlan
+import com.abk.kernel.data.model.BuildQueueItem
+import com.abk.kernel.data.model.BuildQueueItemStatus
 import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.BuildStepProgress
 import com.abk.kernel.data.model.BuildStatus
+import com.abk.kernel.data.model.CustomExternalModule
 import com.abk.kernel.data.model.CustomExternalModuleStage
 import com.abk.kernel.data.model.ExternalModuleMetadata
 import com.abk.kernel.data.model.KernelSupport
@@ -119,6 +123,7 @@ fun BuildScreen(
     var showSavePlanDialog by remember { mutableStateOf(false) }
     var showImportPlanDialog by remember { mutableStateOf(false) }
     var showPlanLibraryPage by rememberSaveable { mutableStateOf(false) }
+    var showBuildQueuePage by rememberSaveable { mutableStateOf(false) }
     var planToolsExpanded by rememberSaveable { mutableStateOf(false) }
     var planBackProgress by remember { mutableFloatStateOf(0f) }
     val animatedPlanBackProgress by animateFloatAsState(
@@ -144,7 +149,9 @@ fun BuildScreen(
     var pendingCustomModuleUrl by remember { mutableStateOf("") }
     var pendingCustomModuleMetadata by remember { mutableStateOf<ExternalModuleMetadata?>(null) }
     var selectedCustomModuleStages by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var removingCatalogModuleKeys by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var editingCustomModuleGroup by remember { mutableStateOf<BuildCustomModuleGroup?>(null) }
+    var editingCustomModuleStages by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var removingCustomModuleKeys by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val coroutineScope = rememberCoroutineScope()
     val catalogModules = remember(state.moduleCatalogRepositories) {
         mergeBuildCatalogModules(state.moduleCatalogRepositories)
@@ -152,14 +159,18 @@ fun BuildScreen(
     val catalogModuleByUrl = remember(catalogModules) {
         catalogModules.associateBy { it.module.repoUrl.trim().lowercase() }
     }
-    val catalogSelections = remember(config.customExternalModules, catalogModuleByUrl) {
-        config.customExternalModules.mapNotNull { customModule ->
-            val catalogModule = catalogModuleByUrl[customModule.url.trim().lowercase()] ?: return@mapNotNull null
-            BuildCatalogSelection(
-                catalogModule = catalogModule,
-                stage = CustomExternalModuleStage.normalize(customModule.stage)
-            )
-        }.distinctBy { it.key }
+    val customModuleGroups = remember(config.customExternalModules, catalogModuleByUrl) {
+        groupBuildCustomExternalModules(config.customExternalModules, catalogModuleByUrl)
+    }
+    val childPageVisible = showPlanLibraryPage || showBuildQueuePage
+    val activeBuild = state.buildStatus in listOf(BuildStatus.QUEUED, BuildStatus.IN_PROGRESS)
+    val pendingQueueCount = state.buildQueue.count { it.status == BuildQueueItemStatus.PENDING }
+    val activeQueueCount = state.buildQueue.count {
+        it.status in listOf(
+            BuildQueueItemStatus.PENDING,
+            BuildQueueItemStatus.DISPATCHING,
+            BuildQueueItemStatus.RUNNING
+        )
     }
 
     LaunchedEffect(config, rawConfig) {
@@ -169,15 +180,24 @@ fun BuildScreen(
     fun openPlanLibraryPage() {
         planBackProgress = 0f
         onPlanPageVisibleChange(true)
+        showBuildQueuePage = false
         showPlanLibraryPage = true
     }
 
-    fun closePlanLibraryPage() {
+    fun openBuildQueuePage() {
+        planBackProgress = 0f
+        onPlanPageVisibleChange(true)
         showPlanLibraryPage = false
+        showBuildQueuePage = true
     }
 
-    LaunchedEffect(showPlanLibraryPage) {
-        if (showPlanLibraryPage) {
+    fun closeChildPage() {
+        showPlanLibraryPage = false
+        showBuildQueuePage = false
+    }
+
+    LaunchedEffect(childPageVisible) {
+        if (childPageVisible) {
             onPlanPageVisibleChange(true)
         } else {
             delay(BUILD_PLAN_PAGE_EXIT_DELAY_MS)
@@ -190,19 +210,19 @@ fun BuildScreen(
         onDispose { onPlanPageVisibleChange(false) }
     }
 
-    PredictiveBackHandler(enabled = showPlanLibraryPage && state.predictiveBackEnabled) { progress ->
+    PredictiveBackHandler(enabled = childPageVisible && state.predictiveBackEnabled) { progress ->
         try {
             progress.collect { backEvent ->
                 planBackProgress = backEvent.progress.coerceIn(0f, 1f)
             }
-            closePlanLibraryPage()
+            closeChildPage()
         } catch (_: CancellationException) {
             planBackProgress = 0f
         }
     }
 
-    BackHandler(enabled = showPlanLibraryPage && !state.predictiveBackEnabled) {
-        closePlanLibraryPage()
+    BackHandler(enabled = childPageVisible && !state.predictiveBackEnabled) {
+        closeChildPage()
     }
 
     if (showConfirmDialog) {
@@ -225,6 +245,13 @@ fun BuildScreen(
                             if (config.useCustomExternalModules) "${config.customExternalModules.size}" else "Disabled"
                         }"
                     )
+                    if (activeBuild || activeQueueCount > 0) {
+                        Text(
+                            text = "A build is currently active. This configuration will be added to the local queue and dispatched in order.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -424,6 +451,73 @@ fun BuildScreen(
         )
     }
 
+    editingCustomModuleGroup?.let { group ->
+        AlertDialog(
+            onDismissRequest = {
+                editingCustomModuleGroup = null
+                editingCustomModuleStages = emptyList()
+            },
+            icon = { Icon(Icons.Default.Edit, null) },
+            title = { Text("Edit Injection Stages") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = group.displayName(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = group.url,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    CustomExternalModuleStage.options.forEach { stage ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Checkbox(
+                                checked = stage in editingCustomModuleStages,
+                                onCheckedChange = { checked ->
+                                    editingCustomModuleStages = if (checked) {
+                                        (editingCustomModuleStages + stage).distinct()
+                                    } else {
+                                        editingCustomModuleStages - stage
+                                    }
+                                }
+                            )
+                            Text(stage, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.setCustomExternalModuleStages(group.url, editingCustomModuleStages)
+                        editingCustomModuleGroup = null
+                        editingCustomModuleStages = emptyList()
+                    }
+                ) {
+                    Text(if (editingCustomModuleStages.isEmpty()) "Remove Module" else "Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        editingCustomModuleGroup = null
+                        editingCustomModuleStages = emptyList()
+                    }
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
     state.workflowEnablementPrompt?.let { prompt ->
         AlertDialog(
             onDismissRequest = { vm.dismissWorkflowEnablementPrompt() },
@@ -494,6 +588,8 @@ fun BuildScreen(
 
             BuildPlanToolsCard(
                 plansCount = state.buildPlans.size,
+                pendingQueueCount = pendingQueueCount,
+                activeQueueCount = activeQueueCount,
                 expanded = planToolsExpanded,
                 currentSummary = buildPlanSummary(config),
                 onExpandedChange = { planToolsExpanded = it },
@@ -502,6 +598,7 @@ fun BuildScreen(
                     showSavePlanDialog = true
                 },
                 onLibrary = ::openPlanLibraryPage,
+                onQueue = ::openBuildQueuePage,
                 onShare = {
                     sharePlanTarget = BuildPlan(name = suggestedPlanName, config = config)
                 },
@@ -519,7 +616,14 @@ fun BuildScreen(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    BuildStatusBanner(state.buildStatus, state.buildProgress)
+                    BuildStatusBanner(
+                        status = state.buildStatus,
+                        progress = state.buildProgress,
+                        runId = state.currentRun?.id ?: 0L,
+                        activeRunCount = state.activeBuildRuns.size,
+                        cancelling = state.currentRun?.id in state.cancellingWorkflowRunIds,
+                        onCancel = { runId -> vm.cancelWorkflowRun(runId) }
+                    )
                     BuildProgressCard(state.buildProgress)
                 }
             }
@@ -693,53 +797,114 @@ fun BuildScreen(
                 }
                 AnimatedVisibility(config.useCustomExternalModules) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (catalogSelections.isNotEmpty()) {
+                        val catalogGroups = customModuleGroups.filter { it.catalogModule != null }
+                        val manualGroups = customModuleGroups.filter { it.catalogModule == null }
+                        if (catalogGroups.isNotEmpty()) {
                             Text(
                                 text = "Add from module repository",
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            catalogSelections.forEach { selection ->
-                                val merged = selection.catalogModule
-                                val module = merged.module
-                                key(selection.key) {
+                            catalogGroups.forEach { group ->
+                                key(group.key) {
                                     AnimatedVisibility(
-                                        visible = selection.key !in removingCatalogModuleKeys,
+                                        visible = group.key !in removingCustomModuleKeys,
                                         enter = fadeIn() + expandVertically(),
                                         exit = fadeOut() + shrinkVertically()
                                     ) {
                                         ExpressiveListItem(
-                                            title = module.catalogModuleTitle(),
-                                            subtitle = buildString {
-                                                append("${selection.stage} · Source: ${merged.sources.joinToString(", ")}")
-                                                if (module.version.isNotBlank()) append(" · v${module.version}")
-                                                appendLine()
-                                                append(module.description.ifBlank { module.repoUrl })
-                                            },
+                                            title = group.displayName(),
+                                            subtitle = group.subtitle(),
                                             leadingIcon = Icons.Default.CheckCircle,
                                             trailingContent = {
-                                                TextButton(
-                                                    onClick = {
-                                                        if (selection.key in removingCatalogModuleKeys) return@TextButton
-                                                        removingCatalogModuleKeys =
-                                                            (removingCatalogModuleKeys + selection.key).distinct()
-                                                        coroutineScope.launch {
-                                                            delay(CATALOG_MODULE_REMOVE_DELAY_MS)
-                                                            vm.removeCustomExternalModule(module.repoUrl, selection.stage)
-                                                            removingCatalogModuleKeys =
-                                                                removingCatalogModuleKeys - selection.key
+                                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            editingCustomModuleGroup = group
+                                                            editingCustomModuleStages = group.stages
                                                         }
-                                                    },
-                                                    enabled = selection.key !in removingCatalogModuleKeys
-                                                ) {
-                                                    Text("Remove")
+                                                    ) {
+                                                        Icon(Icons.Default.Edit, contentDescription = "Edit Module Stage")
+                                                    }
+                                                    IconButton(
+                                                        onClick = {
+                                                            if (group.key in removingCustomModuleKeys) return@IconButton
+                                                            removingCustomModuleKeys =
+                                                                (removingCustomModuleKeys + group.key).distinct()
+                                                            coroutineScope.launch {
+                                                                delay(CATALOG_MODULE_REMOVE_DELAY_MS)
+                                                                vm.setCustomExternalModuleStages(group.url, emptyList())
+                                                                removingCustomModuleKeys =
+                                                                    removingCustomModuleKeys - group.key
+                                                            }
+                                                        },
+                                                        enabled = group.key !in removingCustomModuleKeys
+                                                    ) {
+                                                        Icon(Icons.Default.Delete, contentDescription = "Delete Module")
+                                                    }
                                                 }
                                             }
                                         )
                                     }
                                 }
                             }
+                        }
+
+                        if (manualGroups.isNotEmpty()) {
+                            Text(
+                                text = "Add Manually",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            manualGroups.forEach { group ->
+                                key(group.key) {
+                                    AnimatedVisibility(
+                                        visible = group.key !in removingCustomModuleKeys,
+                                        enter = fadeIn() + expandVertically(),
+                                        exit = fadeOut() + shrinkVertically()
+                                    ) {
+                                        ExpressiveListItem(
+                                            title = group.displayName(),
+                                            subtitle = group.subtitle(),
+                                            leadingIcon = Icons.Default.Extension,
+                                            trailingContent = {
+                                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            editingCustomModuleGroup = group
+                                                            editingCustomModuleStages = group.stages
+                                                        }
+                                                    ) {
+                                                        Icon(Icons.Default.Edit, contentDescription = "Edit Module Stage")
+                                                    }
+                                                    IconButton(
+                                                        onClick = {
+                                                            if (group.key in removingCustomModuleKeys) return@IconButton
+                                                            removingCustomModuleKeys =
+                                                                (removingCustomModuleKeys + group.key).distinct()
+                                                            coroutineScope.launch {
+                                                                delay(CATALOG_MODULE_REMOVE_DELAY_MS)
+                                                                vm.setCustomExternalModuleStages(group.url, emptyList())
+                                                                removingCustomModuleKeys =
+                                                                    removingCustomModuleKeys - group.key
+                                                            }
+                                                        },
+                                                        enabled = group.key !in removingCustomModuleKeys
+                                                    ) {
+                                                        Icon(Icons.Default.Delete, contentDescription = "Delete Module")
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (customModuleGroups.isNotEmpty()) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
 
                         OutlinedTextField(
@@ -813,34 +978,6 @@ fun BuildScreen(
                             }
                         }
 
-                        val manualModules = config.customExternalModules.filter {
-                            catalogModuleByUrl[it.url.trim().lowercase()] == null
-                        }
-                        manualModules.forEach { module ->
-                            val catalogModule = catalogModuleByUrl[module.url.trim().lowercase()]
-                            ExpressiveListItem(
-                                title = catalogModule?.module?.catalogModuleTitle()
-                                    ?: CustomExternalModuleStage.normalize(module.stage),
-                                subtitle = buildString {
-                                    append(CustomExternalModuleStage.normalize(module.stage))
-                                    catalogModule?.sources?.takeIf { it.isNotEmpty() }?.let {
-                                        append(" · ${it.joinToString(", ")}")
-                                    }
-                                    appendLine()
-                                    append(module.url)
-                                },
-                                leadingIcon = Icons.Default.Extension,
-                                trailingContent = {
-                                    IconButton(
-                                        onClick = {
-                                            vm.removeCustomExternalModule(module.url, module.stage)
-                                        }
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Delete module")
-                                    }
-                                }
-                            )
-                        }
                     }
                 }
             }
@@ -869,18 +1006,18 @@ fun BuildScreen(
             // Submit button
             Button(
                 onClick = { showConfirmDialog = true },
-                enabled = !state.isLoading && state.buildStatus !in listOf(
-                    BuildStatus.QUEUED, BuildStatus.IN_PROGRESS
-                ),
+                enabled = true,
                 modifier = Modifier.fillMaxWidth().height(52.dp)
             ) {
-                if (state.isLoading) {
-                    LoadingIndicator(Modifier.size(24.dp))
-                } else {
-                    Icon(Icons.Default.RocketLaunch, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.build_submit))
-                }
+                Icon(Icons.Default.RocketLaunch, null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (activeBuild || activeQueueCount > 0 || state.buildQueueProcessing) {
+                        "加入队列"
+                    } else {
+                        stringResource(R.string.build_submit)
+                    }
+                )
             }
 
             // Error
@@ -904,7 +1041,7 @@ fun BuildScreen(
         }
 
         AnimatedVisibility(
-            visible = showPlanLibraryPage,
+            visible = childPageVisible,
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()),
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()),
             modifier = childPageModifier
@@ -917,7 +1054,7 @@ fun BuildScreen(
         }
 
         AnimatedVisibility(
-            visible = showPlanLibraryPage,
+            visible = childPageVisible,
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
@@ -944,32 +1081,51 @@ fun BuildScreen(
                     containerColor = Color.Transparent,
                     topBar = {
                         ExpressiveTopBar(
-                            title = "Plan Library",
+                            title = if (showBuildQueuePage) "Build Queue" else "Configuration Library",
                             navigationIcon = {
-                                IconButton(onClick = ::closePlanLibraryPage) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "Back to build config")
+                                IconButton(onClick = ::closeChildPage) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "Back to Build Configuration")
                                 }
                             }
                         )
                     }
                 ) { padding ->
-                    BuildPlanLibraryPage(
-                        plans = state.buildPlans,
-                        onApply = {
-                            vm.applyBuildPlan(it)
-                            closePlanLibraryPage()
-                            Toast.makeText(context, "Plan applied. You can still modify it.", Toast.LENGTH_SHORT).show()
-                        },
-                        onShare = { sharePlanTarget = it },
-                        onRename = {
-                            renamePlanTarget = it
-                            renamePlanName = it.name
-                        },
-                        onDelete = { deletePlanTarget = it },
-                        modifier = Modifier
-                            .padding(padding)
-                            .fillMaxSize()
-                    )
+                    if (showBuildQueuePage) {
+                        BuildQueuePage(
+                            queue = state.buildQueue,
+                            cancellingRunIds = state.cancellingWorkflowRunIds,
+                            onApply = {
+                                vm.updateBuildConfig(it.config)
+                                closeChildPage()
+                                Toast.makeText(context, "Queue configuration applied, you can continue editing", Toast.LENGTH_SHORT).show()
+                            },
+                            onRemove = { vm.removeBuildQueueItem(it.id) },
+                            onRetry = { vm.retryBuildQueueItem(it.id) },
+                            onCancelRun = { runId -> vm.cancelWorkflowRun(runId) },
+                            onClearCompleted = vm::clearCompletedBuildQueueItems,
+                            modifier = Modifier
+                                .padding(padding)
+                                .fillMaxSize()
+                        )
+                    } else {
+                        BuildPlanLibraryPage(
+                            plans = state.buildPlans,
+                            onApply = {
+                                vm.applyBuildPlan(it)
+                                closeChildPage()
+                                Toast.makeText(context, "Configuration applied, you can continue editing", Toast.LENGTH_SHORT).show()
+                            },
+                            onShare = { sharePlanTarget = it },
+                            onRename = {
+                                renamePlanTarget = it
+                                renamePlanName = it.name
+                            },
+                            onDelete = { deletePlanTarget = it },
+                            modifier = Modifier
+                                .padding(padding)
+                                .fillMaxSize()
+                        )
+                    }
                 }
             }
         }
@@ -1012,11 +1168,14 @@ private fun BuildPlanPageBackground(
 @Composable
 private fun BuildPlanToolsCard(
     plansCount: Int,
+    pendingQueueCount: Int,
+    activeQueueCount: Int,
     expanded: Boolean,
     currentSummary: String,
     onExpandedChange: (Boolean) -> Unit,
     onSave: () -> Unit,
     onLibrary: () -> Unit,
+    onQueue: () -> Unit,
     onShare: () -> Unit,
     onImport: () -> Unit
 ) {
@@ -1074,6 +1233,14 @@ private fun BuildPlanToolsCard(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = onQueue,
+                            modifier = Modifier.weight(1f).height(44.dp)
+                        ) {
+                            Icon(Icons.Default.Queue, null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("队列")
+                        }
                         Button(
                             onClick = onShare,
                             modifier = Modifier.weight(1f).height(44.dp)
@@ -1082,9 +1249,11 @@ private fun BuildPlanToolsCard(
                             Spacer(Modifier.width(6.dp))
                             Text("Share")
                         }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = onImport,
-                            modifier = Modifier.weight(1f).height(44.dp)
+                            modifier = Modifier.fillMaxWidth().height(44.dp)
                         ) {
                             Icon(Icons.Default.Download, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
@@ -1092,7 +1261,11 @@ private fun BuildPlanToolsCard(
                         }
                     }
                     Text(
-                        text = if (plansCount > 0) "$plansCount saved plan(s)" else "No saved plans",
+                        text = buildString {
+                            append(if (plansCount > 0) "Saved $plansCount configurations" else "No saved configurations")
+                            append(" · ")
+                            append(if (activeQueueCount > 0) "Queue: $activeQueueCount items, pending: $pendingQueueCount items" else "Queue is empty")
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1338,6 +1511,198 @@ private fun BuildPlanLibraryItem(
 }
 
 @Composable
+private fun BuildQueuePage(
+    queue: List<BuildQueueItem>,
+    cancellingRunIds: Set<Long>,
+    onApply: (BuildQueueItem) -> Unit,
+    onRemove: (BuildQueueItem) -> Unit,
+    onRetry: (BuildQueueItem) -> Unit,
+    onCancelRun: (Long) -> Unit,
+    onClearCompleted: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val terminalItems = queue.filter { it.status.isTerminalQueueStatus() }
+    Column(
+        modifier = modifier
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = AbkScreenHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        ExpressiveSectionCard(
+            title = "Queue Status",
+            subtitle = if (queue.isEmpty()) {
+                "Builds will be queued automatically upon submission."
+            } else {
+                "${queue.size} total · ${queue.count { it.status == BuildQueueItemStatus.PENDING }} pending"
+            },
+            icon = Icons.Default.Queue
+        ) {
+            if (terminalItems.isNotEmpty()) {
+                OutlinedButton(
+                    onClick = onClearCompleted,
+                    modifier = Modifier.fillMaxWidth().height(42.dp)
+                ) {
+                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Clear Finished Items")
+                }
+            } else {
+                Text(
+                    text = if (queue.isEmpty()) "Queue is empty." else "Dispatching builds in order.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (queue.isEmpty()) {
+            ExpressiveSectionCard(
+                title = "No Queue Items",
+                subtitle = "Submitting a build while one is already running will queue it here automatically.",
+                icon = Icons.Default.Inbox
+            ) {
+                Text(
+                    text = "Queue items store the full build configuration. Changes to the current page will not affect already queued items.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            queue.forEachIndexed { index, item ->
+                BuildQueueItemCard(
+                    index = index,
+                    item = item,
+                    cancelling = item.runId > 0L && item.runId in cancellingRunIds,
+                    onApply = { onApply(item) },
+                    onRemove = { onRemove(item) },
+                    onRetry = { onRetry(item) },
+                    onCancelRun = { if (item.runId > 0L) onCancelRun(item.runId) }
+                )
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun BuildQueueItemCard(
+    index: Int,
+    item: BuildQueueItem,
+    cancelling: Boolean,
+    onApply: () -> Unit,
+    onRemove: () -> Unit,
+    onRetry: () -> Unit,
+    onCancelRun: () -> Unit
+) {
+    ExpressiveSectionCard(
+        title = "${index + 1}. ${item.name.ifBlank { "Build Queue Item" }}",
+        subtitle = buildPlanSummary(item.config),
+        icon = when (item.status) {
+            BuildQueueItemStatus.PENDING -> Icons.Default.Schedule
+            BuildQueueItemStatus.DISPATCHING -> Icons.Default.CloudUpload
+            BuildQueueItemStatus.RUNNING -> Icons.Default.RunCircle
+            BuildQueueItemStatus.DONE -> Icons.Default.CheckCircle
+            BuildQueueItemStatus.FAILED -> Icons.Default.Error
+            BuildQueueItemStatus.CANCELLED -> Icons.Default.Cancel
+        }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            ExpressiveStatusChip(label = item.status.queueStatusLabel(), color = item.status.queueStatusColor())
+            if (item.runNumber > 0) {
+                ExpressiveStatusChip(label = "#${item.runNumber}", color = MaterialTheme.colorScheme.secondary)
+            }
+            if (item.runId > 0L) {
+                ExpressiveStatusChip(label = "run ${item.runId}", color = MaterialTheme.colorScheme.outline)
+            }
+        }
+        item.error?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = onApply,
+                modifier = Modifier.weight(1f).height(42.dp)
+            ) {
+                Icon(Icons.Default.Edit, null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Apply")
+            }
+            when (item.status) {
+                BuildQueueItemStatus.PENDING -> OutlinedButton(
+                    onClick = onRemove,
+                    modifier = Modifier.weight(1f).height(42.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Remove")
+                }
+                BuildQueueItemStatus.DISPATCHING,
+                BuildQueueItemStatus.RUNNING -> Button(
+                    onClick = onCancelRun,
+                    enabled = item.runId > 0L && !cancelling,
+                    modifier = Modifier.weight(1f).height(42.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    if (cancelling) {
+                        LoadingIndicator(Modifier.size(17.dp))
+                    } else {
+                        Icon(Icons.Default.Cancel, null, modifier = Modifier.size(17.dp))
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (cancelling) "Cancelling" else "Cancel")
+                }
+                BuildQueueItemStatus.FAILED,
+                BuildQueueItemStatus.CANCELLED -> Button(
+                    onClick = onRetry,
+                    modifier = Modifier.weight(1f).height(42.dp)
+                ) {
+                    Icon(Icons.Default.Replay, null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Retry")
+                }
+                BuildQueueItemStatus.DONE -> OutlinedButton(
+                    onClick = onRemove,
+                    modifier = Modifier.weight(1f).height(42.dp)
+                ) {
+                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Clear")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BuildQueueItemStatus.queueStatusColor(): Color = when (this) {
+    BuildQueueItemStatus.PENDING -> MaterialTheme.colorScheme.tertiary
+    BuildQueueItemStatus.DISPATCHING,
+    BuildQueueItemStatus.RUNNING -> MaterialTheme.colorScheme.secondary
+    BuildQueueItemStatus.DONE -> MaterialTheme.colorScheme.primary
+    BuildQueueItemStatus.FAILED -> MaterialTheme.colorScheme.error
+    BuildQueueItemStatus.CANCELLED -> MaterialTheme.colorScheme.outline
+}
+
+private fun BuildQueueItemStatus.queueStatusLabel(): String = when (this) {
+    BuildQueueItemStatus.PENDING -> "Pending"
+    BuildQueueItemStatus.DISPATCHING -> "Dispatching"
+    BuildQueueItemStatus.RUNNING -> "Running"
+    BuildQueueItemStatus.DONE -> "Done"
+    BuildQueueItemStatus.FAILED -> "Failed"
+    BuildQueueItemStatus.CANCELLED -> "Cancelled"
+}
+
+private fun BuildQueueItemStatus.isTerminalQueueStatus(): Boolean =
+    this in setOf(BuildQueueItemStatus.DONE, BuildQueueItemStatus.FAILED, BuildQueueItemStatus.CANCELLED)
+
+@Composable
 private fun RenameBuildPlanDialog(
     name: String,
     onNameChange: (String) -> Unit,
@@ -1531,11 +1896,26 @@ private val BUILD_TIME_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss z yyyy", Locale.US)
 
 @Composable
-private fun BuildStatusBanner(status: BuildStatus, progress: BuildProgress) {
+private fun BuildStatusBanner(
+    status: BuildStatus,
+    progress: BuildProgress,
+    runId: Long,
+    activeRunCount: Int,
+    cancelling: Boolean,
+    onCancel: (Long) -> Unit
+) {
     val (icon, text, color) = when (status) {
-        BuildStatus.QUEUED -> Triple(Icons.Default.Queue, "Build queued, waiting for runner…", MaterialTheme.colorScheme.tertiary)
-        BuildStatus.IN_PROGRESS -> Triple(Icons.Default.RunCircle, "Build in progress…", MaterialTheme.colorScheme.secondary)
-        BuildStatus.SUCCESS -> Triple(Icons.Default.CheckCircle, "Build successful!", MaterialTheme.colorScheme.primary)
+        BuildStatus.QUEUED -> Triple(
+            Icons.Default.Queue,
+            if (activeRunCount > 1) "$activeRunCount builds queued" else "Build queued, waiting to run…",
+            MaterialTheme.colorScheme.tertiary
+        )
+        BuildStatus.IN_PROGRESS -> Triple(
+            Icons.Default.RunCircle,
+            if (activeRunCount > 1) "$activeRunCount builds running in parallel…" else "Build in progress…",
+            MaterialTheme.colorScheme.secondary
+        )
+        BuildStatus.SUCCESS -> Triple(Icons.Default.CheckCircle, "Build successful! ", MaterialTheme.colorScheme.primary)
         BuildStatus.FAILURE -> Triple(Icons.Default.Error, "Build failed", MaterialTheme.colorScheme.error)
         BuildStatus.CANCELLED -> Triple(Icons.Default.Cancel, "Build cancelled", MaterialTheme.colorScheme.outline)
         else -> return
@@ -1565,6 +1945,21 @@ private fun BuildStatusBanner(status: BuildStatus, progress: BuildProgress) {
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1
                     )
+                }
+            }
+            if (status in listOf(BuildStatus.QUEUED, BuildStatus.IN_PROGRESS) && runId > 0L && activeRunCount <= 1) {
+                TextButton(
+                    onClick = { onCancel(runId) },
+                    enabled = !cancelling,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    if (cancelling) {
+                        LoadingIndicator(Modifier.size(18.dp))
+                    } else {
+                        Icon(Icons.Default.Cancel, null, modifier = Modifier.size(17.dp))
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (cancelling) "Cancelling" else "Cancel")
                 }
             }
         }
@@ -1644,11 +2039,12 @@ private data class BuildCatalogModule(
     val sources: List<String>
 )
 
-private data class BuildCatalogSelection(
-    val catalogModule: BuildCatalogModule,
-    val stage: String
+private data class BuildCustomModuleGroup(
+    val url: String,
+    val stages: List<String>,
+    val catalogModule: BuildCatalogModule?
 ) {
-    val key: String = "${catalogModule.module.repoUrl.trim().lowercase()}|${CustomExternalModuleStage.normalize(stage)}"
+    val key: String = url.trim().lowercase()
 }
 
 private fun mergeBuildCatalogModules(repositories: List<ModuleCatalogRepository>): List<BuildCatalogModule> =
@@ -1668,6 +2064,57 @@ private fun mergeBuildCatalogModules(repositories: List<ModuleCatalogRepository>
 
 private fun ModuleCatalogItem.catalogModuleTitle(): String =
     name.ifBlank { repoUrl.trim().trimEnd('/').substringAfterLast('/').removeSuffix(".git") }
+
+private fun groupBuildCustomExternalModules(
+    modules: List<CustomExternalModule>,
+    catalogModuleByUrl: Map<String, BuildCatalogModule>
+): List<BuildCustomModuleGroup> =
+    modules
+        .mapNotNull { module ->
+            val url = module.url.trim()
+            if (url.isBlank()) {
+                null
+            } else {
+                url to CustomExternalModuleStage.normalize(module.stage)
+            }
+        }
+        .groupBy { (url, _) -> url.lowercase() }
+        .values
+        .map { entries ->
+            val url = entries.first().first
+            val stages = CustomExternalModuleStage.options.filter { stage ->
+                entries.any { (_, entryStage) -> entryStage == stage }
+            }
+            BuildCustomModuleGroup(
+                url = url,
+                stages = stages,
+                catalogModule = catalogModuleByUrl[url.lowercase()]
+            )
+        }
+        .sortedWith(
+            compareBy<BuildCustomModuleGroup> { it.catalogModule == null }
+                .thenBy { it.displayName().lowercase(Locale.ROOT) }
+        )
+
+private fun BuildCustomModuleGroup.displayName(): String =
+    catalogModule?.module?.catalogModuleTitle()
+        ?: url.trim().trimEnd('/').removeSuffix(".git").substringAfterLast('/').ifBlank { "External modules" }
+
+private fun BuildCustomModuleGroup.subtitle(): String {
+    val stageLabel = stages.joinToString(" + ").ifBlank { "No stage selected" }
+    val catalog = catalogModule
+    return if (catalog != null) {
+        buildString {
+            append(stageLabel)
+            append(" · Source: ${catalog.sources.joinToString(", ")}")
+            if (catalog.module.version.isNotBlank()) append(" · v${catalog.module.version}")
+            appendLine()
+            append(catalog.module.description.ifBlank { catalog.module.repoUrl })
+        }
+    } else {
+        "$stageLabel\n$url"
+    }
+}
 
 @Composable
 fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
