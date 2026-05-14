@@ -63,7 +63,7 @@ class GitHubRepository(
         withContext(Dispatchers.IO) {
             val candidates = externalModuleConfCandidates(repositoryUrl)
             if (candidates.isEmpty()) {
-                return@withContext Result.Error("模块仓库链接格式不支持")
+                return@withContext Result.Error("Unsupported module repository URL format")
             }
 
             var lastError = ""
@@ -74,7 +74,7 @@ class GitHubRepository(
                     .build()
                 val response = runCatching { publicHttpClient.newCall(request).execute() }
                     .getOrElse {
-                        lastError = it.message ?: "网络请求失败"
+                        lastError = it.message ?: "Network request failed"
                         null
                     } ?: continue
 
@@ -88,7 +88,7 @@ class GitHubRepository(
                     return@withContext runCatching { parseExternalModuleConf(body) }
                         .fold(
                             onSuccess = { Result.Success(it) },
-                            onFailure = { Result.Error("module.conf 无效: ${it.message ?: "格式错误"}") }
+                            onFailure = { Result.Error("Invalid module.conf: ${it.message ?: "Malformed format"}") }
                         )
                 }
             }
@@ -100,7 +100,7 @@ class GitHubRepository(
         withContext(Dispatchers.IO) {
             val candidates = moduleCatalogIndexCandidates(repositoryUrl)
             if (candidates.isEmpty()) {
-                return@withContext Result.Error("模块仓库链接格式不支持")
+                return@withContext Result.Error("Unsupported module repository URL format")
             }
 
             var lastError = ""
@@ -111,23 +111,20 @@ class GitHubRepository(
                     .build()
                 val response = runCatching { publicHttpClient.newCall(request).execute() }
                     .getOrElse {
-                        lastError = it.message ?: "网络请求失败"
+                        lastError = it.message ?: "Network request failed"
                         null
                     } ?: continue
-
                 response.use { resp ->
                     if (!resp.isSuccessful) {
                         lastError = "HTTP ${resp.code}"
                         return@use
                     }
-
                     val body = resp.body?.string().orEmpty()
                     val catalog = runCatching { parseModuleCatalogDocument(body, repositoryUrl) }
                         .getOrElse {
-                            lastError = "JSON 解析失败: ${it.message ?: "格式错误"}"
+                            lastError = "JSON parse failed: ${it.message ?: "Malformed format"}"
                             return@use
                         }
-
                     return@withContext Result.Success(
                         ModuleCatalogFetchResult(
                             name = catalog.name,
@@ -138,8 +135,7 @@ class GitHubRepository(
                     )
                 }
             }
-
-            Result.Error("无法读取模块仓库 JSON: $lastError")
+            Result.Error("Failed to read module repository JSON: $lastError")
         }
 
     // ── User ──────────────────────────────────────────────────────────────
