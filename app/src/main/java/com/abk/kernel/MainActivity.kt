@@ -295,8 +295,8 @@ private fun TermsText(text: String) {
 
 private enum class AbkTab(val label: String) {
     Status("Status"),
-    Build("Build Kernel"),
-    Modules("Module Repo"),
+    Build("Build"),
+    Modules("Modules"),
     Flash("Flash"),
     RuntimeHome("Home"),
     InstalledModules("Installed Modules"),
