@@ -103,7 +103,9 @@ fun BuildScreen(
     val motionScheme = MaterialTheme.motionScheme
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val suggestedPlanName = remember(config) { vm.suggestedBuildPlanName(config) }
-    val ksuBranchOptions = listOf("Stable", "Dev")
+    val ksuBranchOptions = remember(config.cancelSusfs, config.kernelsuVariant) {
+        KernelSupport.ksuBranchOptions(config.cancelSusfs, config.kernelsuVariant)
+    }
     val virtualizationSupportOptions = remember(config.kernelVersion) {
         KernelSupport.virtualizationSupportOptions(config.kernelVersion)
     }
@@ -710,20 +712,30 @@ fun BuildScreen(
                     label = "KernelSU variant",
                     value = config.kernelsuVariant,
                     options = listOf("Official", "SukiSU", "ReSukiSU"),
-                    onSelect = { vm.updateBuildConfig(config.copy(kernelsuVariant = it)) }
+                    onSelect = {
+                        vm.updateBuildConfig(KernelSupport.normalize(config.copy(kernelsuVariant = it)))
+                    }
                 )
                 DropdownField(
                     label = "KSU branch",
-                    value = config.kernelsuBranch.takeIf { it in ksuBranchOptions } ?: "Stable",
+                    value = KernelSupport.normalizeKsuBranch(
+                        config.cancelSusfs,
+                        config.kernelsuVariant,
+                        config.kernelsuBranch
+                    ),
                     options = ksuBranchOptions,
-                    onSelect = { vm.updateBuildConfig(config.copy(kernelsuBranch = it)) }
+                    onSelect = {
+                        vm.updateBuildConfig(
+                            KernelSupport.normalize(config.copy(kernelsuBranch = it))
+                        )
+                    }
                 )
             }
 
-            // ── Feature Toggles ────────────────────────────────────────────
+            // ── 功能开关 ─────────────────────────────────────────────────
             SectionCard(title = "Feature Toggles") {
                 SwitchRow("Enable SUSFS", !config.cancelSusfs) {
-                    vm.updateBuildConfig(config.copy(cancelSusfs = !it))
+                    vm.updateBuildConfig(KernelSupport.normalize(config.copy(cancelSusfs = !it)))
                 }
                 SwitchRow("Enable ZRAM compression enhancement", config.useZram) {
                     vm.updateBuildConfig(config.copy(useZram = it))
