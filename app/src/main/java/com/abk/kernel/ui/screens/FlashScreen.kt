@@ -1416,7 +1416,7 @@ private fun normalizeReleaseParameterLabel(label: String): String? {
         compact.contains("kpm密码") -> "kpmPassword"
         compact.contains("re-kernel") || compact.contains("rekernel") -> "reKernelEnabled"
         compact.contains("虚拟化支持") -> "virtualizationSupport"
-        compact == "自定义注入" -> "customInjection
+        compact == "自定义注入" -> "customInjection"
         compact.contains("stockconfig") -> "stockConfig"
         else -> null
     }
@@ -1476,7 +1476,7 @@ private val RELEASE_PARAMETER_LABELS = listOf(
     "ZRAM 额外算法",
     "NTsync 补丁",
     "虚拟化支持",
-    "Custom injection",
+    "自定义注入",
     "内核版本",
     "子版本号",
     "补丁级别",
@@ -1487,12 +1487,12 @@ private val RELEASE_PARAMETER_LABELS = listOf(
     "ZRAM 增强",
     "BBG 补丁",
     "DDK LSM",
-    "Networking",
+    "网络增强",
     "KPM 功能",
     "KPM 密码",
     "Re-Kernel",
     "Artifact 数",
-    "源commit",
+    "源 commit",
     "源 run"
 ).sortedByDescending { it.length }
 
