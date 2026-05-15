@@ -1171,7 +1171,7 @@ private fun BuildParameterSummaryDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Off") }
+            TextButton(onClick = onDismiss) { Text("Close") }
         },
         dismissButton = if (error != null && !loading) {
             { TextButton(onClick = onRetry) { Text("Retry") } }
@@ -1217,7 +1217,7 @@ private fun PrebuiltParameterSummaryDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Off") }
+            TextButton(onClick = onDismiss) { Text("Close") }
         }
     )
 }
