@@ -99,7 +99,7 @@ object RootUtils {
     fun installModule(zipPath: String, onOutput: ((String) -> Unit)? = null): ShellResult {
         val safeZip = shellQuote(zipPath)
         val embeddedKsud = embeddedKsudPath()?.let(::shellQuote) ?: ""
-       val script = """
+        val script = """
             set -e
             echo "[ABK] Starting module installation"
             echo "[ABK] Module path: $safeZip"
