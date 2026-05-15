@@ -3896,7 +3896,7 @@ private fun sanitizeBuildSummaryValue(key: String, value: String): String {
     val normalized = value.trim().lowercase()
     return when {
         normalized.isBlank() -> "Default"
-        normalized in setOf("默认", "default", "None", "none", "not set") -> "默认"
+        normalized in setOf("默认", "default", "none", "not set") -> "Default"
         else -> "Set"
     }
 }
