@@ -184,7 +184,7 @@ fun FlashScreen(
     var deleteRemoteWorkflowRun by remember { mutableStateOf(false) }
     var showFlashConfirm by remember { mutableStateOf(false) }
     var showTerminal by remember { mutableStateOf(false) }
-    var terminalTitle by remember { mutableStateOf("终端") }
+    var terminalTitle by remember { mutableStateOf("Terminal") }
     var terminalCanReboot by remember { mutableStateOf(false) }
     var terminalRunning by remember { mutableStateOf(false) }
     var terminalLog by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -274,7 +274,7 @@ fun FlashScreen(
     fun copyDownloadedFilePath(item: DownloadedArtifact) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText(item.name, item.filePath))
-        Toast.makeText(context, "已复制文件路径", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "File path copied", Toast.LENGTH_SHORT).show()
     }
 
     fun appendTerminalOutput(line: String) {
@@ -286,16 +286,16 @@ fun FlashScreen(
     fun installManager(item: DownloadedArtifact) {
         if (!rootGranted) {
             showFailure(
-                "Root 未授权",
+                "Root not authorized",
                 listOf(
                     "${'$'} pm install -r ${item.name}",
-                    "当前处于部分激活状态，文件页只允许查看已下载文件。",
-                    "如需直接安装管理器应用，请先授予 Root 权限。"
+                    "Partial activation mode — file tab only shows downloaded files.",
+                    "To install the manager app directly, please grant root access first."
                 )
             )
             return
         }
-        terminalTitle = "安装管理器 APK"
+        terminalTitle = "Install Manager APK"
         terminalCanReboot = false
         terminalRunning = true
         terminalSuccess = null
@@ -303,7 +303,7 @@ fun FlashScreen(
             "${'$'} pm install -r ${item.name}",
             "file: ${item.filePath}",
             "",
-            "等待 root shell 返回，请不要退出应用..."
+            "Waiting for root shell. Do not close the app…"
         )
         showTerminal = true
         scope.launch {
@@ -321,7 +321,7 @@ fun FlashScreen(
                 "file: ${item.filePath}",
                 ""
             ) + result.output.ifEmpty {
-                listOf(if (result.success) "命令执行完成，无输出。" else "命令执行失败，但未返回日志。")
+                listOf(if (result.success) "Command completed, no output." else "Command failed, no log returned.")
             }
         }
     }
@@ -329,11 +329,11 @@ fun FlashScreen(
     fun startFlash(item: DownloadedArtifact) {
         if (!rootGranted) {
             showFailure(
-                "Root 未授权",
+                "Root not authorized",
                 listOf(
                     "${'$'} ${flashCommandPreview(item)}",
-                    "当前处于部分激活状态，文件页只允许查看已下载文件。",
-                    "如需刷写或安装模块，请先授予 Root 权限。"
+                    "Partial activation mode — file tab only shows downloaded files.",
+                    "To flash or install modules, please grant root access first."
                 )
             )
             return
@@ -346,7 +346,7 @@ fun FlashScreen(
             "${'$'} ${flashCommandPreview(item)}",
             "file: ${item.filePath}",
             "",
-            "等待 root shell 返回，请不要退出应用..."
+            "Waiting for root shell. Do not close the app…"
         )
         showTerminal = true
         scope.launch {
@@ -357,7 +357,7 @@ fun FlashScreen(
                         ArtifactType.ANYKERNEL3 -> RootUtils.flashAnyKernel3(context, item.filePath, ::appendTerminalOutput)
                         ArtifactType.SUSFS_MODULE -> RootUtils.installModule(item.filePath, ::appendTerminalOutput)
                         ArtifactType.KSU_MANAGER -> RootUtils.installApk(context, item.filePath, ::appendTerminalOutput)
-                        else -> RootUtils.ShellResult(false, listOf("不支持此文件类型的自动刷写"))
+                        else -> RootUtils.ShellResult(false, listOf("This file type does not support auto-flash"))
                     }
                 }.getOrElse { error ->
                     RootUtils.ShellResult(false, listOf(error.message ?: error::class.java.simpleName))
@@ -370,7 +370,7 @@ fun FlashScreen(
                 "file: ${item.filePath}",
                 ""
             ) + result.output.ifEmpty {
-                listOf(if (result.success) "命令执行完成，无输出。" else "命令执行失败，但未返回日志。")
+                listOf(if (result.success) "Command completed, no output." else "Command failed, no log returned.")
             }
         }
     }
@@ -401,11 +401,11 @@ fun FlashScreen(
         AlertDialog(
             onDismissRequest = { vm.clearError() },
             icon = { Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("操作失败") },
+            title = { Text("Operation failed") },
             text = { Text(error) },
             confirmButton = {
                 TextButton(onClick = { vm.clearError() }) {
-                    Text("知道了")
+                    Text("Got it")
                 }
             }
         )
@@ -415,8 +415,8 @@ fun FlashScreen(
         AlertDialog(
             onDismissRequest = { deleteFileTarget = null },
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("删除文件") },
-            text = { Text("将删除本地文件记录和已下载文件：\n${item.name}") },
+            title = { Text("Delete file") },
+            text = { Text("This will delete the local record and downloaded file:\n${item.name}") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -424,7 +424,7 @@ fun FlashScreen(
                         deleteFileTarget = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("删除") }
+                ) { Text("Delete") }
             },
             dismissButton = {
                 TextButton(onClick = { deleteFileTarget = null }) { Text(stringResource(R.string.cancel)) }
@@ -436,16 +436,14 @@ fun FlashScreen(
         AlertDialog(
             onDismissRequest = { deleteWorkflowTarget = null },
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(if (group.runId == PREBUILT_GKI_RUN_ID) "删除预编译 GKI 文件" else "删除工作流记录") },
+            title = { Text(if (group.runId == PREBUILT_GKI_RUN_ID) "Delete prebuilt GKI files" else "Delete workflow record") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         if (group.runId == PREBUILT_GKI_RUN_ID) {
-                            "将删除本地已下载的预编译 GKI 文件。"
+                            "Local prebuilt GKI files will be deleted."
                         } else {
-                            "将删除此工作流在 ABK 中缓存的产物记录，并删除本地已下载文件。\n\n工作流 ${
-                                if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"
-                            }"
+                            "This will delete the artifact cache for this workflow in ABK and remove locally downloaded files.\n\nWorkflow ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}"
                         }
                     )
                     if (group.runId > 0) {
@@ -459,7 +457,7 @@ fun FlashScreen(
                                 checked = deleteRemoteWorkflowRun,
                                 onCheckedChange = { deleteRemoteWorkflowRun = it }
                             )
-                            Text("同时删除远程 GitHub Actions 工作流记录")
+                            Text("Also delete the remote GitHub Actions workflow run")
                         }
                     }
                 }
@@ -475,7 +473,7 @@ fun FlashScreen(
                         deleteRemoteWorkflowRun = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("删除") }
+                ) { Text("Delete") }
             },
             dismissButton = {
                 TextButton(onClick = {
@@ -531,7 +529,7 @@ fun FlashScreen(
             containerColor = Color.Transparent,
             topBar = {
                 ExpressiveTopBar(
-                    title = if (rootGranted) stringResource(R.string.flash_title) else "文件",
+                    title = if (rootGranted) stringResource(R.string.flash_title) else "Files",
                     scrollBehavior = scrollBehavior
                 )
             }
@@ -572,7 +570,7 @@ fun FlashScreen(
                             ) {
                                 Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("联网刷新构建产物")
+                                Text("Refresh build artifacts")
                             }
                         }
 
@@ -599,11 +597,11 @@ fun FlashScreen(
                         } else {
                             item {
                                 ExpressiveEmptyState(
-                                    title = if (rootGranted) "暂无可刷写产物" else "暂无可查看文件",
+                                    title = if (rootGranted) "No flashable artifacts" else "No files available",
                                     subtitle = if (rootGranted) {
-                                        "构建成功后，ABK 会联网同步并按工作流整理产物。"
+                                        "After a successful build, ABK will sync and organize artifacts by workflow."
                                     } else {
-                                        "构建成功后，可在这里下载并查看产物文件。"
+                                        "After a successful build, you can download and view artifact files here."
                                     },
                                     icon = Icons.Default.Inbox
                                 )
@@ -624,14 +622,14 @@ fun FlashScreen(
                             when {
                                 state.isLoadingPrebuiltGkiReleases -> {
                                     item {
-                                        LoadingRow("正在获取 Release")
+                                        LoadingRow("Fetching releases…")
                                     }
                                 }
                                 state.prebuiltGkiReleases.isEmpty() -> {
                                     item {
                                         ExpressiveEmptyState(
-                                            title = "暂无预编译 GKI Release",
-                                            subtitle = "本仓库 Release 中暂未发现可浏览的版本。",
+                                            title = "No prebuilt GKI releases",
+                                            subtitle = "No browsable releases found in this repository.",
                                             icon = Icons.Default.CloudDownload
                                         )
                                     }
@@ -822,8 +820,8 @@ fun FlashScreen(
                         } else {
                             item {
                                 ExpressiveEmptyState(
-                                    title = "工作流记录不可用",
-                                    subtitle = "该工作流产物已被刷新或删除。",
+                                    title = "Workflow record unavailable",
+                                    subtitle = "This workflow artifact has been refreshed or deleted.",
                                     icon = Icons.Default.Inbox
                                 )
                             }
@@ -904,17 +902,17 @@ fun FlashScreen(
                             when {
                                 selectedPrebuiltAssetsLoading -> {
                                     item {
-                                        LoadingRow("正在获取 ${release.name} 的预编译 GKI")
+                                        LoadingRow("Fetching prebuilt GKI for ${release.name}…")
                                     }
                                 }
                                 filteredPrebuiltAssets.isEmpty() -> {
                                     item {
                                         ExpressiveEmptyState(
-                                            title = "未找到匹配资产",
+                                            title = "No matching assets found",
                                             subtitle = if (prebuiltFilter.onlyMatches) {
-                                                "当前 release 没有匹配筛选条件的 GKI、boot、img 或 AK3 资产。"
+                                                "No GKI, boot, img or AK3 assets match the current filter."
                                             } else {
-                                                "当前 release 没有可识别的预编译 GKI 资产。"
+                                                "No recognizable prebuilt GKI assets in this release."
                                             },
                                             icon = Icons.Default.Inbox
                                         )
@@ -945,8 +943,8 @@ fun FlashScreen(
                         } else {
                             item {
                                 ExpressiveEmptyState(
-                                    title = "Release 不可用",
-                                    subtitle = "该预编译 GKI Release 已被刷新或删除。",
+                                    title = "Release unavailable",
+                                    subtitle = "This prebuilt GKI release has been refreshed or deleted.",
                                     icon = Icons.Default.CloudDownload
                                 )
                             }
@@ -1076,34 +1074,34 @@ private fun FlashHero(
     rootGranted: Boolean
 ) {
     ExpressiveHeroCard(
-        title = if (rootGranted) "产物中心" else "文件中心",
+        title = if (rootGranted) "Artifact Center" else "File Center",
         subtitle = if (rootGranted) {
-            "先选工作流，再处理内核、管理器和模块。"
+            "Select a workflow first, then handle the kernel, manager, and modules."
         } else {
-            "部分激活状态下只提供产物下载和文件查看。"
+            "Partial activation mode: artifact download and file viewing only."
         },
         icon = if (rootGranted) Icons.Default.FlashOn else Icons.Default.FolderOpen,
         containerColor = MaterialTheme.colorScheme.tertiaryContainer,
         contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
         badge = {
             ExpressiveStatusChip(
-                label = "$availableCount 个源产物",
+                label = "$availableCount source artifacts",
                 icon = Icons.Default.CloudDownload,
                 color = MaterialTheme.colorScheme.tertiary
             )
             ExpressiveStatusChip(
-                label = "$downloadedCount 个已下载",
+                label = "$downloadedCount downloaded",
                 icon = Icons.Default.Inventory2,
                 color = MaterialTheme.colorScheme.secondary
             )
             ExpressiveStatusChip(
                 label = when (buildStatus) {
-                    BuildStatus.SUCCESS -> "构建成功"
-                    BuildStatus.IN_PROGRESS -> "构建中"
-                    BuildStatus.QUEUED -> "排队中"
-                    BuildStatus.FAILURE -> "构建失败"
-                    BuildStatus.CANCELLED -> "已取消"
-                    BuildStatus.IDLE -> "等待构建"
+                    BuildStatus.SUCCESS -> "Success"
+                    BuildStatus.IN_PROGRESS -> "Building"
+                    BuildStatus.QUEUED -> "Queued"
+                    BuildStatus.FAILURE -> "Failed"
+                    BuildStatus.CANCELLED -> "Cancelled"
+                    BuildStatus.IDLE -> "Awaiting build"
                 },
                 icon = Icons.Default.RunCircle,
                 color = when (buildStatus) {
@@ -1128,7 +1126,7 @@ private fun BuildParameterSummaryDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Tune, contentDescription = null) },
-        title = { Text("参数详情") },
+        title = { Text("Parameter details") },
         text = {
             Column(
                 modifier = Modifier
@@ -1137,10 +1135,10 @@ private fun BuildParameterSummaryDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ParameterSection("工作流") {
-                    ParameterRow("编号", if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}")
-                    ParameterRow("标题", group.runTitle)
-                    ParameterRow("产物", "${group.remote.size} 个源产物 / ${group.local.size} 个已下载")
+                ParameterSection("Workflow") {
+                    ParameterRow("Number", if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}")
+                    ParameterRow("Title", group.runTitle)
+                    ParameterRow("Artifacts", "${group.remote.size} source artifacts / ${group.local.size} downloaded")
                 }
                 when {
                     summary != null -> {
@@ -1152,7 +1150,7 @@ private fun BuildParameterSummaryDialog(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             LoadingIndicator(Modifier.size(24.dp))
-                            Text("正在读取构建信息摘要")
+                            Text("Reading build parameter summary…")
                         }
                     }
                     error != null -> {
@@ -1164,7 +1162,7 @@ private fun BuildParameterSummaryDialog(
                     }
                     else -> {
                         Text(
-                            text = "暂无参数详情",
+                            text = "No parameter details available",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1173,10 +1171,10 @@ private fun BuildParameterSummaryDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text("Off") }
         },
         dismissButton = if (error != null && !loading) {
-            { TextButton(onClick = onRetry) { Text("重试") } }
+            { TextButton(onClick = onRetry) { Text("Retry") } }
         } else {
             null
         }
@@ -1192,7 +1190,7 @@ private fun PrebuiltParameterSummaryDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Tune, contentDescription = null) },
-        title = { Text("参数详情") },
+        title = { Text("Parameter details") },
         text = {
             Column(
                 modifier = Modifier
@@ -1202,16 +1200,16 @@ private fun PrebuiltParameterSummaryDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 ParameterSection("Release") {
-                    ParameterRow("名称", release.name)
+                    ParameterRow("Name", release.name)
                     ParameterRow("Tag", release.tagName)
-                    ParameterRow("发布时间", releaseDateLabel(release.publishedAt))
-                    ParameterRow("资产", if (release.assetCount > 0) "${release.assetCount} 个资产" else "未知")
+                    ParameterRow("Published", releaseDateLabel(release.publishedAt))
+                    ParameterRow("Assets", if (release.assetCount > 0) "${release.assetCount} assets" else "Unknown")
                 }
                 if (summary != null) {
                     ParameterSummarySections(summary)
                 } else {
                     Text(
-                        text = "Release 内容中没有可解析的参数矩阵",
+                        text = "No parseable parameter matrix in release body",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1219,43 +1217,43 @@ private fun PrebuiltParameterSummaryDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text("Off") }
         }
     )
 }
 
 @Composable
 private fun ParameterSummarySections(summary: BuildParameterSummary) {
-    ParameterSection("版本参数") {
-        ParameterRow("Android 版本", summary.androidVersion)
-        ParameterRow("内核版本", summary.kernelVersion)
-        ParameterRow("子版本号", summary.subLevel)
-        ParameterRow("补丁级别", summary.osPatchLevel)
-        ParameterRow("构建时间", summary.buildTime)
+    ParameterSection("Version parameters") {
+        ParameterRow("Android version", summary.androidVersion)
+        ParameterRow("Kernel version", summary.kernelVersion)
+        ParameterRow("Sub-level", summary.subLevel)
+        ParameterRow("Patch level", summary.osPatchLevel)
+        ParameterRow("Build time", summary.buildTime)
     }
     ParameterSection("KernelSU") {
-        ParameterRow("KSU 变体", summary.ksuVariant)
-        ParameterRow("KSU 分支", summary.ksuBranch)
-        ParameterRow("SUSFS 状态", summary.susfsEnabled)
+        ParameterRow("KSU variant", summary.ksuVariant)
+        ParameterRow("KSU branch", summary.ksuBranch)
+        ParameterRow("SUSFS status", summary.susfsEnabled)
     }
-    ParameterSection("补丁与功能") {
-        ParameterRow("ZRAM 增强", summary.zramEnabled)
-        ParameterRow("ZRAM 完整算法", summary.zramFullAlgo)
-        ParameterRow("ZRAM 额外算法", summary.zramExtraAlgos)
-        ParameterRow("BBG 补丁", summary.bbgEnabled)
+    ParameterSection("Patches & Features") {
+        ParameterRow("ZRAM enhancement", summary.zramEnabled)
+        ParameterRow("ZRAM full algorithms", summary.zramFullAlgo)
+        ParameterRow("ZRAM extra algorithms", summary.zramExtraAlgos)
+        ParameterRow("BBG patch", summary.bbgEnabled)
         ParameterRow("DDK LSM", summary.ddkLsm)
-        ParameterRow("NTsync 补丁", summary.ntsyncEnabled)
-        ParameterRow("网络增强", summary.networkingEnabled)
-        ParameterRow("KPM 功能", summary.kpmEnabled)
-        ParameterRow("KPM 密码", summary.kpmPassword)
+        ParameterRow("NTsync patch", summary.ntsyncEnabled)
+        ParameterRow("Networking", summary.networkingEnabled)
+        ParameterRow("KPM feature", summary.kpmEnabled)
+        ParameterRow("KPM password", summary.kpmPassword)
         ParameterRow("Re-Kernel", summary.reKernelEnabled)
-        ParameterRow("虚拟化支持", summary.virtualizationSupport)
-        ParameterRow("自定义注入", summary.customInjection)
+        ParameterRow("Virtualization support", summary.virtualizationSupport)
+        ParameterRow("Custom injection", summary.customInjection)
         ParameterRow("Stock Config", summary.stockConfig)
     }
     val extraRows = summary.extraRows.orEmpty()
     if (extraRows.isNotEmpty()) {
-        ParameterSection("额外信息") {
+        ParameterSection("Extra info") {
             extraRows.forEach { (label, value) ->
                 ParameterRow(label, value)
             }
@@ -1305,10 +1303,10 @@ private fun ParameterRow(label: String, value: String) {
 private fun parameterDisplayValue(value: String): String {
     val trimmed = value.trim()
     return when (trimmed.lowercase()) {
-        "" -> "未知"
-        "true" -> "启用"
-        "false" -> "关闭"
-        "none" -> "无"
+        "" -> "Unknown"
+        "true" -> "Enabled"
+        "false" -> "Off"
+        "none" -> "None"
         else -> trimmed
     }
 }
@@ -1322,7 +1320,7 @@ private fun parsePrebuiltGkiParameterSummary(release: PrebuiltGkiRelease): Build
         if (key != null) {
             values[key] = sanitizeReleaseParameterValue(key, value)
         } else if (isReleaseExtraParameterLabel(label)) {
-            extraRows[label.trim()] = value.ifBlank { "无" }
+            extraRows[label.trim()] = value.ifBlank { "None" }
         }
     }
     if (values.isEmpty() && extraRows.isEmpty()) return null
@@ -1366,7 +1364,7 @@ private fun parseReleaseBodyParameterRows(body: String): List<Pair<String, Strin
         .mapNotNull(::parseReleaseBodyParameterRow)
         .filterNot { (label, value) ->
             val normalized = label.replace(Regex("\\s+"), "")
-            normalized == "项目" && value.replace(Regex("\\s+"), "") == "内容"
+            normalized == "Parameter" && value.replace(Regex("\\s+"), "") == "Value"
         }
         .toList()
 }
@@ -1399,38 +1397,38 @@ private fun parseReleaseBodyParameterRow(line: String): Pair<String, String>? {
 private fun normalizeReleaseParameterLabel(label: String): String? {
     val compact = label.replace(Regex("\\s+"), "").lowercase()
     return when {
-        compact.contains("android版本") -> "androidVersion"
-        compact.contains("内核版本") -> "kernelVersion"
-        compact.contains("子版本号") -> "subLevel"
-        compact.contains("补丁级别") -> "osPatchLevel"
-        compact.contains("ksu变体") -> "ksuVariant"
-        compact.contains("ksu分支") -> "ksuBranch"
-        compact.contains("构建时间") -> "buildTime"
-        compact.contains("susfs状态") -> "susfsEnabled"
-        compact.contains("zram增强") -> "zramEnabled"
-        compact.contains("zram完整算法") -> "zramFullAlgo"
-        compact.contains("zram额外算法") -> "zramExtraAlgos"
-        compact.contains("bbg补丁") -> "bbgEnabled"
+        compact.contains("androidversion") -> "androidVersion"
+        compact.contains("kernelversion") -> "kernelVersion"
+        compact.contains("sub-level") || compact.contains("sublevel") -> "subLevel"
+        compact.contains("patchlevel") || compact.contains("ospatchlevel") -> "osPatchLevel"
+        compact.contains("ksuvariant") -> "ksuVariant"
+        compact.contains("ksubranch") -> "ksuBranch"
+        compact.contains("buildtime") -> "buildTime"
+        compact.contains("susfsenabled") -> "susfsEnabled"
+        compact.contains("zramenabled") -> "zramEnabled"
+        compact.contains("zramfullalgo") -> "zramFullAlgo"
+        compact.contains("zramextraalgos") -> "zramExtraAlgos"
+        compact.contains("bbgenabled") -> "bbgEnabled"
         compact.contains("ddklsm") -> "ddkLsm"
-        compact.contains("ntsync补丁") -> "ntsyncEnabled"
-        compact.contains("网络增强") || compact.contains("networking增强") || compact.contains("networing增强") -> "networkingEnabled"
-        compact.contains("kpm功能") -> "kpmEnabled"
-        compact.contains("kpm密码") -> "kpmPassword"
+        compact.contains("ntsyncenabled") || compact.contains("ntsynced") -> "ntsyncEnabled"
+        compact.contains("networkingenabled") || compact.contains("networking") -> "networkingEnabled"
+        compact.contains("kpmenabled") -> "kpmEnabled"
+        compact.contains("kpmpassword") -> "kpmPassword"
         compact.contains("re-kernel") || compact.contains("rekernel") -> "reKernelEnabled"
-        compact.contains("虚拟化支持") -> "virtualizationSupport"
-        compact == "自定义注入" -> "customInjection"
+        compact.contains("virtualizationsupport") -> "virtualizationSupport"
+        compact == "custominjection" -> "customInjection"
         compact.contains("stockconfig") -> "stockConfig"
         else -> null
     }
 }
 
 private fun sanitizeReleaseParameterValue(key: String, value: String): String {
-    if (key != "kpmPassword") return value.ifBlank { "无" }
+    if (key != "kpmPassword") return value.ifBlank { "None" }
     val normalized = value.trim().lowercase()
     return when {
-        normalized.isBlank() -> "默认"
-        normalized in setOf("默认", "default", "无", "none", "not set") -> "默认"
-        else -> "已设置"
+        normalized.isBlank() -> "Default"
+        normalized in setOf("default", "none", "not set") -> "Default"
+        else -> "Set"
     }
 }
 
@@ -1466,47 +1464,47 @@ private data class PrebuiltVersionFields(
 )
 
 private val RELEASE_PARAMETER_LABELS = listOf(
-    "自定义注入参数列表",
-    "网络增强 (IPSet + BBR)",
-    "Release asset 数",
-    "5.10 修订版本",
-    "自定义版本名",
-    "一加 8E 支持",
-    "Android 版本",
+    "Custom injection parameter list",
+    "Networking (IPSet + BBR)",
+    "Release asset count",
+    "5.10 revision",
+    "Custom version name",
+    "OnePlus 8E support",
+    "Android version",
     "Stock Config",
-    "ZRAM 完整算法",
-    "ZRAM 额外算法",
-    "NTsync 补丁",
-    "虚拟化支持",
-    "自定义注入",
-    "内核版本",
-    "子版本号",
-    "补丁级别",
-    "KSU 变体",
-    "KSU 分支",
-    "构建时间",
-    "SUSFS 状态",
-    "ZRAM 增强",
-    "BBG 补丁",
+    "ZRAM full algorithms",
+    "ZRAM extra algorithms",
+    "NTsync patch",
+    "Virtualization support",
+    "Custom injection",
+    "Kernel version",
+    "Sub-level",
+    "Patch level",
+    "KSU variant",
+    "KSU branch",
+    "Build time",
+    "SUSFS status",
+    "ZRAM enhancement",
+    "BBG patch",
     "DDK LSM",
-    "网络增强",
-    "KPM 功能",
-    "KPM 密码",
+    "Networking",
+    "KPM feature",
+    "KPM password",
     "Re-Kernel",
-    "Artifact 数",
-    "源 commit",
-    "源 run"
+    "Artifact count",
+    "Source commit",
+    "Source run"
 ).sortedByDescending { it.length }
 
 private val RELEASE_EXTRA_PARAMETER_LABELS = setOf(
-    "源run",
-    "源commit",
-    "artifact数",
-    "releaseasset数",
-    "自定义版本名",
-    "5.10修订版本",
-    "一加8e支持",
-    "自定义注入参数列表"
+    "sourcerun",
+    "sourcecommit",
+    "artifactcount",
+    "releaseassetcount",
+    "Custom version name",
+    "5.10revision",
+    "oneplus8esupport",
+    "Custom injection parameter list"
 )
 
 @Composable
@@ -1545,9 +1543,9 @@ private fun PrebuiltReleaseListHeader(
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
         Column(Modifier.weight(1f)) {
-            Text("预编译 GKI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Prebuilt GKI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "$releaseCount 个 Release · 进入子页面后筛选资产",
+                "$releaseCount release(s) · Enter to filter assets",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1555,7 +1553,7 @@ private fun PrebuiltReleaseListHeader(
         OutlinedButton(onClick = onRefresh, enabled = !isLoading) {
             Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
-            Text("刷新")
+            Text("Refresh")
         }
     }
 }
@@ -1596,11 +1594,11 @@ private fun PrebuiltReleaseCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 ExpressiveStatusChip(
-                    label = if (release.assetCount > 0) "${release.assetCount} 个资产" else "点进后加载资产",
+                    label = if (release.assetCount > 0) "${release.assetCount} assets" else "Tap to load assets",
                     color = MaterialTheme.colorScheme.primary
                 )
-                ExpressiveStatusChip(label = "手动下载", color = MaterialTheme.colorScheme.secondary)
-                ExpressiveStatusChip(label = "分 Release 筛选", color = MaterialTheme.colorScheme.tertiary)
+                ExpressiveStatusChip(label = "Manual download", color = MaterialTheme.colorScheme.secondary)
+                ExpressiveStatusChip(label = "Filter per release", color = MaterialTheme.colorScheme.tertiary)
             }
         }
     }
@@ -1622,19 +1620,19 @@ private fun PrebuiltReleaseDetailHeader(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
             }
             Text(
-                text = "$visibleCount / $sourceCount 个可见资产",
+                text = "$visibleCount / $sourceCount visible assets",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = onShowParameters) {
-                Icon(Icons.Default.Tune, contentDescription = "参数详情")
+                Icon(Icons.Default.Tune, contentDescription = "Parameter details")
             }
             IconButton(onClick = onRefresh) {
-                Icon(Icons.Default.Refresh, contentDescription = "刷新资产")
+                Icon(Icons.Default.Refresh, contentDescription = "Refresh assets")
             }
         }
     }
@@ -1659,13 +1657,13 @@ private fun PrebuiltGkiFilterCard(
     }
 
     ExpressiveSectionCard(
-        title = "筛选器",
-        subtitle = "未选择的条件视为不限",
+        title = "Filter",
+        subtitle = "Unset conditions are treated as unrestricted",
         icon = Icons.Default.Tune
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             PrebuiltDropdownField(
-                label = "Android 版本",
+                label = "Android version",
                 value = filter.androidVersion,
                 options = androidOptions,
                 onSelect = { updateFilter(filter.copy(androidVersion = it)) },
@@ -1673,14 +1671,14 @@ private fun PrebuiltGkiFilterCard(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PrebuiltDropdownField(
-                    label = "内核版本",
+                    label = "Kernel version",
                     value = filter.kernelVersion,
                     options = kernelOptions,
                     onSelect = { updateFilter(filter.copy(kernelVersion = it)) },
                     modifier = Modifier.weight(1f)
                 )
                 PrebuiltDropdownField(
-                    label = "小版本",
+                    label = "Sub-level",
                     value = filter.subLevel,
                     options = subLevelOptions,
                     onSelect = { updateFilter(filter.copy(subLevel = it)) },
@@ -1688,7 +1686,7 @@ private fun PrebuiltGkiFilterCard(
                 )
             }
             PrebuiltDropdownField(
-                label = "补丁级别",
+                label = "Patch level",
                 value = filter.osPatchLevel,
                 options = patchOptions,
                 onSelect = { updateFilter(filter.copy(osPatchLevel = it)) },
@@ -1704,7 +1702,7 @@ private fun PrebuiltGkiFilterCard(
                     checked = filter.onlyMatches,
                     onCheckedChange = { updateFilter(filter.copy(onlyMatches = it)) }
                 )
-                Text("只看匹配当前筛选条件的资产")
+                Text("Show only assets matching current filter")
             }
         }
     }
@@ -1791,13 +1789,13 @@ private fun PrebuiltGkiAssetCard(
                 icon = artifactIcon(type),
                 title = asset.name,
                 subtitle = "${asset.releaseTag} · ${DownloadUtils.formatSize(asset.sizeBytes)}",
-                chip = if (recommended) "设备推荐" else "Release"
+                chip = if (recommended) "Device recommended" else "Release"
             )
 
             when {
                 progress != null -> {
                     LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth())
-                    Text("下载中 $progress%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Downloading $progress%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 downloadedFiles.isEmpty() -> {
                     Button(
@@ -1806,7 +1804,7 @@ private fun PrebuiltGkiAssetCard(
                     ) {
                         Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("下载预编译 GKI")
+                        Text("Download prebuilt GKI")
                     }
                 }
                 else -> {
@@ -1868,9 +1866,9 @@ private fun WorkflowRunCard(
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = if (group.runId == PREBUILT_GKI_RUN_ID) {
-                            "预编译 GKI"
+                            "Prebuilt GKI"
                         } else {
-                            "工作流 ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}"
+                            "Workflow ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}"
                         },
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold
@@ -1884,7 +1882,7 @@ private fun WorkflowRunCard(
                     )
                 }
                 IconButton(onClick = onShowParameters) {
-                    Icon(Icons.Default.Tune, contentDescription = "参数详情")
+                    Icon(Icons.Default.Tune, contentDescription = "Parameter details")
                 }
                 if (active) {
                     IconButton(onClick = onCancel, enabled = !cancelling) {
@@ -1893,22 +1891,22 @@ private fun WorkflowRunCard(
                         } else {
                             Icon(
                                 Icons.Default.Cancel,
-                                contentDescription = "取消工作流",
+                                contentDescription = "Cancel workflow",
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
                     }
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "删除工作流")
+                    Icon(Icons.Default.Delete, contentDescription = "Delete workflow")
                 }
             }
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                ExpressiveStatusChip(label = "$sourceCount 个源产物", color = MaterialTheme.colorScheme.primary)
-                ExpressiveStatusChip(label = "$downloadedCount 个已下载", color = MaterialTheme.colorScheme.secondary)
+                ExpressiveStatusChip(label = "$sourceCount source artifact(s)", color = MaterialTheme.colorScheme.primary)
+                ExpressiveStatusChip(label = "$downloadedCount downloaded", color = MaterialTheme.colorScheme.secondary)
                 categories.forEach {
                     ExpressiveStatusChip(label = it.label(), color = MaterialTheme.colorScheme.surfaceTint)
                 }
@@ -1926,28 +1924,28 @@ private fun WorkflowDetailHeader(
 ) {
     ExpressiveSectionCard(
         title = if (group.runId == PREBUILT_GKI_RUN_ID) {
-            "预编译 GKI"
+            "Prebuilt GKI"
         } else {
-            "工作流 ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}"
+            "Workflow ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}"
         },
         subtitle = group.runTitle,
         icon = Icons.Default.FolderSpecial
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
             }
             Text(
-                text = "${group.remote.size} 个源产物 / ${group.local.size} 个已下载",
+                text = "${group.remote.size} source artifacts / ${group.local.size} downloaded",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = onShowParameters) {
-                Icon(Icons.Default.Tune, contentDescription = "参数详情")
+                Icon(Icons.Default.Tune, contentDescription = "Parameter details")
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "删除工作流")
+                Icon(Icons.Default.Delete, contentDescription = "Delete workflow")
             }
         }
     }
@@ -2000,13 +1998,13 @@ private fun ArtifactSourceCard(
                 icon = artifactIcon(type),
                 title = artifact.name,
                 subtitle = "${artifactTypeLabel(type)} · ${DownloadUtils.formatSize(artifact.sizeInBytes)}",
-                chip = if (autoDownloadEligible) "下次自动" else artifactTypeLabel(type)
+                chip = if (autoDownloadEligible) "Auto next" else artifactTypeLabel(type)
             )
 
             when {
                 progress != null -> {
                     LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth())
-                    Text("下载中 $progress%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Downloading $progress%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 downloadedFiles.isEmpty() -> {
                     Button(
@@ -2015,7 +2013,7 @@ private fun ArtifactSourceCard(
                     ) {
                         Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("下载")
+                        Text("Download")
                     }
                 }
                 else -> {
@@ -2056,7 +2054,7 @@ private fun LocalOnlyArtifactCard(
                 icon = artifactIcon(artifact.type),
                 title = artifact.name,
                 subtitle = "${artifactTypeLabel(artifact.type)} · ${DownloadUtils.formatSize(artifact.sizeBytes)}",
-                chip = "本地文件"
+                chip = "Local file"
             )
             DownloadedOutputRow(
                 artifact = artifact,
@@ -2138,7 +2136,7 @@ private fun DownloadedOutputRow(
             IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Default.Delete,
-                    contentDescription = "删除文件",
+                    contentDescription = "Delete file",
                     tint = MaterialTheme.colorScheme.error
                 )
             }
@@ -2150,7 +2148,7 @@ private fun DownloadedOutputRow(
             ) {
                 Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("复制路径")
+                Text("Copy path")
             }
             if (allowRootActions) {
                 when (artifact.type) {
@@ -2181,7 +2179,7 @@ private fun DownloadedOutputRow(
                     ) {
                         Icon(Icons.Default.InstallMobile, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("安装")
+                        Text("Install")
                     }
                     else -> {}
                 }
@@ -2223,7 +2221,7 @@ private fun FlashTerminalDialog(
                 else -> Icon(Icons.Default.Terminal, null)
             }
         },
-        title = { Text(if (running) "正在执行 · $title" else title) },
+        title = { Text(if (running) "Running: $title" else title) },
         text = {
             Surface(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 190.dp, max = 360.dp),
@@ -2256,7 +2254,7 @@ private fun FlashTerminalDialog(
         },
         confirmButton = {
             if (running) {
-                TextButton(onClick = {}, enabled = false) { Text("执行中") }
+                TextButton(onClick = {}, enabled = false) { Text("Running") }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onClose) { Text(stringResource(R.string.close)) }
@@ -2267,7 +2265,7 @@ private fun FlashTerminalDialog(
                         ) {
                             Icon(Icons.Default.RestartAlt, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("重启")
+                            Text("Reboot")
                         }
                     }
                 }
@@ -2290,7 +2288,7 @@ private fun buildWorkflowGroups(
             runId = runId,
             runTitle = firstRemote?.runTitle?.ifBlank { null }
                 ?: firstLocal?.runTitle?.ifBlank { null }
-                ?: "未关联工作流",
+                ?: "Workflow not linked",
             runNumber = firstRemote?.runNumber ?: firstLocal?.runNumber ?: 0,
             remote = remote,
             local = local
@@ -2322,26 +2320,26 @@ private fun artifactIcon(type: ArtifactType) = when (type) {
 }
 
 private fun artifactTypeLabel(type: ArtifactType) = when (type) {
-    ArtifactType.KERNEL_PACKAGE -> "内核构建包"
-    ArtifactType.KERNEL_IMG -> "内核镜像"
-    ArtifactType.ANYKERNEL3 -> "AnyKernel3 刷写包"
-    ArtifactType.KSU_MANAGER -> "KernelSU 管理器"
-    ArtifactType.SUSFS_MODULE -> "SUSFS 模块"
-    ArtifactType.OTHER -> "其他文件"
+    ArtifactType.KERNEL_PACKAGE -> "Kernel build package"
+    ArtifactType.KERNEL_IMG -> "Kernel image"
+    ArtifactType.ANYKERNEL3 -> "AnyKernel3 flash package"
+    ArtifactType.KSU_MANAGER -> "KernelSU manager"
+    ArtifactType.SUSFS_MODULE -> "SUSFS module"
+    ArtifactType.OTHER -> "Other file"
 }
 
 private fun flashButtonLabel(type: ArtifactType) = when (type) {
-    ArtifactType.KERNEL_IMG -> "刷写"
-    ArtifactType.ANYKERNEL3 -> "刷入 AK3"
-    ArtifactType.SUSFS_MODULE -> "安装模块"
-    else -> "执行"
+    ArtifactType.KERNEL_IMG -> "Flash"
+    ArtifactType.ANYKERNEL3 -> "Flash AK3"
+    ArtifactType.SUSFS_MODULE -> "Install module"
+    else -> "Execute"
 }
 
 private fun flashOperationLabel(type: ArtifactType) = when (type) {
-    ArtifactType.KERNEL_IMG -> "刷写 boot 镜像"
-    ArtifactType.ANYKERNEL3 -> "刷入 AnyKernel3"
-    ArtifactType.SUSFS_MODULE -> "安装模块"
-    else -> "执行"
+    ArtifactType.KERNEL_IMG -> "Flash boot image"
+    ArtifactType.ANYKERNEL3 -> "Flash AnyKernel3"
+    ArtifactType.SUSFS_MODULE -> "Install module"
+    else -> "Execute"
 }
 
 private fun flashCommandPreview(item: DownloadedArtifact) = when (item.type) {
@@ -2362,8 +2360,8 @@ private fun flashWorkflowRoute(runId: Long) = "workflow/$runId"
 private fun flashPrebuiltRoute(releaseId: Long) = "prebuilt/$releaseId"
 
 private enum class FlashContentTab(val label: String) {
-    Workflows("构建产物"),
-    PrebuiltGki("预编译 GKI")
+    Workflows("Build artifacts"),
+    PrebuiltGki("Prebuilt GKI")
 }
 
 private data class PrebuiltGkiFilter(
@@ -2406,7 +2404,7 @@ private fun prebuiltPatchOptions(androidVersion: String, kernelVersion: String, 
         .distinct()
         .sortedBy(::patchMonthIndexForUi)
 
-private fun prebuiltOptionLabel(value: String): String = value.ifBlank { "不限" }
+private fun prebuiltOptionLabel(value: String): String = value.ifBlank { "Any" }
 
 private fun patchMonthIndexForUi(value: String): Int {
     val parts = value.split("-")
@@ -2416,7 +2414,7 @@ private fun patchMonthIndexForUi(value: String): Int {
 }
 
 private fun releaseDateLabel(value: String): String =
-    value.takeIf { it.length >= 10 }?.take(10) ?: "未知日期"
+    value.takeIf { it.length >= 10 }?.take(10) ?: "Unknown date"
 
 private fun isPrebuiltGkiCandidateUi(asset: PrebuiltGkiAsset): Boolean {
     val lower = asset.name.lowercase()
@@ -2501,9 +2499,9 @@ private val artifactCategoryOrder = listOf(
 )
 
 private fun ArtifactCategory.label(): String = when (this) {
-    ArtifactCategory.KERNEL -> "内核产物"
-    ArtifactCategory.MANAGER -> "管理器"
-    ArtifactCategory.MODULE -> "模块"
+    ArtifactCategory.KERNEL -> "Kernel artifacts"
+    ArtifactCategory.MANAGER -> "Manager"
+    ArtifactCategory.MODULE -> "Module"
 }
 
 private fun ArtifactCategory.icon(): ImageVector = when (this) {

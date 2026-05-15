@@ -162,8 +162,8 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
             icon = { Icon(Icons.Default.Logout, null) },
-            title = { Text("退出登录") },
-            text = { Text("确认退出 GitHub 账户吗？退出后需重新授权。") },
+            title = { Text("Sign out") },
+            text = { Text("Sign out of GitHub? You will need to re-authorize.") },
             confirmButton = {
                 Button(
                     onClick = { showLogoutDialog = false; vm.logout() },
@@ -255,7 +255,7 @@ fun SettingsScreen(
                             title = stringResource(R.string.settings_theme),
                             navigationIcon = {
                                 IconButton(onClick = ::closeThemeSettings) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                                 }
                             }
                         )
@@ -411,19 +411,19 @@ private fun SettingsMainContent(
                         IconButton(onClick = onLogout) {
                             Icon(
                                 Icons.Default.Logout,
-                                contentDescription = "退出登录",
+                                contentDescription = "Sign out",
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
                     }
                 )
                 ExpressiveListItem(
-                    title = "Fork 仓库",
-                    subtitle = state.forkRepo?.fullName ?: "未 Fork",
+                    title = "Forked repository",
+                    subtitle = state.forkRepo?.fullName ?: "Not forked",
                     leadingIcon = Icons.Default.ForkRight
                 )
             } ?: ExpressiveListItem(
-                title = "未登录",
+                title = "Not signed in",
                 leadingIcon = Icons.Default.AccountCircle
             )
         }
@@ -432,14 +432,14 @@ private fun SettingsMainContent(
             SwitchSettingsItem(
                 icon = Icons.Default.Download,
                 title = stringResource(R.string.settings_auto_download),
-                subtitle = "仅对下一次新提交的构建生效，关闭后不会自动下载",
+                subtitle = "Applies to the next new build submission. Disabling stops auto-download.",
                 checked = state.autoDownload,
                 onCheckedChange = { vm.setAutoDownload(it) }
             )
             SwitchSettingsItem(
                 icon = Icons.Default.CloudDownload,
-                title = "预编译 GKI 获取与下载",
-                subtitle = "从本仓库 Release 获取预编译 GKI，下载需手动触发",
+                title = "Prebuilt GKI fetch & download",
+                subtitle = "Fetch prebuilt GKI from this repository's releases. Downloads are manually triggered.",
                 checked = state.prebuiltGkiEnabled,
                 onCheckedChange = { vm.setPrebuiltGkiEnabled(it) }
             )
@@ -460,17 +460,17 @@ private fun SettingsMainContent(
             SwitchSettingsItem(
                 icon = Icons.Default.Notifications,
                 title = stringResource(R.string.settings_notify_build),
-                subtitle = "在通知栏显示构建状态",
+                subtitle = "Show build status in notification bar",
                 checked = state.notifyBuild,
                 onCheckedChange = { vm.setNotifyBuild(it) }
             )
         }
 
-        SettingsGroup(title = "导航") {
+        SettingsGroup(title = "Navigation") {
             SwitchSettingsItem(
                 icon = Icons.Default.ArrowBack,
-                title = "应用内 M3E 返回动效",
-                subtitle = "使用 Material 3 Expressive 的页面返回动画，不依赖系统预测性返回",
+                title = "In-app M3E back animation",
+                subtitle = "Use Material 3 Expressive page-back animation without relying on system predictive back.",
                 checked = state.predictiveBackEnabled,
                 onCheckedChange = { vm.setPredictiveBackEnabled(it) }
             )
@@ -478,10 +478,10 @@ private fun SettingsMainContent(
 
         SettingsGroup(title = stringResource(R.string.settings_theme)) {
             ExpressiveListItem(
-                title = "颜色与外观",
+                title = "Color & Appearance",
                 subtitle = "${themeModeLabel(state.themeMode)} · ${dynamicColorLabel(state.dynamicColorEnabled)}",
                 leadingIcon = Icons.Default.Palette,
-                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入颜色与外观") },
+                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "Open Color & Appearance") },
                 onClick = onOpenThemeSettings
             )
         }
@@ -493,10 +493,10 @@ private fun SettingsMainContent(
                 leadingIcon = Icons.Default.Info
             )
             ExpressiveListItem(
-                title = "关于",
-                subtitle = "项目入口、源码仓库、上游项目与致谢",
+                title = "About",
+                subtitle = "Project page, source repository, upstream projects and credits.",
                 leadingIcon = Icons.Default.AutoAwesome,
-                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入关于") },
+                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "Open About") },
                 onClick = onAbout
             )
         }
@@ -825,7 +825,7 @@ private fun ThemeSettingsScreen(
             .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SettingsGroup(title = "外观模式") {
+        SettingsGroup(title = "Appearance mode") {
             themes.forEach { (key, label, icon) ->
                 val selected = themeMode == key
                 ExpressiveListItem(
@@ -842,14 +842,14 @@ private fun ThemeSettingsScreen(
             }
         }
 
-        SettingsGroup(title = "颜色来源") {
+        SettingsGroup(title = "Color source") {
             SwitchSettingsItem(
                 icon = Icons.Default.AutoAwesome,
-                title = "莫奈取色",
+                title = "Material You",
                 subtitle = if (dynamicColorAvailable) {
-                    "使用系统壁纸生成的 Material You 动态颜色"
+                    "Dynamic colors generated from the system wallpaper (Material You)."
                 } else {
-                    "Android 12 及以上可用，当前使用自定义色板"
+                    "Available on Android 12+. Currently using custom palette."
                 },
                 checked = effectiveDynamicColorEnabled,
                 enabled = dynamicColorAvailable,
@@ -864,10 +864,10 @@ private fun ThemeSettingsScreen(
         }
 
         if (!effectiveDynamicColorEnabled) {
-            SettingsGroup(title = "自定义颜色") {
+            SettingsGroup(title = "Custom colors") {
                 ThemeColorPicker(
-                    title = "主题色",
-                    subtitle = "主操作、选中状态和主要强调区域",
+                    title = "Primary color",
+                    subtitle = "Primary actions, selected states and main highlight areas.",
                     selectedColorArgb = selectedThemeColorArgb,
                     presets = themeColorPresets(),
                     onColorSelected = { color ->
@@ -876,8 +876,8 @@ private fun ThemeSettingsScreen(
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 ThemeColorPicker(
-                    title = "强调色",
-                    subtitle = "辅助状态、标签和次级强调区域",
+                    title = "Accent color",
+                    subtitle = "Secondary states, labels and secondary highlight areas.",
                     selectedColorArgb = selectedAccentColorArgb,
                     presets = themeColorPresets(),
                     onColorSelected = { color ->
@@ -887,29 +887,29 @@ private fun ThemeSettingsScreen(
             }
         }
 
-        SettingsGroup(title = "背景") {
+        SettingsGroup(title = "Background") {
             SwitchSettingsItem(
                 icon = Icons.Default.Image,
-                title = "自定义背景",
+                title = "Custom background",
                 subtitle = if (backgroundUri.isNullOrBlank()) {
-                    "选择图片后可启用全局背景"
+                    "Select an image to enable the global background."
                 } else {
-                    "已选择背景图片"
+                    "Background image selected"
                 },
                 checked = backgroundImageEnabled && !backgroundUri.isNullOrBlank(),
                 enabled = !backgroundUri.isNullOrBlank(),
                 onCheckedChange = onBackgroundImageEnabledChange
             )
             ExpressiveListItem(
-                title = if (backgroundUri.isNullOrBlank()) "选择背景图片" else "更换背景图片",
-                subtitle = "从本机选择一张图片作为应用背景",
+                title = if (backgroundUri.isNullOrBlank()) "Choose background image" else "Change background image",
+                subtitle = "Select an image from your device as the app background.",
                 leadingIcon = Icons.Default.Image,
                 onClick = { backgroundPicker.launch(arrayOf("image/*")) }
             )
             if (!backgroundUri.isNullOrBlank()) {
                 ExpressiveListItem(
-                    title = "移除背景图片",
-                    subtitle = "恢复纯色 Material 主题背景",
+                    title = "Remove background image",
+                    subtitle = "Restore solid Material theme background.",
                     leadingIcon = Icons.Default.Delete,
                     onClick = { onBackgroundImageChange(null) }
                 )
@@ -941,7 +941,7 @@ private fun BackgroundAlphaControl(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "界面不透明度",
+                text = "UI opacity",
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
@@ -959,7 +959,7 @@ private fun BackgroundAlphaControl(
             enabled = enabled
         )
         Text(
-            text = "调低后卡片、顶部栏和底部栏会透出背景。",
+            text = "Decreasing opacity lets the background show through cards, top bar and bottom bar.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -999,7 +999,7 @@ private fun ThemeColorPicker(
         ) {
             if (presets.none { colorsMatch(selectedColorArgb, it.argb) }) {
                 ThemeColorSwatch(
-                    preset = ThemeColorPreset("当前", selectedColorArgb),
+                    preset = ThemeColorPreset("Current", selectedColorArgb),
                     selected = true,
                     enabled = false,
                     onClick = {}
@@ -1057,12 +1057,12 @@ private data class ThemeColorPreset(
 )
 
 private fun themeColorPresets(): List<ThemeColorPreset> = listOf(
-    ThemeColorPreset("绿", 0xFF8BC34A.toInt()),
-    ThemeColorPreset("蓝", 0xFF42A5F5.toInt()),
-    ThemeColorPreset("紫", 0xFF9575CD.toInt()),
-    ThemeColorPreset("粉", 0xFFEC6A9A.toInt()),
-    ThemeColorPreset("橙", 0xFFFFA726.toInt()),
-    ThemeColorPreset("青", 0xFF26C6DA.toInt())
+    ThemeColorPreset("Green", 0xFF8BC34A.toInt()),
+    ThemeColorPreset("Blue", 0xFF42A5F5.toInt()),
+    ThemeColorPreset("Purple", 0xFF9575CD.toInt()),
+    ThemeColorPreset("Pink", 0xFFEC6A9A.toInt()),
+    ThemeColorPreset("Orange", 0xFFFFA726.toInt()),
+    ThemeColorPreset("Cyan", 0xFF26C6DA.toInt())
 )
 
 private fun colorsMatch(left: Int, right: Int): Boolean {
@@ -1086,9 +1086,9 @@ private fun themeModeLabel(themeMode: String): String = when (themeMode) {
 
 @Composable
 private fun dynamicColorLabel(enabled: Boolean): String = when {
-    !isDynamicColorAvailable() -> "莫奈取色不可用"
-    enabled -> "莫奈取色"
-    else -> "自定义色板"
+    !isDynamicColorAvailable() -> "Material You unavailable"
+    enabled -> "Material You"
+    else -> "Custom palette"
 }
 
 private fun isDynamicColorAvailable(): Boolean =
@@ -1103,7 +1103,7 @@ private fun AboutDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Info, null) },
-        title = { Text("关于 AnyBase Kernel") },
+        title = { Text("About AnyBase Kernel") },
         text = {
             Column(
                 modifier = Modifier
@@ -1113,14 +1113,14 @@ private fun AboutDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    "AnyBase Kernel 用于构建、分发和管理 GKI KernelSU / SUSFS 内核。",
+                    "AnyBase Kernel is used to build, distribute and manage GKI KernelSU / SUSFS kernels.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                AboutLinkRow(AboutLink("源仓库", sourceRepoUrl()), onOpenUrl)
-                AboutSectionTitle("致谢")
+                AboutLinkRow(AboutLink("Source repository", sourceRepoUrl()), onOpenUrl)
+                AboutSectionTitle("Credits")
                 Text(
-                    "ABK 基于以下项目、仓库和社区工作继续开发。",
+                    "ABK is built on the following projects, repositories and community work.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1168,29 +1168,29 @@ private data class AboutLink(
 
 private fun aboutLinks(): List<AboutLink> {
     return listOf(
-        AboutLink("上游仓库", BuildConfig.UPSTREAM_REPO_URL),
-        AboutLink("顶层仓库", BuildConfig.TOP_LEVEL_REPO_URL),
+        AboutLink("Upstream repository", BuildConfig.UPSTREAM_REPO_URL),
+        AboutLink("Top-level repository", BuildConfig.TOP_LEVEL_REPO_URL),
         AboutLink("KernelSU", "https://github.com/tiann/KernelSU"),
         AboutLink("KernelSU Next", "https://github.com/KernelSU-Next/KernelSU-Next"),
         AboutLink("SukiSU Ultra", "https://github.com/SukiSU-Ultra/SukiSU-Ultra"),
         AboutLink("ReSukiSU", "https://github.com/ReSukiSU/ReSukiSU"),
         AboutLink("SUSFS", "https://gitlab.com/simonpunk/susfs4ksu"),
-        AboutLink("SUSFS GitHub 镜像/补丁来源", "https://github.com/ShirkNeko/susfs4ksu"),
+        AboutLink("SUSFS GitHub mirror / patch source", "https://github.com/ShirkNeko/susfs4ksu"),
         AboutLink("SukiSU patch", "https://github.com/ShirkNeko/SukiSU_patch"),
         AboutLink("AnyKernel3", "https://github.com/WildKernels/AnyKernel3"),
         AboutLink("Kernel patches", "https://github.com/WildKernels/kernel_patches"),
-        AboutLink("NTsync / IPSet / BBR 来源", "https://github.com/WildKernels/kernel_patches"),
+        AboutLink("NTsync / IPSet / BBR source", "https://github.com/WildKernels/kernel_patches"),
         AboutLink("NTsync / IPSet / BBR PR by huime180", "https://github.com/huime180"),
         AboutLink("Action-Build", "https://github.com/Numbersf/Action-Build"),
-        AboutLink("SUSFS 模块构建来源", "https://github.com/sidex15/susfs4ksu-module"),
+        AboutLink("SUSFS module build source", "https://github.com/sidex15/susfs4ksu-module"),
         AboutLink(
             "GCC prebuilts",
             "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1"
         ),
         AboutLink("Baseband Guard", "https://github.com/vc-teahouse/Baseband-guard"),
         AboutLink("Re-Kernel", "https://github.com/Sakion-Team/Re-Kernel"),
-        AboutLink("Droidspaces / 虚拟化支持补丁来源", "https://github.com/ravindu644/Droidspaces-OSS"),
-        AboutLink("KernelSU 官方站点", "https://kernelsu.org/")
+        AboutLink("Droidspaces / Virtualization patch source", "https://github.com/ravindu644/Droidspaces-OSS"),
+        AboutLink("KernelSU official site", "https://kernelsu.org/")
     )
 }
 
@@ -1210,23 +1210,23 @@ private fun SettingsHero(
     themeMode: String
 ) {
     ExpressiveHeroCard(
-        title = login?.let { "已连接 GitHub：$it" } ?: "AnyBase Kernel 设置中心",
-        subtitle = forkName ?: "管理构建自动化、通知、主题和仓库来源。",
+        title = login?.let { "GitHub connected: $it" } ?: "AnyBase Kernel Settings",
+        subtitle = forkName ?: "Manage build automation, notifications, theme and repository source.",
         icon = Icons.Default.Tune,
         containerColor = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         badge = {
             ExpressiveStatusChip(
                 label = when (themeMode) {
-                    "dark" -> "深色主题"
-                    "light" -> "浅色主题"
-                    else -> "跟随系统"
+                    "dark" -> "Dark theme"
+                    "light" -> "Light theme"
+                    else -> "Follow system"
                 },
                 icon = Icons.Default.Palette,
                 color = MaterialTheme.colorScheme.primary
             )
             ExpressiveStatusChip(
-                label = if (forkName != null) "Fork 已连接" else "等待 Fork",
+                label = if (forkName != null) "Fork connected" else "Awaiting fork",
                 icon = Icons.Default.ForkRight,
                 color = if (forkName != null) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
             )
@@ -1239,36 +1239,27 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
     ExpressiveSectionCard(
         title = title,
         subtitle = when (title) {
-            stringResource(R.string.settings_account) -> "GitHub 账户、fork 仓库和退出登录。"
-            stringResource(R.string.settings_build) -> "控制构建成功后的自动化行为。"
-            stringResource(R.string.settings_notification) -> "同步工作流状态到系统通知。"
-            "导航" -> "控制返回手势和页面切换体验。"
-            stringResource(R.string.settings_theme) -> "Material 3 Expressive 主题显示模式。"
-            "ReSukiSU" -> "按当前 ReSukiSU 后端能力动态加载。"
-            "管理器设置" -> "按当前 KSU 后端能力动态加载。"
-            "本地模板" -> "管理保存在 ReSukiSU profile 存储中的模板。"
-            "状态" -> "最近一次模板操作的执行结果。"
-            "编辑模板" -> "直接编辑 App Profile 模板 JSON。"
-            "外观模式" -> "控制应用明暗显示方式。"
-            "颜色来源" -> "选择系统动态颜色或自定义色板。"
-            "自定义颜色" -> "莫奈关闭时使用的主题色和强调色。"
-            "背景" -> "选择背景图片并调整上层界面透明度。"
-            else -> "应用版本与源码信息。"
+            stringResource(R.string.settings_account) -> "GitHub account, forked repository and sign out."
+            stringResource(R.string.settings_build) -> "Control automated actions after a successful build."
+            stringResource(R.string.settings_notification) -> "Sync workflow status to system notifications."
+            "Navigation" -> "Control back gesture and page transition experience."
+            stringResource(R.string.settings_theme) -> "Material 3 Expressive theme display mode."
+            "Appearance mode" -> "Control light/dark display mode."
+            "Color source" -> "Choose system dynamic colors or a custom palette."
+            "Custom colors" -> "Primary and accent colors used when Material You is disabled."
+            "Background" -> "Choose a background image and adjust the overlay UI transparency."
+            else -> "App version and source code info."
         },
         icon = when (title) {
             stringResource(R.string.settings_account) -> Icons.Default.AccountCircle
             stringResource(R.string.settings_build) -> Icons.Default.Build
             stringResource(R.string.settings_notification) -> Icons.Default.Notifications
-            "导航" -> Icons.Default.ArrowBack
+            "Navigation" -> Icons.Default.ArrowBack
             stringResource(R.string.settings_theme) -> Icons.Default.Palette
-            "ReSukiSU", "管理器设置" -> Icons.Default.AdminPanelSettings
-            "本地模板" -> Icons.Default.Apps
-            "状态" -> Icons.Default.Info
-            "编辑模板" -> Icons.Default.Edit
-            "外观模式" -> Icons.Default.BrightnessMedium
-            "颜色来源" -> Icons.Default.AutoAwesome
-            "自定义颜色" -> Icons.Default.Palette
-            "背景" -> Icons.Default.Image
+            "Appearance mode" -> Icons.Default.BrightnessMedium
+            "Color source" -> Icons.Default.AutoAwesome
+            "Custom colors" -> Icons.Default.Palette
+            "Background" -> Icons.Default.Image
             else -> Icons.Default.Info
         }
     ) {
@@ -1305,8 +1296,8 @@ private fun MirrorSettingsItem(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         ExpressiveListItem(
-            title = "下载镜像站",
-            subtitle = "留空直连 GitHub；填写后会先镜像到 Release 再下载",
+            title = "Download mirror",
+            subtitle = "Leave blank for direct GitHub connection. If set, downloads will be mirrored via Release first.",
             leadingIcon = Icons.Default.Public
         )
         OutlinedTextField(
