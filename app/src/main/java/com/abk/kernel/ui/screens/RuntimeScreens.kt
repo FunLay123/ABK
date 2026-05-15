@@ -369,7 +369,7 @@ fun InstalledModulesScreen(
             onDismissRequest = vm::dismissRuntimeModuleActionOutput,
             confirmButton = {
                 TextButton(onClick = vm::dismissRuntimeModuleActionOutput) {
-                    Text("Off")
+                    Text("Close")
                 }
             },
             title = { Text(state.abkRuntimeModuleActionTitle.orEmpty()) },
@@ -1039,7 +1039,7 @@ private fun RuntimeModuleInstallDialog(
                 TextButton(onClick = {}, enabled = false) { Text("Running") }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onClose) { Text("Off") }
+                    TextButton(onClick = onClose) { Text("Close")
                     if (success == true) {
                         Button(
                             onClick = onReboot,
