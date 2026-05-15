@@ -1039,7 +1039,7 @@ private fun RuntimeModuleInstallDialog(
                 TextButton(onClick = {}, enabled = false) { Text("Running") }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onClose) { Text("Close")
+                    TextButton(onClick = onClose) { Text("Close") }
                     if (success == true) {
                         Button(
                             onClick = onReboot,
