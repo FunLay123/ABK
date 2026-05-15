@@ -203,7 +203,7 @@ fun RootAuthorizationScreen(
             containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
             topBar = {
                 ExpressiveTopBar(
-                    title = "超级用户",
+                    title = "Superuser",
                     scrollBehavior = scrollBehavior,
                     actions = {
                         IconButton(
@@ -213,7 +213,7 @@ fun RootAuthorizationScreen(
                             if (state.rootGrantLoading) {
                                 LoadingIndicator(Modifier.size(22.dp))
                             } else {
-                                Icon(Icons.Default.Refresh, contentDescription = "刷新授权列表")
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh authorization list")
                             }
                         }
                     }
@@ -238,7 +238,7 @@ fun RootAuthorizationScreen(
                         onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth(),
                         leadingIcon = { Icon(Icons.Default.Search, null) },
-                        placeholder = { Text("搜索应用") },
+                        placeholder = { Text("Search apps") },
                         singleLine = true,
                         shape = RoundedCornerShape(14.dp)
                     )
@@ -246,8 +246,8 @@ fun RootAuthorizationScreen(
 
                 item(key = "controls") {
                     ExpressiveSectionCard(
-                        title = "Root 授权",
-                        subtitle = "管理其他应用的内核权限配置",
+                        title = "Root Authorization",
+                        subtitle = "Manage kernel permission configuration for other apps",
                         icon = Icons.Default.AdminPanelSettings
                     ) {
                         Row(
@@ -256,7 +256,7 @@ fun RootAuthorizationScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "显示系统应用",
+                                text = "Show system apps",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -286,7 +286,7 @@ fun RootAuthorizationScreen(
                 if (!state.rootGrantLoading && apps.isEmpty()) {
                     item(key = "empty") {
                         Text(
-                            text = if (query.isBlank()) "没有可显示的应用" else "没有匹配的应用",
+                            text = if (query.isBlank()) "No apps to display" else "No matching apps",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 24.dp)
@@ -357,7 +357,7 @@ fun RootAuthorizationScreen(
                                         enabled = canLeaveDetail,
                                         onClick = ::closeDetailPage
                                     ) {
-                                        Icon(Icons.Default.ArrowBack, contentDescription = "返回授权列表")
+                                        Icon(Icons.Default.ArrowBack, contentDescription = "Back to authorization list")
                                     }
                                 }
                             )
@@ -392,7 +392,7 @@ private fun RootGrantInitialLoading() {
         ) {
             LoadingIndicator(Modifier.size(42.dp))
             Text(
-                text = "正在构建授权列表",
+                text = "Building authorization list",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -411,7 +411,7 @@ private fun RootGrantRefreshingRow() {
     ) {
         LoadingIndicator(Modifier.size(24.dp))
         Text(
-            text = "正在刷新授权列表",
+            text = "Refreshing authorization list",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -525,10 +525,10 @@ private fun RootGrantAppCard(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                RootGrantChip(if (app.profile.allowSu) "允许 Root" else "拒绝 Root")
-                RootGrantChip(if (app.profile.rootUseDefault) "默认 Root 配置" else "自定义 Root 配置")
-                if (app.isSystemApp) RootGrantChip("系统应用")
-                if (app.profile.umountModules) RootGrantChip("卸载模块")
+                RootGrantChip(if (app.profile.allowSu) "Root allowed" else "Root denied")
+                RootGrantChip(if (app.profile.rootUseDefault) "Default root config" else "Custom root config")
+                if (app.isSystemApp) RootGrantChip("System app")
+                if (app.profile.umountModules) RootGrantChip("Unmount modules")
             }
         }
     }
@@ -655,8 +655,8 @@ private fun RootGrantProfilePage(
         }
 
         ExpressiveSectionCard(
-            title = "超级用户",
-            subtitle = if (allowSu) "允许请求 Root 权限" else "拒绝 Root 权限",
+            title = "Superuser",
+            subtitle = if (allowSu) "Root access allowed" else "Root access denied",
             icon = Icons.Default.Security
         ) {
             Row(
@@ -665,7 +665,7 @@ private fun RootGrantProfilePage(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (allowSu) "已允许" else "未允许",
+                    text = if (allowSu) "Allowed" else "Not allowed",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -680,9 +680,9 @@ private fun RootGrantProfilePage(
         ExpressiveSectionCard(
             title = "App Profile",
             subtitle = if (allowSu) {
-                if (rootUseDefault) "默认" else "自定义"
+                if (rootUseDefault) "Default" else "Custom"
             } else {
-                if (nonRootUseDefault) "默认非 Root 配置" else "自定义非 Root 配置"
+                if (nonRootUseDefault) "Default non-root config" else "Custom non-root config"
             },
             icon = Icons.Default.AccountCircle
         ) {
@@ -692,7 +692,7 @@ private fun RootGrantProfilePage(
                         FilterChip(
                             selected = rootUseDefault,
                             onClick = { rootUseDefault = true },
-                            label = { Text("默认") }
+                            label = { Text("Default") }
                         )
                         FilterChip(
                             selected = !rootUseDefault && rootTemplate.isNotBlank(),
@@ -700,7 +700,7 @@ private fun RootGrantProfilePage(
                                 rootUseDefault = false
                                 if (rootTemplate.isBlank()) rootTemplate = "default"
                             },
-                            label = { Text("模板") }
+                            label = { Text("Template") }
                         )
                         FilterChip(
                             selected = !rootUseDefault && rootTemplate.isBlank(),
@@ -708,24 +708,24 @@ private fun RootGrantProfilePage(
                                 rootUseDefault = false
                                 rootTemplate = ""
                             },
-                            label = { Text("自定义") }
+                            label = { Text("Custom") }
                         )
                     }
                     if (!rootUseDefault && rootTemplate.isNotBlank()) {
-                        RootGrantTextField("模板", rootTemplate, { rootTemplate = it }, "模板名称")
+                        RootGrantTextField("Template", rootTemplate, { rootTemplate = it }, "Template name")
                     }
                     if (!rootUseDefault) {
                         RootGrantTextField("UID", uidText, { uidText = it })
                         RootGrantTextField("GID", gidText, { gidText = it })
-                        RootGrantTextField("Groups", groupsText, { groupsText = it }, "逗号分隔")
-                        RootGrantTextField("Capabilities", capabilitiesText, { capabilitiesText = it }, "逗号分隔")
+                        RootGrantTextField("Groups", groupsText, { groupsText = it }, "Comma-separated")
+                        RootGrantTextField("Capabilities", capabilitiesText, { capabilitiesText = it }, "Comma-separated")
                         RootGrantTextField("SELinux Context", contextText, { contextText = it })
-                        RootGrantTextField("Namespace", namespaceText, { namespaceText = it }, "0 继承 / 1 全局 / 2 独立")
-                        RootGrantTextField("SEPolicy Rules", rulesText, { rulesText = it }, "可留空", singleLine = false)
+                        RootGrantTextField("Namespace", namespaceText, { namespaceText = it }, "0 inherit / 1 global / 2 isolated")
+                        RootGrantTextField("SEPolicy Rules", rulesText, { rulesText = it }, "Can be left blank", singleLine = false)
                     }
                 } else {
-                    RootGrantSwitchRow("使用默认非 Root 配置", nonRootUseDefault) { nonRootUseDefault = it }
-                    RootGrantSwitchRow("卸载模块", umountModules) { umountModules = it }
+                    RootGrantSwitchRow("Use default non-root config", nonRootUseDefault) { nonRootUseDefault = it }
+                    RootGrantSwitchRow("Unmount modules", umountModules) { umountModules = it }
                 }
             }
         }
@@ -740,7 +740,7 @@ private fun RootGrantProfilePage(
             } else {
                 Icon(Icons.Default.Done, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("保存")
+                Text("Save")
             }
         }
 
@@ -811,7 +811,7 @@ private fun RootGrantMessageCard(message: String, onRefresh: () -> Unit) {
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             TextButton(onClick = onRefresh) {
-                Text("重新检测")
+                Text("Re-check")
             }
         }
     }

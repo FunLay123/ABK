@@ -62,7 +62,7 @@ fun StatusScreen(
                     IconButton(onClick = onToggleRuntimeNavigation) {
                         Icon(
                             imageVector = if (runtimeNavigationEnabled) Icons.Default.SwapHoriz else Icons.Default.Home,
-                            contentDescription = if (runtimeNavigationEnabled) "切换到完整导航" else "切换到运行态首页"
+                            contentDescription = if (runtimeNavigationEnabled) "Switch to full navigation" else "Switch to runtime home"
                         )
                     }
                 }
@@ -86,27 +86,27 @@ fun StatusScreen(
             }
 
             ExpressiveHeroCard(
-                title = if (state.rootGranted) "工作中" else "部分激活",
+                title = if (state.rootGranted) "Active" else "Partial activation",
                 subtitle = if (state.rootGranted) {
                     when {
-                        state.activeBuildRuns.size > 1 -> "构建：${state.activeBuildRuns.size} 个工作流并行"
-                        state.currentRun != null -> state.currentRun?.let { "构建：#${it.runNumber}" }.orEmpty()
-                        else -> "版本：${BuildConfig.VERSION_NAME}"
+                        state.activeBuildRuns.size > 1 -> "Build: ${state.activeBuildRuns.size} workflows in parallel"
+                        state.currentRun != null -> state.currentRun?.let { "Build: #${it.runNumber}" }.orEmpty()
+                        else -> "Version: ${BuildConfig.VERSION_NAME}"
                     }
                 } else {
-                    "版本：${BuildConfig.VERSION_NAME} · 构建和下载可用"
+                    "Version: ${BuildConfig.VERSION_NAME} · Build and download available"
                 },
                 icon = if (state.rootGranted) Icons.Default.CheckCircleOutline else Icons.Default.Info,
                 containerColor = if (state.rootGranted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                 contentColor = if (state.rootGranted) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                 badge = {
                     ExpressiveStatusChip(
-                        label = if (state.rootGranted) "Root 已授权" else "Root 未授权",
+                        label = if (state.rootGranted) "Root authorized" else "Root not authorized",
                         icon = if (state.rootGranted) Icons.Default.Lock else Icons.Default.LockOpen,
                         color = if (state.rootGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
                     ExpressiveStatusChip(
-                        label = state.forkRepo?.name ?: "未检测到 Fork",
+                        label = state.forkRepo?.name ?: "No fork detected",
                         icon = Icons.Default.ForkRight,
                         color = if (state.forkRepo != null) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
                     )
@@ -138,18 +138,18 @@ fun StatusScreen(
 
             ExpressiveSectionCard(
                 title = stringResource(R.string.status_build),
-                subtitle = "通知栏与应用内进度同步",
+                subtitle = "Synced with notification bar progress",
                 icon = Icons.Default.RunCircle,
                 containerColor = MaterialTheme.colorScheme.surfaceVariant
             ) {
                 when (state.buildStatus) {
-                    BuildStatus.IDLE -> StatusRow(Icons.Default.HourglassEmpty, "暂无进行中的构建", false)
+                    BuildStatus.IDLE -> StatusRow(Icons.Default.HourglassEmpty, "No active builds", false)
                     BuildStatus.QUEUED -> StatusRow(
                         Icons.Default.Queue,
                         if (state.activeBuildRuns.size > 1) {
-                            "${state.activeBuildRuns.size} 个工作流已排队，合并进度等待 Runner…"
+                            "${state.activeBuildRuns.size} workflows queued, waiting for Runner…"
                         } else {
-                            "构建已排队，等待 Runner…"
+                            "Build queued, waiting for Runner…"
                         },
                         false
                     )
@@ -158,9 +158,9 @@ fun StatusScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("${state.buildProgress.percent}% · ${state.buildProgress.currentStep}")
                     }
-                    BuildStatus.SUCCESS -> StatusRow(Icons.Default.CheckCircle, "最近构建成功 ✓", false)
-                    BuildStatus.FAILURE -> StatusRow(Icons.Default.Error, "最近构建失败", true)
-                    BuildStatus.CANCELLED -> StatusRow(Icons.Default.Cancel, "构建已取消", true)
+                    BuildStatus.SUCCESS -> StatusRow(Icons.Default.CheckCircle, "Latest build succeeded ✓", false)
+                    BuildStatus.FAILURE -> StatusRow(Icons.Default.Error, "Latest build failed", true)
+                    BuildStatus.CANCELLED -> StatusRow(Icons.Default.Cancel, "Build cancelled", true)
                 }
                 if (state.buildProgress.totalSteps > 0) {
                     Spacer(Modifier.height(8.dp))
@@ -174,7 +174,7 @@ fun StatusScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        "${state.buildProgress.completedSteps}/${state.buildProgress.totalSteps} 个步骤完成",
+                        "${state.buildProgress.completedSteps}/${state.buildProgress.totalSteps} steps completed",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -199,7 +199,7 @@ fun StatusScreen(
                         ) {
                             Icon(Icons.Default.OpenInBrowser, null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("查看详情 #${run.runNumber}", style = MaterialTheme.typography.labelMedium)
+                            Text("View details #${run.runNumber}", style = MaterialTheme.typography.labelMedium)
                         }
                         if (run.isActiveStatusRun()) {
                             TextButton(
@@ -213,14 +213,14 @@ fun StatusScreen(
                                     Icon(Icons.Default.Cancel, null, modifier = Modifier.size(16.dp))
                                 }
                                 Spacer(Modifier.width(4.dp))
-                                Text(if (run.id in state.cancellingWorkflowRunIds) "取消中" else "取消")
+                                Text(if (run.id in state.cancellingWorkflowRunIds) "Cancelling" else "Cancel")
                             }
                         }
                     }
                 }
                 if (state.activeBuildRuns.size > 1) {
                     Text(
-                        "${state.activeBuildRuns.size} 个工作流正在并行，最近构建记录和队列页可分别查看或取消。",
+                        "${state.activeBuildRuns.size} workflows running in parallel. Check the recent builds log and queue page to view or cancel individually.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -228,14 +228,14 @@ fun StatusScreen(
             }
 
             ExpressiveSectionCard(
-                title = "设备与仓库",
-                subtitle = "用于生成默认构建参数和确认工作流来源。",
+                title = "Device & Repository",
+                subtitle = "Used to generate default build parameters and verify workflow source.",
                 icon = Icons.Default.Memory
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     DeviceInfoRow(
                         icon = Icons.Default.Memory,
-                        label = "内核",
+                        label = "Kernel",
                         value = kernelVersion,
                         isError = false
                     )
@@ -258,14 +258,14 @@ fun StatusScreen(
                     )
                 }
                 if (state.behindBy > 0) {
-                    StatusRow(Icons.Default.Warning, "Fork 落后上游 ${state.behindBy} 个提交", true)
+                    StatusRow(Icons.Default.Warning, "Fork is ${state.behindBy} commits behind upstream", true)
                 }
             }
 
             if (state.recentRuns.isNotEmpty()) {
                 ExpressiveSectionCard(
-                    title = "最近构建记录",
-                    subtitle = "快速确认最近 5 次工作流结果。",
+                    title = "Recent builds",
+                    subtitle = "Quick overview of the last 5 workflow results.",
                     icon = Icons.Default.History
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -376,14 +376,14 @@ private fun StatusMetricGrid(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             StatusMetricCard(
                 label = "Root",
-                value = if (rootGranted) "已授权" else "部分激活",
+                value = if (rootGranted) "Authorized" else "Partial activation",
                 icon = if (rootGranted) Icons.Default.Lock else Icons.Default.LockOpen,
                 color = if (rootGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.weight(1f)
             )
             StatusMetricCard(
                 label = "Fork",
-                value = if (forkReady) "已同步" else "待检查",
+                value = if (forkReady) "Synced" else "Check needed",
                 icon = Icons.Default.ForkRight,
                 color = if (forkReady) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.weight(1f)
@@ -392,7 +392,7 @@ private fun StatusMetricGrid(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             StatusMetricCard(
                 label = "KernelSU",
-                value = if (ksuVersion == "N/A") "未检测" else "已检测",
+                value = if (ksuVersion == "N/A") "Not detected" else "Detected",
                 icon = Icons.Default.Shield,
                 color = if (ksuVersion == "N/A") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f)
@@ -474,13 +474,13 @@ private fun RunListItem(
         }
         val (color, label) = when {
             run.status == "completed" && run.conclusion == "success" ->
-                MaterialTheme.colorScheme.primary to "成功"
+                MaterialTheme.colorScheme.primary to "Success"
             run.status == "completed" && run.conclusion == "cancelled" ->
-                MaterialTheme.colorScheme.outline to "已取消"
+                MaterialTheme.colorScheme.outline to "Cancelled"
             run.status == "completed" ->
-                MaterialTheme.colorScheme.error to "失败"
+                MaterialTheme.colorScheme.error to "Failed"
             run.status == "in_progress" ->
-                MaterialTheme.colorScheme.tertiary to "进行中"
+                MaterialTheme.colorScheme.tertiary to "In progress"
             else -> MaterialTheme.colorScheme.outline to run.status
         }
         Badge(containerColor = color.copy(alpha = 0.15f)) {
@@ -493,7 +493,7 @@ private fun RunListItem(
                 } else {
                     Icon(
                         Icons.Default.Cancel,
-                        contentDescription = "取消工作流",
+                        contentDescription = "Cancel workflow",
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
@@ -506,12 +506,12 @@ private fun WorkflowRun.isActiveStatusRun(): Boolean =
     status in setOf("queued", "waiting", "requested", "pending", "in_progress")
 
 private fun buildStatusDisplay(status: BuildStatus): String = when (status) {
-    BuildStatus.IDLE -> "空闲"
-    BuildStatus.QUEUED -> "排队"
-    BuildStatus.IN_PROGRESS -> "进行中"
-    BuildStatus.SUCCESS -> "成功"
-    BuildStatus.FAILURE -> "失败"
-    BuildStatus.CANCELLED -> "已停止"
+    BuildStatus.IDLE -> "Idle"
+    BuildStatus.QUEUED -> "Queued"
+    BuildStatus.IN_PROGRESS -> "In progress"
+    BuildStatus.SUCCESS -> "Success"
+    BuildStatus.FAILURE -> "Failed"
+    BuildStatus.CANCELLED -> "Stopped"
 }
 
 @Composable
