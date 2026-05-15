@@ -1431,6 +1431,18 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_notification) -> "Sync workflow status to system notifications."
             "Navigation" -> "Control back gesture and page transition experience."
             stringResource(R.string.settings_theme) -> "Material 3 Expressive theme display mode."
+            // ↓ вот это всё отсутствовало:
+            "ReSukiSU" -> "Dynamically loaded based on current ReSukiSU backend capabilities."
+            "SukiSU" -> "Dynamically loaded based on current SukiSU backend capabilities."
+            "KernelSU" -> "Dynamically loaded based on current KernelSU backend capabilities."
+            "管理器设置" -> "Dynamically loaded based on current KSU backend capabilities."
+            "系统工具" -> "SELinux and module uninstall path tools."
+            "授权列表" -> "Export or import the current Root authorization list."
+            "工具状态" -> "Result of the last tool operation."
+            "本地模板" -> "Manage templates stored in ReSukiSU profile storage."
+            "状态" -> "Result of the last template operation."
+            "编辑模板" -> "Directly edit the App Profile template JSON."
+            // ↑ конец
             "Appearance mode" -> "Control light/dark display mode."
             "Color source" -> "Choose system dynamic colors or a custom palette."
             "Custom colors" -> "Primary and accent colors used when Material You is disabled."
@@ -1443,6 +1455,15 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_notification) -> Icons.Default.Notifications
             "Navigation" -> Icons.Default.ArrowBack
             stringResource(R.string.settings_theme) -> Icons.Default.Palette
+            // ↓ отсутствовало:
+            "ReSukiSU", "SukiSU", "KernelSU", "管理器设置" -> Icons.Default.AdminPanelSettings
+            "系统工具" -> Icons.Default.Build
+            "授权列表" -> Icons.Default.VerifiedUser
+            "工具状态" -> Icons.Default.Info
+            "本地模板" -> Icons.Default.Apps
+            "状态" -> Icons.Default.Info
+            "编辑模板" -> Icons.Default.Edit
+            // ↑ конец
             "Appearance mode" -> Icons.Default.BrightnessMedium
             "Color source" -> Icons.Default.AutoAwesome
             "Custom colors" -> Icons.Default.Palette
