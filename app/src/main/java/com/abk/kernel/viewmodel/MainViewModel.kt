@@ -3772,7 +3772,7 @@ private val BUILD_PLAN_MODULE_STAGES = listOf(
     CustomExternalModuleStage.BEFORE_BUILD
 )
 
-private const val BUILD_SUMMARY_STEP_NAME = "Build Summary"
+private const val BUILD_SUMMARY_STEP_NAME = "构建信息摘要"
 
 private fun parseBuildParameterSummary(
     logs: String,
@@ -3788,7 +3788,7 @@ private fun parseBuildParameterSummary(
                 summarySeen = true
                 return@forEach
             }
-            if (!summarySeen && !line.contains("Android version")) return@forEach
+            if (!summarySeen && !line.contains("Android 版本")) return@forEach
             if (summarySeen && values.isNotEmpty() && line.all { it == '=' || it.isWhitespace() }) return@forEach
 
             val separator = listOf(line.indexOf(':'), line.indexOf('：'))
@@ -3842,12 +3842,12 @@ private fun normalizeBuildSummaryLabel(label: String): String? {
     val compact = label.replace(Regex("\\s+"), "").lowercase()
     return when {
         compact.contains("android版本") -> "androidVersion"
-        compact.contains("Kernel version") -> "kernelVersion"
-        compact.contains("Sub-level") -> "subLevel"
-        compact.contains("Patch level") -> "osPatchLevel"
+        compact.contains("内核版本") -> "kernelVersion"
+        compact.contains("子版本号") -> "subLevel"
+        compact.contains("补丁级别") -> "osPatchLevel"
         compact.contains("ksu变体") -> "ksuVariant"
         compact.contains("ksu分支") -> "ksuBranch"
-        compact.contains("Build time") -> "buildTime"
+        compact.contains("构建时间") -> "buildTime"
         compact.contains("susfs状态") -> "susfsEnabled"
         compact.contains("zram增强") -> "zramEnabled"
         compact.contains("zram完整算法") -> "zramFullAlgo"
@@ -3859,8 +3859,8 @@ private fun normalizeBuildSummaryLabel(label: String): String? {
         compact.contains("kpm功能") -> "kpmEnabled"
         compact.contains("kpm密码") -> "kpmPassword"
         compact.contains("re-kernel") || compact.contains("rekernel") -> "reKernelEnabled"
-        compact.contains("Virtualization support") -> "virtualizationSupport"
-        compact.contains("Custom injection") -> "customInjection"
+        compact.contains("虚拟化支持") -> "virtualizationSupport"
+        compact.contains("自定义注入") -> "customInjection"
         compact.contains("stockconfig") -> "stockConfig"
         else -> null
     }
