@@ -350,7 +350,7 @@ fun ExpressiveEmptyState(
         modifier = modifier
     ) {
         Text(
-            text = "等待下一次构建完成后，这里会自动整理可用产物。",
+            text = "Available artifacts will be organized here automatically once the next build completes.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -202,7 +202,7 @@ private fun TermsAgreementDialog(
         onDismissRequest = {},
         title = {
             Text(
-                text = "ABK 用户协议与免责声明",
+                text = "ABK Terms of Use & Disclaimer",
                 style = MaterialTheme.typography.titleLarge
             )
         },
@@ -213,51 +213,51 @@ private fun TermsAgreementDialog(
                     .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                TermsText("版本：1")
-                TermsText("生效日期：2026-05-07")
-                TermsText("请完整阅读本协议。你点击“同意并继续”即表示已理解并接受全部条款；如果不同意，请点击“不同意并退出”。")
+                TermsText("Version: 1")
+                TermsText("Effective date: 2026-05-07")
+                TermsText("Please read this agreement in full. By clicking \"Agree and Continue\" you confirm that you have read and accepted all terms. If you do not agree, click \"Decline and Exit\".")
 
                 TermsSection(
-                    "一、软件用途",
-                    "ABK 用于触发 GitHub Actions 构建、下载、刷写或安装 GKI KernelSU / SUSFS 相关产物，并提供 Root 检查、GitHub 授权、Fork 检查、自定义外部模块注入、构建进度同步和产物管理等功能。",
-                    "ABK 面向合法授权设备上的学习、研究、自用和调试场景，不提供任何适配、启动成功、刷写成功、Root 可用、绕过检测或长期稳定性的保证。"
+                    "1. Purpose",
+                    "ABK is used to trigger GitHub Actions builds, download, flash, or install GKI KernelSU / SUSFS artifacts, and provides Root checking, GitHub authorization, fork checking, custom external module injection, build progress sync, and artifact management.",
+                    "ABK is intended for learning, research, personal use, and debugging on lawfully authorized devices. No guarantees are made regarding compatibility, successful boot, successful flashing, Root availability, detection bypass, or long-term stability."
                 )
                 TermsSection(
-                    "二、高风险操作提示",
-                    "构建、修改、刷写 boot、init_boot、vendor_boot、内核镜像、AnyKernel3 包或安装底层模块均属于高风险操作，可能导致无法开机、反复重启、数据损坏、分区异常、系统服务不可用、保修或售后受限。",
-                    "发生异常时，你可能需要恢复官方镜像、重新刷机、清除数据、解锁或重新锁定 Bootloader，相关成本和后果均由你自行承担。",
-                    "在不确定设备型号、分区布局、Android 版本、内核版本、安全补丁级别、KMI 兼容性和回滚方案时，不应继续构建或刷写。"
+                    "2. High-Risk Operation Warning",
+                    "Building, modifying, or flashing boot, init_boot, vendor_boot, kernel images, AnyKernel3 packages, or installing low-level modules are high-risk operations that may result in bootloop, boot failure, data corruption, partition errors, unavailable system services, or voided warranty.",
+                    "In the event of an issue, you may need to restore official images, re-flash your device, wipe data, or unlock/re-lock the bootloader. All associated costs and consequences are your sole responsibility.",
+                    "Do not proceed with building or flashing if you are unsure about your device model, partition layout, Android version, kernel version, security patch level, KMI compatibility, or recovery plan."
                 )
                 TermsSection(
-                    "三、合法使用限制",
-                    "你只能在本人拥有或已获得明确授权的设备、账号、仓库和网络环境中使用 ABK。",
-                    "禁止将 ABK、工作流、补丁、自定义外部模块或构建产物用于灰黑产、未授权访问、绕过风控、作弊、恶意隐藏行为、窃取数据、破坏服务、规避审计、批量滥用、侵犯他人权益或任何违法违规用途。",
-                    "你应自行确认所在地法律法规、平台规则、设备厂商条款和上游项目许可证要求。"
+                    "3. Lawful Use Restrictions",
+                    "You may only use ABK on devices, accounts, repositories, and network environments that you own or have explicit authorization for.",
+                    "It is prohibited to use ABK, its workflows, patches, custom external modules, or build artifacts for grey/black market activities, unauthorized access, bypassing risk controls, cheating, malicious concealment, data theft, service disruption, audit evasion, mass abuse, infringement of others' rights, or any other illegal or prohibited purposes.",
+                    "You are responsible for ensuring compliance with applicable laws and regulations, platform rules, device manufacturer terms, and upstream project license requirements."
                 )
                 TermsSection(
-                    "四、第三方项目与外部模块",
-                    "ABK 聚合多个第三方项目、补丁、脚本和下载来源。第三方代码、许可证、稳定性、安全性和适配性由对应上游负责。",
-                    "启用自定义外部模块会 clone 外部仓库并执行仓库根目录的 setup.sh。执行前你应审查脚本内容、提交历史、来源可信度和权限影响。",
-                    "外部模块可能修改内核源码、defconfig、构建脚本或产物内容。由外部模块造成的构建失败、设备异常、安全风险或合规问题，由启用者和模块提供者自行承担。"
+                    "4. Third-Party Projects & External Modules",
+                    "ABK aggregates multiple third-party projects, patches, scripts, and download sources. The code, licenses, stability, security, and compatibility of third-party components are the responsibility of their respective upstream maintainers.",
+                    "Enabling custom external modules will clone an external repository and execute the setup.sh in its root directory. Before enabling, you should review the script contents, commit history, source trustworthiness, and permission implications.",
+                    "External modules may modify kernel source code, defconfig, build scripts, or artifact contents. Any build failures, device issues, security risks, or compliance problems caused by external modules are the responsibility of the enabler and module provider."
                 )
                 TermsSection(
-                    "五、授权、隐私与账号风险",
-                    "ABK 使用 GitHub Device Flow 获取授权 token，以检查或管理 Fork、触发 Actions、读取构建状态和下载产物。你应理解授权范围并自行管理 GitHub 账号安全。",
-                    "ABK 在需要刷写、安装模块或识别本机状态时可能请求 Root。授予 Root 权限会提高系统风险，你应自行确认操作必要性。",
-                    "你不应在自定义模块、公开仓库、日志或 issue 中暴露 token、密钥、隐私数据、设备敏感信息或不可公开的构建产物。"
+                    "5. Authorization, Privacy & Account Risk",
+                    "ABK uses GitHub Device Flow to obtain an authorization token for checking or managing forks, triggering Actions, reading build status, and downloading artifacts. You should understand the authorization scope and manage your GitHub account security accordingly.",
+                    "ABK may request Root access when flashing, installing modules, or identifying the local device state. Granting Root increases system risk; you should verify the necessity of each operation yourself.",
+                    "You must not expose tokens, keys, private data, sensitive device information, or non-public build artifacts in custom modules, public repositories, logs, or issues."
                 )
                 TermsSection(
-                    "六、免责声明",
-                    "在法律允许范围内，ABK 的开发者、维护者和贡献者不对因使用、修改、分发、依赖 ABK 或其构建产物造成的设备损坏、数据丢失、账号风险、服务中断、合规问题、第三方索赔或任何直接/间接损失承担责任。",
-                    "ABK 按现状提供，不承诺无缺陷、无中断、无安全风险，也不承诺任何特定设备、系统版本、内核分支或第三方模块可用。",
-                    "你继续使用 ABK 即表示你已具备必要知识、备份和恢复能力，并愿意自行承担全部风险。"
+                    "6. Disclaimer",
+                    "To the fullest extent permitted by law, the developers, maintainers, and contributors of ABK are not liable for any device damage, data loss, account risk, service interruption, compliance issues, third-party claims, or any direct/indirect losses arising from the use, modification, distribution, or reliance on ABK or its build artifacts.",
+                    "ABK is provided as-is, with no guarantees of being defect-free, uninterrupted, or free of security risks, and no guarantee of availability for any specific device, system version, kernel branch, or third-party module.",
+                    "By continuing to use ABK, you confirm that you have the necessary knowledge, backup, and recovery capabilities, and that you accept full responsibility for all associated risks."
                 )
-                TermsText("已阅读到本协议末尾后，才可点击“同意并继续”。")
+                TermsText("You may click \"Agree and Continue\" only after reading to the end of this agreement.")
             }
         },
         dismissButton = {
             TextButton(onClick = onDecline) {
-                Text("不同意并退出")
+                Text("Decline and Exit")
             }
         },
         confirmButton = {
@@ -265,7 +265,7 @@ private fun TermsAgreementDialog(
                 onClick = onAccept,
                 enabled = canAccept
             ) {
-                Text(if (canAccept) "同意并继续" else "请滑到底部")
+                Text(if (canAccept) "Agree and Continue" else "Scroll to bottom")
             }
         }
     )
@@ -294,14 +294,14 @@ private fun TermsText(text: String) {
 }
 
 private enum class AbkTab(val label: String) {
-    Status("当前状态"),
-    Build("构建内核"),
-    Modules("模块仓库"),
-    Flash("刷写"),
-    RuntimeHome("首页"),
-    InstalledModules("已安装模块"),
-    RootAuth("超级用户"),
-    Settings("设置")
+    Status("Status"),
+    Build("Build"),
+    Modules("Modules"),
+    Flash("Flash"),
+    RuntimeHome("Home"),
+    InstalledModules("Installed Modules"),
+    RootAuth("Superuser"),
+    Settings("Settings")
 }
 
 @Composable
@@ -419,7 +419,7 @@ private fun AbkMainScaffold(
             context.findActivity()?.finish()
         } else {
             lastBackAt = now
-            Toast.makeText(context, "再按一次退出 AnyBase Kernel", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Press again to exit AnyBase Kernel", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -548,7 +548,7 @@ private fun AbkMainScaffold(
 }
 
 private fun AbkTab.displayLabel(rootGranted: Boolean): String = when (this) {
-    AbkTab.Flash -> if (rootGranted) label else "文件"
+    AbkTab.Flash -> if (rootGranted) label else "Files"
     else -> label
 }
 
