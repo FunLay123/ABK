@@ -471,11 +471,15 @@ object RootUtils {
             return ManagerRuntimeSnapshot(manager = manager)
         }
 
-        val control = readAbkControlStatus().takeIf { it.success }
-            ?.output
-            ?.joinToString("\n")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() && it.startsWith("{") }
+        val control = if (manager.workMode == "lkm") {
+            null
+        } else {
+            readAbkControlStatus().takeIf { it.success }
+                ?.output
+                ?.joinToString("\n")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() && it.startsWith("{") }
+        }
 
         val modules = listKsuModules().takeIf { it.success }
             ?.output
@@ -558,19 +562,19 @@ object RootUtils {
 
     fun setSuCompatMode(mode: Int): ShellResult {
         return when (mode) {
-            0 -> setKsuFeatureValue(FEATURE_SU_COMPAT, 1L, persist = true)
+            0 -> setNativeKsuFeatureValue(FEATURE_SU_COMPAT, 1L, persist = true)
             1 -> {
-                val persistedEnabled = setKsuFeatureValue(FEATURE_SU_COMPAT, 1L, persist = true)
+                val persistedEnabled = setNativeKsuFeatureValue(FEATURE_SU_COMPAT, 1L, persist = true)
                 if (!persistedEnabled.success) {
                     persistedEnabled
                 } else {
                     mergeShellResults(
                         persistedEnabled,
-                        setKsuFeatureValue(FEATURE_SU_COMPAT, 0L, persist = false)
+                        setNativeKsuFeatureValue(FEATURE_SU_COMPAT, 0L, persist = false)
                     )
                 }
             }
-            2 -> setKsuFeatureValue(FEATURE_SU_COMPAT, 0L, persist = true)
+            2 -> setNativeKsuFeatureValue(FEATURE_SU_COMPAT, 0L, persist = true)
             else -> ShellResult(false, listOf("未知 su 兼容模式"))
         }
     }
@@ -590,6 +594,8 @@ object RootUtils {
                     saveKsuFeatureConfig()
                 )
             }
+        } else if (feature == FEATURE_SELINUX_HIDE) {
+            setNativeKsuFeatureValue(feature, value, persist = true)
         } else {
             setKsuFeatureValue(feature, value, persist = true)
         }
@@ -851,6 +857,7 @@ object RootUtils {
         val variant: String = "",
         val backend: String = "",
         val version: String = "",
+        val workMode: String = "",
         val capabilities: List<String> = emptyList(),
         val diagnostics: List<String> = emptyList()
     )
@@ -899,6 +906,23 @@ object RootUtils {
             "feature set ${shellQuote(featureName)} $value",
             timeoutSeconds = 30L
         )
+        if (!setResult.success || !persist) return setResult
+        return mergeShellResults(setResult, saveKsuFeatureConfig())
+    }
+
+    private fun setNativeKsuFeatureValue(featureName: String, value: Long, persist: Boolean): ShellResult {
+        val enabled = value != 0L
+        val setResult = when (featureName) {
+            FEATURE_SU_COMPAT -> {
+                val ok = AbkKsuNative.setSuEnabled(enabled)
+                ShellResult(ok, if (ok) emptyList() else listOf("传统 su 命令支持切换失败"))
+            }
+            FEATURE_SELINUX_HIDE -> {
+                val code = AbkKsuNative.setSelinuxHideEnabled(enabled)
+                ShellResult(code == 0, if (code == 0) emptyList() else listOf("隐藏 SELinux 修改切换失败: $code"))
+            }
+            else -> setKsuFeatureValue(featureName, value, persist = false)
+        }
         if (!setResult.success || !persist) return setResult
         return mergeShellResults(setResult, saveKsuFeatureConfig())
     }
@@ -1025,8 +1049,24 @@ object RootUtils {
     }
 
     private fun detectManagerRuntime(): ManagerRuntimeProbe {
-        detectNativeManagerRuntime()?.let { return it }
+        val nativeRuntime = detectNativeManagerRuntime()
+        if (nativeRuntime?.active == true) {
+            return nativeRuntime
+        }
 
+        val shellRuntime = detectShellManagerRuntime(nativeRuntime)
+        if (shellRuntime != null) {
+            return shellRuntime
+        }
+
+        return nativeRuntime ?: ManagerRuntimeProbe(
+            diagnostics = listOf("未检测到可用的 KernelSU/ReSukiSU 管理器接口或 Root shell。")
+        )
+    }
+
+    private fun detectShellManagerRuntime(
+        nativeRuntime: ManagerRuntimeProbe?
+    ): ManagerRuntimeProbe? {
         return try {
             createRootShell(timeoutSeconds = 10L).use { shell ->
                 val ksudPath = execWithShell(
@@ -1064,17 +1104,19 @@ object RootUtils {
                         .map { it.trim() }
                         .filter { it.isNotBlank() }
                         .distinct()
-                    val variant = inferManagerVariant(version)
+                    val variant = inferManagerVariant(version).ifBlank { "KernelSU" }
                     ManagerRuntimeProbe(
                         active = true,
-                        displayName = variant.ifBlank { "KernelSU" },
-                        variant = variant.ifBlank { "KernelSU" },
+                        displayName = nativeRuntime?.displayName?.takeIf { it.isNotBlank() } ?: variant,
+                        variant = nativeRuntime?.variant?.takeIf { it.isNotBlank() } ?: variant,
                         backend = "ksud",
-                        version = version,
+                        version = version.ifBlank { nativeRuntime?.version.orEmpty() },
+                        workMode = nativeRuntime?.workMode.orEmpty(),
                         capabilities = capabilities.ifEmpty { listOf("root_shell", "modules") },
-                        diagnostics = listOf(
-                            "Currently operating only through ksud/root shell compatibility layer; ABK has not been recognized by the kernel as a native manager and cannot manage Root grant policies."
-                        )
+                        diagnostics = (
+                            nativeRuntime?.diagnostics.orEmpty() +
+                                "Currently operating only through ksud/root shell compatibility layer; ABK has not been recognized by the kernel as a native manager and cannot manage Root grant policies."
+                            ).distinct()
                     )
                 } else {
                     ManagerRuntimeProbe(
@@ -1082,17 +1124,17 @@ object RootUtils {
                         displayName = "Root",
                         variant = "Generic",
                         backend = "su",
+                        workMode = nativeRuntime?.workMode.orEmpty(),
                         capabilities = listOf("root_shell"),
-                        diagnostics = listOf(
-                            "Only a generic su shell is available; no KernelSU/ReSukiSU native manager interface detected."
-                        )
+                        diagnostics = (
+                            nativeRuntime?.diagnostics.orEmpty() +
+                                "Only a generic su shell is available; no KernelSU/ReSukiSU native manager interface detected."
+                            ).distinct()
                     )
                 }
             }
         } catch (error: Throwable) {
-            ManagerRuntimeProbe(
-                diagnostics = listOf("No available KernelSU/ReSukiSU manager interface or Root shell detected.")
-            )
+            null
         }
     }
 
@@ -1113,13 +1155,15 @@ object RootUtils {
                 variant = nativeVariant,
                 backend = "native",
                 version = versionText,
+                workMode = if (status.isLkmMode) "lkm" else "built-in",
                 capabilities = listOf("native_kernel"),
                 diagnostics = listOf(
                     "KernelSU/ReSukiSU native interface is accessible, but the current ABK APK is not recognized as a manager. Please verify that the installed com.abk.kernel APK is the official signed build matching the ABK_MANAGER_CERT_SHA256 configured at kernel build time."
                 )
             )
         }
-        val controlJson = AbkKsuNative.controlStatus()
+        val workMode = if (status.isLkmMode) "lkm" else "built-in"
+        val controlJson = if (status.isLkmMode) null else AbkKsuNative.controlStatus()
         val controlVariant = controlJson
             ?.let { json ->
                 runCatching {
@@ -1133,8 +1177,8 @@ object RootUtils {
             .orEmpty()
         val displayVariant = controlVariant.ifBlank { nativeVariant }
         val diagnostics = buildList {
-            if (controlJson == null) {
-                add("ABK control not responding; kernel may not have CONFIG_ABK_CONTROL enabled, or the ABK Control external module is missing the before_build stage.")
+            if (controlJson == null && !status.isLkmMode) {
+                add("ABK control not responding；kernel may not have CONFIG_ABK_CONTROL enabled，or the ABK Control external module is missing the before_build stage.")
             }
         }
         val capabilities = buildList {
@@ -1152,6 +1196,7 @@ object RootUtils {
             variant = displayVariant,
             backend = "native",
             version = versionText,
+            workMode = workMode,
             capabilities = capabilities,
             diagnostics = diagnostics
         )

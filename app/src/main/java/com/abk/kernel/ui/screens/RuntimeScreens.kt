@@ -633,6 +633,9 @@ private fun RuntimeManagerCard(runtimeStatus: AbkRuntimeStatus) {
             RuntimeInfoRow("Type", manager.displayName.ifBlank { manager.variant })
             RuntimeInfoRow("Version", manager.version)
             RuntimeInfoRow("Source", runtimeBackendLabel(manager.backend))
+            runtimeStatus.workMode.takeIf { it.isNotBlank() }?.let { workMode ->
+                RuntimeInfoRow("Work Mode", runtimeWorkModeLabel(workMode))
+            }
             if (backend != null && backend != manager) {
                 Spacer(Modifier.height(2.dp))
                 RuntimeInfoRow("Runtime backend", backend.displayName.ifBlank { backend.variant })
@@ -1262,6 +1265,12 @@ private fun runtimeBackendLabel(backend: String): String = when (backend) {
     "su" -> "Generic su"
     "kernel" -> "Kernel runtime"
     else -> backend
+}
+
+private fun runtimeWorkModeLabel(workMode: String): String = when (workMode) {
+    "lkm" -> "LKM"
+    "built-in" -> "Built-in"
+    else -> workMode
 }
 
 private fun runtimeModuleSourceLabel(source: String): String {
