@@ -87,12 +87,12 @@ object RootUtils {
         val safeImage = shellQuote(imagePath)
         val script = """
             set -e
-            echo "[ABK] 开始刷写 ${partition} 镜像"
-            echo "[ABK] 镜像路径: $safeImage"
+            echo "[ABK] Starting flash of ${partition} image"
+            echo "[ABK] Image path: $safeImage"
             slot=${'$'}(getprop ro.boot.slot_suffix 2>/dev/null || true)
-            echo "[ABK] 当前槽位: ${'$'}{slot:-无}"
+            echo "[ABK] Current slot: ${'$'}{slot:-none}"
             target=""
-            echo "[ABK] 搜索目标分区..."
+            echo "[ABK] Searching for target partition..."
             for candidate in \
                 /dev/block/by-name/${partition}${'$'}slot \
                 /dev/block/bootdevice/by-name/${partition}${'$'}slot \
@@ -107,15 +107,15 @@ object RootUtils {
                     [ -b "${'$'}block" ] && target="${'$'}block" && break 2
                 done
             done
-            [ -n "${'$'}target" ] || { echo "未找到 ${partition}${'$'}slot 分区"; exit 2; }
+            [ -n "${'$'}target" ] || { echo "${partition}${'$'}slot partition not found"; exit 2; }
             img_size=${'$'}(wc -c < $safeImage)
-            echo "[ABK] 目标分区: ${'$'}target"
-            echo "[ABK] 镜像大小: ${'$'}img_size bytes"
-            echo "[ABK] 开始写入，请不要退出应用..."
+            echo "[ABK] Target partition: ${'$'}target"
+            echo "[ABK] Image size: ${'$'}img_size bytes"
+            echo "[ABK] Writing image, do not exit the app..."
             dd if=$safeImage of="${'$'}target" bs=4096 conv=fsync
-            echo "[ABK] dd 写入完成，开始 sync"
+            echo "[ABK] dd write complete, starting sync"
             sync
-            echo "[ABK] ${partition} 镜像刷写完成"
+            echo "[ABK] ${partition} image flash complete"
         """.trimIndent()
         return execRootScript(script, timeoutSeconds = 240, onOutput = onOutput)
     }
@@ -124,53 +124,53 @@ object RootUtils {
         val safeZip = shellQuote(zipPath)
         val script = """
             set -e
-            echo "[ABK] 开始安装模块"
-            echo "[ABK] 模块路径: $safeZip"
+            echo "[ABK] Starting module installation"
+            echo "[ABK] Module path: $safeZip"
             module_size=${'$'}(wc -c < $safeZip 2>/dev/null || echo 0)
-            echo "[ABK] 模块大小: ${'$'}module_size bytes"
+            echo "[ABK] Module size: ${'$'}module_size bytes"
             chmod 0644 $safeZip 2>/dev/null || true
             installer=${'$'}(abk_find_ksud 2>/dev/null || true)
             if [ -n "${'$'}installer" ]; then
                 ksud_source=${'$'}(abk_ksud_source "${'$'}installer")
                 ksud_label=${'$'}(abk_ksud_label "${'$'}ksud_source")
-                echo "[ABK] 使用${'$'}ksud_label ksud 安装模块: ${'$'}installer"
+                echo "[ABK] Installing module with ${'$'}ksud_label ksud: ${'$'}installer"
                 if [ "${'$'}ksud_source" != "embedded" ]; then
-                    echo "[ABK] 内置 SukiSU-Ultra ksud 不可用，已回退到${'$'}ksud_label ksud"
+                    echo "[ABK] Bundled SukiSU-Ultra ksud not available, falling back to ${'$'}ksud_label ksud"
                 fi
                 if "${'$'}installer" module install $safeZip; then
-                    echo "[ABK] KernelSU 模块安装命令完成"
+                    echo "[ABK] KernelSU module install command completed"
                 else
                     rc=${'$'}?
-                    echo "[ABK] KernelSU 模块安装失败: ${'$'}rc"
+                    echo "[ABK] KernelSU module installation failed: ${'$'}rc"
                     exit ${'$'}rc
                 fi
             elif command -v magisk >/dev/null 2>&1; then
                 installer=${'$'}(command -v magisk)
-                echo "[ABK] 使用 Magisk 安装模块: ${'$'}installer"
+                echo "[ABK] Installing module via Magisk: ${'$'}installer"
                 if magisk --install-module $safeZip; then
-                    echo "[ABK] Magisk 模块安装命令完成"
+                    echo "[ABK] Magisk module install command completed"
                 else
                     rc=${'$'}?
-                    echo "[ABK] Magisk 模块安装失败: ${'$'}rc"
+                    echo "[ABK] Magisk module installation failed: ${'$'}rc"
                     exit ${'$'}rc
                 fi
             elif command -v apd >/dev/null 2>&1; then
                 installer=${'$'}(command -v apd)
-                echo "[ABK] 使用 APatch 安装模块: ${'$'}installer"
+                echo "[ABK] Installing module via APatch: ${'$'}installer"
                 if apd module install $safeZip; then
-                    echo "[ABK] APatch 模块安装命令完成"
+                    echo "[ABK] APatch module install command completed"
                 else
                     rc=${'$'}?
-                    echo "[ABK] APatch 模块安装失败: ${'$'}rc"
+                    echo "[ABK] APatch module installation failed: ${'$'}rc"
                     exit ${'$'}rc
                 fi
             else
-                echo "未检测到 KernelSU/Magisk/APatch 模块安装器"
+                echo "No KernelSU/Magisk/APatch module installer detected"
                 exit 127
             fi
-            echo "[ABK] 开始 sync"
+            echo "[ABK] Starting sync"
             sync
-            echo "[ABK] 模块安装完成，通常需要重启后生效"
+            echo "[ABK] Module installation complete, a reboot is usually required to take effect"
         """.trimIndent()
         return execRootScript(
             withManagerShellHelpers(script),
@@ -186,7 +186,7 @@ object RootUtils {
     ): ShellResult {
         val source = File(apkPath)
         if (!source.isFile) {
-            val line = "APK 文件不存在: $apkPath"
+            val line = "APK file not found: $apkPath"
             onOutput?.invoke(line)
             return ShellResult(false, listOf(line))
         }
@@ -200,33 +200,33 @@ object RootUtils {
             source.copyTo(stagedApk, overwrite = true)
             val safeApk = shellQuote(stagedApk.absolutePath)
             val script = """
-                echo "[ABK] 开始安装管理器 APK"
-                echo "[ABK] APK 原始路径: ${shellQuote(apkPath)}"
-                echo "[ABK] APK 暂存路径: $safeApk"
-                [ -f $safeApk ] || { echo "APK 暂存文件不存在"; exit 2; }
+                echo "[ABK] Starting manager APK installation"
+                echo "[ABK] APK source path: ${shellQuote(apkPath)}"
+                echo "[ABK] APK staging path: $safeApk"
+                [ -f $safeApk ] || { echo "APK staging file not found"; exit 2; }
                 apk_size=${'$'}(wc -c < $safeApk 2>/dev/null || echo 0)
-                echo "[ABK] APK 大小: ${'$'}apk_size bytes"
+                echo "[ABK] APK size: ${'$'}apk_size bytes"
                 tmp="/data/local/tmp/abk-manager-${'$'}$.apk"
                 rm -f "${'$'}tmp" 2>/dev/null || true
-                echo "[ABK] 复制 APK 到临时安装路径: ${'$'}tmp"
+                echo "[ABK] Copying APK to temporary install path: ${'$'}tmp"
                 if ! cp $safeApk "${'$'}tmp" 2>/dev/null; then
-                    echo "[ABK] cp 复制失败，尝试 cat 复制"
-                    cat $safeApk > "${'$'}tmp" || { rc=${'$'}?; echo "[ABK] 复制 APK 失败: ${'$'}rc"; exit ${'$'}rc; }
+                    echo "[ABK] cp copy failed, trying cat"
+                    cat $safeApk > "${'$'}tmp" || { rc=${'$'}?; echo "[ABK] Failed to copy APK: ${'$'}rc"; exit ${'$'}rc; }
                 fi
-                chmod 0644 "${'$'}tmp" || { rc=${'$'}?; echo "[ABK] chmod 失败: ${'$'}rc"; rm -f "${'$'}tmp" 2>/dev/null || true; exit ${'$'}rc; }
+                chmod 0644 "${'$'}tmp" || { rc=${'$'}?; echo "[ABK] chmod failed: ${'$'}rc"; rm -f "${'$'}tmp" 2>/dev/null || true; exit ${'$'}rc; }
                 restorecon "${'$'}tmp" 2>/dev/null || true
                 ls -l "${'$'}tmp" 2>/dev/null || true
                 pm_bin="/system/bin/pm"
                 [ -x "${'$'}pm_bin" ] || pm_bin=${'$'}(command -v pm 2>/dev/null || true)
-                [ -n "${'$'}pm_bin" ] || { echo "未找到 pm 命令"; rm -f "${'$'}tmp" 2>/dev/null || true; exit 127; }
-                echo "[ABK] 执行 ${'$'}pm_bin install -r"
+                [ -n "${'$'}pm_bin" ] || { echo "pm command not found"; rm -f "${'$'}tmp" 2>/dev/null || true; exit 127; }
+                echo "[ABK] Running ${'$'}pm_bin install -r"
                 "${'$'}pm_bin" install -r "${'$'}tmp"
                 rc=${'$'}?
                 rm -f "${'$'}tmp" 2>/dev/null || true
                 if [ "${'$'}rc" -eq 0 ]; then
-                    echo "[ABK] 管理器 APK 安装完成"
+                    echo "[ABK] Manager APK installed successfully"
                 else
-                    echo "[ABK] 管理器 APK 安装失败: ${'$'}rc"
+                    echo "[ABK] Manager APK installation failed: ${'$'}rc"
                 fi
                 exit "${'$'}rc"
             """.trimIndent()
@@ -362,20 +362,20 @@ object RootUtils {
             ?.takeIf { it.isNotBlank() }
             ?.let { File(it) }
         if (sourceBoot != null && !sourceBoot.isFile) {
-            return BootPatchResult(false, listOf("boot 镜像不存在: $bootImagePath"), null)
+            return BootPatchResult(false, listOf("Boot image not found: $bootImagePath"), null)
         }
 
         val localModule = localModulePath
             ?.takeIf { it.isNotBlank() }
             ?.let { File(it) }
         if (localModule != null && !localModule.isFile) {
-            return BootPatchResult(false, listOf("LKM 文件不存在: $localModulePath"), null)
+            return BootPatchResult(false, listOf("LKM file not found: $localModulePath"), null)
         }
 
         val asset = if (localModule == null) {
             listBundledAbkLkmAssets(context).firstOrNull {
                 it.variantId == variantId && it.kmi == kmi
-            } ?: return BootPatchResult(false, listOf("未内置 $variantId / $kmi 的 LKM 模块"), null)
+            } ?: return BootPatchResult(false, listOf("No built-in LKM module for $variantId / $kmi"), null)
         } else {
             null
         }
@@ -413,9 +413,9 @@ object RootUtils {
             )
             val requiresRootShell = flash || sourceBoot == null
             if (asset != null) {
-                onOutput?.invoke("[ABK] 使用 APK 内置 LKM: ${asset.variantLabel} · ${asset.kmi}")
+                onOutput?.invoke("[ABK] Using bundled APK LKM: ${asset.variantLabel} · ${asset.kmi}")
             } else {
-                onOutput?.invoke("[ABK] 使用本地 LKM: ${moduleFile.name}")
+                onOutput?.invoke("[ABK] Using local LKM: ${moduleFile.name}")
             }
             val result = when {
                 allowRootFallback -> {
@@ -427,27 +427,27 @@ object RootUtils {
                     when {
                         rootResult != null -> rootResult
                         !requiresRootShell -> {
-                            onOutput?.invoke("[ABK] Root shell 不可用，改用 APK 内置 SukiSU-Ultra ksud 仅修补本地 boot 镜像")
+                            onOutput?.invoke("[ABK] Root shell unavailable, using bundled SukiSU-Ultra ksud for local boot image patching only")
                             runBundledUserlandBootPatch(
                                 context = context,
                                 args = baseArgs,
                                 onOutput = onOutput
                             ) ?: ShellResult(
                                 false,
-                                listOf("未找到可执行的 APK 内置 SukiSU-Ultra ksud；无 Root 时只能在选择 boot.img 后生成 patched 镜像。")
+                                listOf("No executable bundled SukiSU-Ultra ksud found; without Root, a patched image can only be generated after selecting a boot.img.")
                             )
                         }
-                        else -> ShellResult(false, listOf("该安装方式需要 Root 权限。"))
+                        else -> ShellResult(false, listOf("This installation method requires Root permission."))
                     }
                 }
-                requiresRootShell -> ShellResult(false, listOf("该安装方式需要 Root 权限。"))
+                requiresRootShell -> ShellResult(false, listOf("This installation method requires Root permission."))
                 else -> runBundledUserlandBootPatch(
                     context = context,
                     args = baseArgs,
                     onOutput = onOutput
                 ) ?: ShellResult(
                     false,
-                    listOf("未找到可执行的 APK 内置 SukiSU-Ultra ksud；无 Root 时只能在选择 boot.img 后生成 patched 镜像。")
+                    listOf("No executable bundled SukiSU-Ultra ksud found; without Root, a patched image can only be generated after selecting a boot.img.")
                 )
             }
             val outputPath = outputImage.takeIf { result.success && it.isFile }?.absolutePath
@@ -507,7 +507,7 @@ object RootUtils {
         return if (status != null) {
             ShellResult(true, listOf(status))
         } else {
-            ShellResult(false, listOf("未激活"))
+            ShellResult(false, listOf("Not activated"))
         }
     }
 
@@ -537,7 +537,7 @@ object RootUtils {
             return ManagerRuntimeSnapshot(
                 manager = manager.copy(
                     active = false,
-                    diagnostics = (manager.diagnostics + "仅检测到通用 su shell，未检测到可用于 ABK 运行态管理的 KernelSU/ReSukiSU 控制接口。").distinct()
+                    diagnostics = (manager.diagnostics + "Only a generic su shell was detected; no KernelSU/ReSukiSU control interface available for ABK runtime management.").distinct()
                 )
             )
         }
@@ -621,13 +621,13 @@ object RootUtils {
                 }
             }
             2 -> setNativeKsuFeatureValue(FEATURE_SU_COMPAT, 0L, persist = true)
-            else -> ShellResult(false, listOf("未知 su 兼容模式"))
+            else -> ShellResult(false, listOf("Unknown su compatibility mode"))
         }
     }
 
     fun setKsuFeatureEnabled(featureName: String, enabled: Boolean): ShellResult {
         val feature = normalizeKsuFeatureName(featureName)
-            ?: return ShellResult(false, listOf("未知 Feature"))
+            ?: return ShellResult(false, listOf("Unknown feature"))
         val value = if (enabled) 1L else 0L
         return if (feature == FEATURE_ADB_ROOT) {
             val setResult = setKsuFeatureValue(feature, value, persist = false)
@@ -668,7 +668,7 @@ object RootUtils {
     fun readAppProfileTemplate(id: String): ShellResult {
         if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         if (!isSafeTemplateId(id)) {
-            return ShellResult(false, listOf("模板名称无效"))
+            return ShellResult(false, listOf("Invalid template name"))
         }
         return runKsudCommand("profile get-template ${shellQuote(id)}", timeoutSeconds = 30L)
     }
@@ -676,7 +676,7 @@ object RootUtils {
     fun writeAppProfileTemplate(id: String, content: String): ShellResult {
         if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         if (!isSafeTemplateId(id)) {
-            return ShellResult(false, listOf("模板名称无效"))
+            return ShellResult(false, listOf("Invalid template name"))
         }
         return runKsudCommand(
             "profile set-template ${shellQuote(id)} ${shellQuote(content)}",
@@ -687,7 +687,7 @@ object RootUtils {
     fun deleteAppProfileTemplate(id: String): ShellResult {
         if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         if (!isSafeTemplateId(id)) {
-            return ShellResult(false, listOf("模板名称无效"))
+            return ShellResult(false, listOf("Invalid template name"))
         }
         return runKsudCommand("profile delete-template ${shellQuote(id)}", timeoutSeconds = 30L)
     }
@@ -779,7 +779,7 @@ object RootUtils {
         return if (AbkKsuNative.controlCommand(command)) {
             ShellResult(true, emptyList())
         } else {
-            ShellResult(false, listOf("未激活"))
+            ShellResult(false, listOf("Not activated"))
         }
     }
 
@@ -962,7 +962,7 @@ object RootUtils {
 
     private fun runKsudCommand(args: String, timeoutSeconds: Long): ShellResult {
         val cleanArgs = args.trim()
-        if (cleanArgs.isBlank()) return ShellResult(false, listOf("ksud 参数为空"))
+        if (cleanArgs.isBlank()) return ShellResult(false, listOf("ksud arguments are empty"))
         val script = """
             set -e
             ksud_path=${'$'}(abk_find_ksud)
@@ -1018,11 +1018,11 @@ object RootUtils {
         val setResult = when (featureName) {
             FEATURE_SU_COMPAT -> {
                 val ok = AbkKsuNative.setSuEnabled(enabled)
-                ShellResult(ok, if (ok) emptyList() else listOf("传统 su 命令支持切换失败"))
+                ShellResult(ok, if (ok) emptyList() else listOf("Failed to toggle legacy su command support"))
             }
             FEATURE_SELINUX_HIDE -> {
                 val code = AbkKsuNative.setSelinuxHideEnabled(enabled)
-                ShellResult(code == 0, if (code == 0) emptyList() else listOf("隐藏 SELinux 修改切换失败: $code"))
+                ShellResult(code == 0, if (code == 0) emptyList() else listOf("Failed to toggle SELinux modification hiding: $code"))
             }
             else -> setKsuFeatureValue(featureName, value, persist = false)
         }
@@ -1106,7 +1106,7 @@ object RootUtils {
             val completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
             if (!completed) {
                 process.destroyForcibly()
-                val line = "命令超时"
+                val line = "Command timed out"
                 output.add(line)
                 onOutput?.invoke(line)
                 return ShellResult(false, output.toList())
@@ -1131,7 +1131,7 @@ object RootUtils {
             }
         } catch (error: Throwable) {
             Log.w(TAG, "root command failed", error)
-            val line = "管理器未激活"
+            val line = "Manager not activated"
             onOutput?.invoke(line)
             ShellResult(false, listOf(line))
         }
@@ -1168,7 +1168,7 @@ object RootUtils {
         }
 
         return nativeRuntime ?: ManagerRuntimeProbe(
-            diagnostics = listOf("未检测到可用的 KernelSU/ReSukiSU 管理器接口或 Root shell。")
+            diagnostics = listOf("No usable KernelSU/ReSukiSU manager interface or Root shell detected.")
         )
     }
 
@@ -1227,7 +1227,7 @@ object RootUtils {
                         capabilities = capabilities.ifEmpty { listOf("root_shell", "modules") },
                         diagnostics = (
                             nativeRuntime?.diagnostics.orEmpty() +
-                                "当前仅通过 ksud/root shell 兼容层工作，ABK 尚未被内核识别为原生管理器，无法管理 Root 授权策略。"
+                                "Currently operating only through ksud/root shell compatibility layer; ABK has not been recognized by the kernel as a native manager and cannot manage Root grant policies."
                             ).distinct()
                     )
                 } else {
@@ -1240,7 +1240,7 @@ object RootUtils {
                         capabilities = listOf("root_shell"),
                         diagnostics = (
                             nativeRuntime?.diagnostics.orEmpty() +
-                                "当前仅有通用 su shell 可用，未检测到 KernelSU/ReSukiSU 原生管理器接口。"
+                                "Only a generic su shell is available; no KernelSU/ReSukiSU native manager interface detected."
                             ).distinct()
                     )
                 }
@@ -1270,7 +1270,7 @@ object RootUtils {
                 workMode = if (status.isLkmMode) "lkm" else "built-in",
                 capabilities = listOf("native_kernel"),
                 diagnostics = listOf(
-                    "KernelSU/ReSukiSU native 接口可访问，但当前 ABK APK 未被识别为管理器。请确认安装的是与内核构建时 ABK_MANAGER_CERT_SHA256 匹配的 com.abk.kernel 正式签名 APK。"
+                    "KernelSU/ReSukiSU native interface is accessible, but the current ABK APK is not recognized as a manager. Please verify that the installed com.abk.kernel APK is the official signed build matching the ABK_MANAGER_CERT_SHA256 configured at kernel build time."
                 )
             )
         }
@@ -1290,7 +1290,7 @@ object RootUtils {
         val displayVariant = controlVariant.ifBlank { nativeVariant }
         val diagnostics = buildList {
             if (controlJson == null && !status.isLkmMode) {
-                add("ABK control 未响应；内核可能没有启用 CONFIG_ABK_CONTROL，或 ABK Control 外部模块缺少 before_build 阶段。")
+                add("ABK control not responding; kernel may not have CONFIG_ABK_CONTROL enabled, or the ABK Control external module is missing the before_build stage.")
             }
         }
         val capabilities = buildList {
@@ -1522,8 +1522,8 @@ object RootUtils {
         val embedded = embeddedKsudPath(context) ?: return null
         return try {
             createRootShell(timeoutSeconds = 300L).use { shell ->
-                onOutput?.invoke("[ABK] 通过 Root shell 调用内置 libksud.so")
-                onOutput?.invoke("[ABK] ksud 路径: $embedded")
+                onOutput?.invoke("[ABK] Invoking embedded libksud.so via Root shell")
+                onOutput?.invoke("[ABK] ksud path: $embedded")
                 execWithShell(
                     shell,
                     buildKsudShellCommand(embedded, args),
@@ -1542,8 +1542,8 @@ object RootUtils {
         onOutput: ((String) -> Unit)? = null
     ): ShellResult? {
         val userlandKsud = resolveUserlandKsudPath(context) ?: return null
-        onOutput?.invoke("[ABK] 使用 APK 内置 SukiSU-Ultra ksud 进行本地 boot 修补")
-        onOutput?.invoke("[ABK] ksud 路径: $userlandKsud")
+        onOutput?.invoke("[ABK] Using bundled SukiSU-Ultra ksud for local boot patching")
+        onOutput?.invoke("[ABK] ksud path: $bundledKsud")
         return runLocalCommand(
             command = buildKsudCommand(userlandKsud, args),
             timeoutSeconds = 300L,
@@ -1690,9 +1690,9 @@ object RootUtils {
             }
             abk_ksud_label() {
                 case "$1" in
-                    embedded) printf '%s\n' "内置 SukiSU-Ultra" ;;
-                    data_adb) printf '%s\n' "外部 /data/adb" ;;
-                    *) printf '%s\n' "系统" ;;
+                    embedded) printf '%s\n' "Bundled SukiSU-Ultra" ;;
+                    data_adb) printf '%s\n' "External /data/adb" ;;
+                    *) printf '%s\n' "System" ;;
                 esac
             }
             $script
@@ -1738,16 +1738,16 @@ object RootUtils {
     ): List<String> {
         if (output.isNotEmpty()) return output.toList()
         val fallback = if (success) {
-            "[ABK] Root 命令执行完成，但命令未返回输出。"
+            "[ABK] Root command executed successfully, but the command returned no output."
         } else {
-            "[ABK] Root 命令执行失败，但命令未返回输出。"
+            "[ABK] Root command execution failed, but the command returned no output."
         }
         onOutput?.invoke(fallback)
         return listOf(fallback)
     }
 
     private fun nativeManagerPermissionDeniedMessage(): String =
-        "当前 ABK 没有原生管理权限，无法访问该功能。请使用已将 ABK 识别为原生管理器的内核。"
+        "ABK has no native manager permission and cannot access this feature. Please use a kernel that recognises ABK as a native manager."
 
     private fun nativeManagerPermissionDeniedResult(): ShellResult =
         ShellResult(false, listOf(nativeManagerPermissionDeniedMessage()))
@@ -1768,36 +1768,36 @@ object RootUtils {
     private val AK3_FLASH_SCRIPT = """
 #!/system/bin/sh
 set -e
-echo "[ABK] 开始刷入 AnyKernel3"
-echo "[ABK] AK3 包: ${'$'}Z"
-echo "[ABK] 工作目录: ${'$'}F"
-echo "[ABK] 解包 busybox"
-unzip -p "${'$'}Z" 'tools*/busybox' > "${'$'}F/busybox" || { echo "AK3 缺少 busybox"; exit 2; }
-echo "[ABK] 解包 update-binary"
-unzip -p "${'$'}Z" 'META-INF/com/google/android/update-binary' > "${'$'}F/update-binary" || { echo "AK3 缺少 update-binary"; exit 2; }
+echo "[ABK] Starting AnyKernel3 flash"
+echo "[ABK] AK3 package: ${'$'}Z"
+echo "[ABK] Working directory: ${'$'}F"
+echo "[ABK] Extracting busybox"
+unzip -p "${'$'}Z" 'tools*/busybox' > "${'$'}F/busybox" || { echo "AK3 missing busybox"; exit 2; }
+echo "[ABK] Extracting update-binary"
+unzip -p "${'$'}Z" 'META-INF/com/google/android/update-binary' > "${'$'}F/update-binary" || { echo "AK3 missing update-binary"; exit 2; }
 chmod 755 "${'$'}F/busybox"
 "${'$'}F/busybox" chmod 755 "${'$'}F/update-binary"
 "${'$'}F/busybox" chown root:root "${'$'}F/busybox" "${'$'}F/update-binary" 2>/dev/null || true
 TMP="${'$'}F/tmp"
-echo "[ABK] 准备临时挂载点: ${'$'}TMP"
+echo "[ABK] Preparing temporary mount point: ${'$'}TMP"
 "${'$'}F/busybox" umount "${'$'}TMP" 2>/dev/null || true
 "${'$'}F/busybox" rm -rf "${'$'}TMP" 2>/dev/null || true
 "${'$'}F/busybox" mkdir -p "${'$'}TMP"
 "${'$'}F/busybox" mount -t tmpfs -o noatime tmpfs "${'$'}TMP"
 "${'$'}F/busybox" mount | "${'$'}F/busybox" grep -q " ${'$'}TMP " || exit 1
-echo "[ABK] 临时挂载完成，开始执行 AnyKernel3 update-binary"
+echo "[ABK] Temporary mount ready, executing AnyKernel3 update-binary"
 set +e
 AKHOME="${'$'}TMP/anykernel" "${'$'}F/busybox" ash "${'$'}F/update-binary" 3 1 "${'$'}Z"
 RC=${'$'}?
 set -e
-echo "[ABK] AnyKernel3 返回码: ${'$'}RC"
-echo "[ABK] 清理临时文件"
+echo "[ABK] AnyKernel3 return code: ${'$'}RC"
+echo "[ABK] Cleaning up temporary files"
 "${'$'}F/busybox" umount "${'$'}TMP" 2>/dev/null || true
 "${'$'}F/busybox" rm -rf "${'$'}TMP" "${'$'}F/update-binary" "${'$'}F/busybox" 2>/dev/null || true
 if [ "${'$'}RC" -eq 0 ]; then
-    echo "[ABK] AnyKernel3 刷入完成"
+    echo "[ABK] AnyKernel3 flash completed"
 else
-    echo "[ABK] AnyKernel3 刷入失败"
+    echo "[ABK] AnyKernel3 flash failed"
 fi
 exit ${'$'}RC
 """

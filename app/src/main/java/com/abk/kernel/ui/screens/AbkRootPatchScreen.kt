@@ -243,7 +243,7 @@ fun AbkRootPatchScreen(
     fun copyText(label: String, value: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
-        Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
     }
 
     val bootPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -255,14 +255,14 @@ fun AbkRootPatchScreen(
             selectedMode = LkmPatchInstallMode.SelectFile
             patchedImagePath = ""
             success = null
-            logLines = listOf("已选择 ${staged.second}")
+            logLines = listOf("Selected: ${staged.second}")
         }
     }
 
     val anyKernelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         if (!isZipFile(context, uri)) {
-            Toast.makeText(context, "仅支持 AnyKernel3 zip 文件", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Only AnyKernel3 zip files are supported", Toast.LENGTH_SHORT).show()
             return@rememberLauncherForActivityResult
         }
         scope.launch {
@@ -274,14 +274,14 @@ fun AbkRootPatchScreen(
             selectedMode = LkmPatchInstallMode.AnyKernel3
             patchedImagePath = ""
             success = null
-            logLines = listOf("已选择 ${staged.second}")
+            logLines = listOf("Selected: ${staged.second}")
         }
     }
 
     val localLkmPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         if (!isKoFile(context, uri)) {
-            Toast.makeText(context, "仅支持 .ko LKM 文件", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Only .ko LKM files are supported", Toast.LENGTH_SHORT).show()
             return@rememberLauncherForActivityResult
         }
         scope.launch {
@@ -290,7 +290,7 @@ fun AbkRootPatchScreen(
             selectedLocalLkmName = staged.second
             patchedImagePath = ""
             success = null
-            logLines = listOf("已选择 ${staged.second}")
+            logLines = listOf("Selected: ${staged.second}")
         }
     }
 
@@ -308,7 +308,7 @@ fun AbkRootPatchScreen(
         patchedImagePath = result.patchedImagePath.orEmpty()
         if (result.output.isNotEmpty()) logLines = result.output
         if (result.success && patchedImagePath.isNotBlank()) {
-            logLines = logLines + "[ABK] 输出镜像: $patchedImagePath"
+            logLines = logLines + "[ABK] Output image: $patchedImagePath"
         }
     }
 
@@ -316,7 +316,7 @@ fun AbkRootPatchScreen(
         if (!canPatchSelectedFile) return
         val modulePath = selectedLocalLkmPath.takeIf { it.isNotBlank() }
         beginOperation(
-            action = "修补镜像",
+            action = "Patch Image",
             lines = listOf(
                 "${'$'} ksud boot-patch --boot $selectedBootName --module ${activeLkmLabel.ifBlank { "LKM" }}",
                 "partition: $selectedPartition"
@@ -344,7 +344,7 @@ fun AbkRootPatchScreen(
     fun startDirectInstall(ota: Boolean) {
         if (!canDirectInstall) return
         val modulePath = selectedLocalLkmPath.takeIf { it.isNotBlank() }
-        val action = if (ota) "OTA 安装" else "直接安装"
+        val action = if (ota) "OTA Install" else "Direct Install"
         beginOperation(
             action = action,
             lines = listOf(
@@ -376,7 +376,7 @@ fun AbkRootPatchScreen(
     fun startAnyKernel3Flash() {
         if (!canFlashAnyKernel3) return
         beginOperation(
-            action = "刷入 AnyKernel3",
+            action = "Flash AnyKernel3",
             lines = listOf(
                 "${'$'} flash AnyKernel3",
                 "file: $selectedAnyKernelPath"
@@ -395,7 +395,7 @@ fun AbkRootPatchScreen(
     fun startFlashPatchedImage() {
         if (patchedImagePath.isBlank() || running) return
         beginOperation(
-            action = "刷入已修补镜像",
+            action = "Flash Patched Image",
             lines = listOf(
                 "${'$'} dd $selectedPartition <- ${File(patchedImagePath).name}",
                 "file: $patchedImagePath"
@@ -434,10 +434,10 @@ fun AbkRootPatchScreen(
             containerColor = Color.Transparent,
             topBar = {
                 ExpressiveTopBar(
-                    title = "安装",
+                    title = "Install",
                     navigationIcon = {
                         IconButton(onClick = onBack, enabled = !running) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                         }
                     }
                 )
@@ -454,8 +454,8 @@ fun AbkRootPatchScreen(
             ) {
             PatchGroupCard {
                 PatchModeRow(
-                    title = "选择一个文件",
-                    subtitle = selectedBootName.ifBlank { "建议选择 init_boot 分区镜像" },
+                    title = "Select a File",
+                    subtitle = selectedBootName.ifBlank { "Recommended: select the init_boot partition image" },
                     selected = selectedMode == LkmPatchInstallMode.SelectFile,
                     enabled = !running,
                     onClick = {
@@ -466,8 +466,8 @@ fun AbkRootPatchScreen(
                 if (showRootInstallModes) {
                     PatchDivider()
                     PatchModeRow(
-                        title = "直接安装（推荐）",
-                        subtitle = "自动识别当前 boot / init_boot 并直接修补",
+                        title = "Direct Install (Recommended)",
+                        subtitle = "Auto-detects current boot / init_boot and patches directly",
                         selected = selectedMode == LkmPatchInstallMode.DirectInstall,
                         enabled = !running,
                         onClick = {
@@ -480,8 +480,8 @@ fun AbkRootPatchScreen(
                     )
                     PatchDivider()
                     PatchModeRow(
-                        title = "安装到未使用的槽位（OTA 后）",
-                        subtitle = "修补并写入另一槽位",
+                        title = "Install to unused slot (post-OTA)",
+                        subtitle = "Patch and write to the other slot",
                         selected = selectedMode == LkmPatchInstallMode.OtaInstall,
                         enabled = !running,
                         onClick = {
@@ -494,8 +494,8 @@ fun AbkRootPatchScreen(
                     )
                     PatchDivider()
                     PatchModeRow(
-                        title = "AnyKernel3 内核",
-                        subtitle = selectedAnyKernelName.ifBlank { "刷入 AnyKernel3 格式的内核 zip 包" },
+                        title = "AnyKernel3 kernel",
+                        subtitle = selectedAnyKernelName.ifBlank { "Flash a kernel zip in AnyKernel format" },
                         selected = selectedMode == LkmPatchInstallMode.AnyKernel3,
                         enabled = !running,
                         onClick = {
@@ -513,8 +513,8 @@ fun AbkRootPatchScreen(
             PatchGroupCard {
                 androidx.compose.foundation.layout.Box {
                     ExpressiveListItem(
-                        title = "选择分区",
-                        subtitle = "当前槽位目标分区",
+                        title = "Select Partition",
+                        subtitle = "Target partition for the current slot",
                         leadingIcon = Icons.Default.Edit,
                         enabled = !running && selectedMode != LkmPatchInstallMode.AnyKernel3,
                         trailingContent = {
@@ -529,7 +529,7 @@ fun AbkRootPatchScreen(
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Icon(Icons.Default.ChevronRight, contentDescription = "选择分区")
+                                Icon(Icons.Default.ChevronRight, contentDescription = "Select partition")
                             }
                         },
                         onClick = { showPartitionMenu = true }
@@ -554,10 +554,10 @@ fun AbkRootPatchScreen(
 
             PatchGroupCard {
                 ExpressiveListItem(
-                    title = "使用本地 LKM 文件",
+                    title = "Use Local LKM File",
                     subtitle = selectedLocalLkmName.ifBlank {
-                        selectedAsset?.let { "当前内置: ${it.variantLabel} · ${it.kmi}" }
-                            ?: "选择本地 .ko 文件或使用内置 LKM"
+                        selectedAsset?.let { "Bundled: ${it.variantLabel} · ${it.kmi}" }
+                            ?: "Select a local .ko file or use the bundled LKM"
                     },
                     leadingIcon = Icons.Default.FolderOpen,
                     enabled = !running,
@@ -570,10 +570,10 @@ fun AbkRootPatchScreen(
                                 },
                                 enabled = !running
                             ) {
-                                Icon(Icons.Default.Close, contentDescription = "清除本地 LKM")
+                                Icon(Icons.Default.Close, contentDescription = "Clear local LKM")
                             }
                         } else {
-                            Icon(Icons.Default.ChevronRight, contentDescription = "选择本地 LKM")
+                            Icon(Icons.Default.ChevronRight, contentDescription = "Select local LKM")
                         }
                     },
                     onClick = { localLkmPicker.launch(arrayOf("application/octet-stream", "*/*")) }
@@ -608,8 +608,8 @@ fun AbkRootPatchScreen(
                         }
                         DropdownField(
                             label = "KMI",
-                            value = selectedKmi.ifBlank { "无可用 LKM" },
-                            options = kmiOptions.ifEmpty { listOf("无可用 LKM") },
+                            value = selectedKmi.ifBlank { "No LKM available" },
+                            options = kmiOptions.ifEmpty { listOf("No LKM available") },
                             recommendedValue = currentKmi?.takeIf { it in kmiOptions },
                             onSelect = {
                                 if (it in kmiOptions) {
@@ -627,12 +627,12 @@ fun AbkRootPatchScreen(
 
             PatchGroupCard {
                 ExpressiveListItem(
-                    title = "高级选项",
+                    title = "Advanced Options",
                     leadingIcon = Icons.Default.Tune,
                     trailingContent = {
                         Icon(
                             if (showAdvancedOptions) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = "展开高级选项"
+                            contentDescription = "Toggle advanced options"
                         )
                     },
                     onClick = { showAdvancedOptions = !showAdvancedOptions }
@@ -644,23 +644,23 @@ fun AbkRootPatchScreen(
                 ) {
                     Column {
                         Text(
-                            text = "高级参数会直接透传给当前 APK 内置 ksud，不再做兼容探测。",
+                            text = "Advanced parameters are passed directly to the APK's embedded ksud without compatibility probing.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                         )
                         PatchDivider()
                         PatchCheckboxItem(
-                            title = "总是给 shell 授予 root 权限",
-                            subtitle = "总是允许 adb shell 调用 su，非必要请勿开启。",
+                            title = "Always grant Root to shell",
+                            subtitle = "Always allow adb shell to invoke su. Do not enable unless necessary.",
                             checked = allowShell,
                             enabled = !running,
                             onCheckedChange = { allowShell = it }
                         )
                         PatchDivider()
                         PatchCheckboxItem(
-                            title = "启动时强制启用 ADB 调试",
-                            subtitle = "强制允许 USB 调试并取消 adb 认证，非必要请勿开启。",
+                            title = "Force enable ADB debugging on boot",
+                            subtitle = "Force-allow USB debugging and disable adb authentication. Do not enable unless necessary.",
                             checked = enableAdb,
                             enabled = !running,
                             onCheckedChange = { enableAdb = it }
@@ -670,12 +670,12 @@ fun AbkRootPatchScreen(
             }
 
             if (!hasLkmSource && selectedMode != LkmPatchInstallMode.AnyKernel3) {
-                InlineWarning("当前变体和 KMI 没有内置 LKM，请选择本地 .ko 文件。")
+                InlineWarning("No bundled LKM for the selected variant and KMI. Please select a local .ko file.")
             }
             if (selectedMode == LkmPatchInstallMode.SelectFile && !rootGranted) {
                 when {
-                    !hasUserlandKsud -> InlineWarning("当前 APK 未包含可执行的内置 SukiSU-Ultra ksud，无法无 Root 修补 boot.img。请使用带内置 ksud 的 APK，或授予 Root 后继续。")
-                    !hasUserlandMagiskboot -> InlineWarning("当前 APK 未包含可执行的内置 magiskboot，无法无 Root 解包 boot.img。请使用带内置 magiskboot 的 APK，或授予 Root 后继续。")
+                    !hasUserlandKsud -> InlineWarning("No executable embedded SukiSu-ultra ksud; without Root, a patched image can only be generated after selecting a boot.img.")
+                    !hasUserlandMagiskboot -> InlineWarning("The current APK does not include an executable bundled magiskboot and cannot unpack boot.img without Root. Please use an APK with a bundled magiskboot, or grant Root access to continue.")
                 }
             }
 
@@ -690,9 +690,9 @@ fun AbkRootPatchScreen(
                         strokeWidth = 2.dp
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("处理中")
+                    Text("Processing…")
                 } else {
-                    Text("下一步")
+                    Text("Next")
                 }
             }
 
@@ -711,7 +711,7 @@ fun AbkRootPatchScreen(
                     success = success,
                     action = currentAction,
                     lines = logLines,
-                    canReboot = success == true && currentAction != "修补镜像",
+                    canReboot = success == true && currentAction != "Patch Image",
                     onReboot = {
                         if (!running) scope.launch(Dispatchers.IO) { RootUtils.reboot() }
                     }
@@ -858,18 +858,18 @@ private fun PatchedImageCard(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.CheckCircle, null, modifier = Modifier.size(20.dp))
                 Text(
-                    text = "修补结果",
+                    text = "Patch Result",
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = onCopy) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "复制路径")
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy path")
                 }
                 if (canFlash) {
                     AssistChip(
                         onClick = onFlash,
-                        label = { Text("刷入") },
+                        label = { Text("Flash") },
                         leadingIcon = { Icon(Icons.Default.FlashOn, null, modifier = Modifier.size(16.dp)) }
                     )
                 }
@@ -909,7 +909,7 @@ private fun PatchLogCard(
                 }
                 Icon(icon, null, modifier = Modifier.size(20.dp))
                 Text(
-                    action.ifBlank { "日志" },
+                    action.ifBlank { "Log" },
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -917,7 +917,7 @@ private fun PatchLogCard(
                 if (canReboot) {
                     AssistChip(
                         onClick = onReboot,
-                        label = { Text("重启") },
+                        label = { Text("Reboot") },
                         leadingIcon = { Icon(Icons.Default.RestartAlt, null, modifier = Modifier.size(16.dp)) }
                     )
                 }
@@ -929,7 +929,7 @@ private fun PatchLogCard(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
-                val displayLines = lines.ifEmpty { listOf("等待操作") }
+                val displayLines = lines.ifEmpty { listOf("Waiting for operation") }
                 displayLines.forEach { line ->
                     Text(
                         text = line,
@@ -962,7 +962,7 @@ private suspend fun stageContentUri(
     val target = File(dir, safeName)
     context.contentResolver.openInputStream(uri)?.use { input ->
         target.outputStream().use { output -> input.copyTo(output) }
-    } ?: error("无法读取选择的文件")
+    } ?: error("Failed to read the selected file")
     target to displayName
 }
 
