@@ -122,7 +122,7 @@ object BuildProgressUtils {
             .filter { (run, _) -> run.status == "in_progress" }
             .ifEmpty { pairs }
             .take(2)
-            .joinToString("；") { (run, progress) ->
+            .joinToString("; ") { (run, progress) ->
                 "${runDisplayLabel(run)} ${progress.currentStep}"
             }
         val currentStep = buildString {
