@@ -329,15 +329,15 @@ fun SettingsScreen(
                     containerColor = Color.Transparent,
                     topBar = {
                         ExpressiveTopBar(
-                            title = "App Profile 模板",
+                            title = "App Profile Templates",
                             navigationIcon = {
                                 IconButton(onClick = ::closeChildPage) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                                 }
                             },
                             actions = {
                                 IconButton(onClick = { vm.refreshAppProfileTemplates() }) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                                 }
                             }
                         )
@@ -383,15 +383,15 @@ fun SettingsScreen(
                     containerColor = Color.Transparent,
                     topBar = {
                         ExpressiveTopBar(
-                            title = "工具",
+                            title = "Tools",
                             navigationIcon = {
                                 IconButton(onClick = ::closeChildPage) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                                 }
                             },
                             actions = {
                                 IconButton(onClick = { vm.refreshManagerTools(force = true) }) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                                 }
                             }
                         )
@@ -589,23 +589,23 @@ private fun ManagerInjectedSettingsGroup(
     val hasInjectedSettings = state.managerSettingsItems.isNotEmpty()
     if (!hasInjectedSettings && !state.managerSettingsLoading && state.managerSettingsError == null) return
 
-    SettingsGroup(title = state.managerSettingsTitle.ifBlank { "管理器设置" }) {
+    SettingsGroup(title = state.managerSettingsTitle.ifBlank { "Manager settings" }) {
         when {
             state.managerSettingsLoading && !hasInjectedSettings -> {
                 ExpressiveListItem(
-                    title = "正在读取后端设置",
-                    subtitle = "从当前 KSU 后端加载可用功能",
+                    title = "Loading backend settings",
+                    subtitle = "Loading available features from current KSU backend",
                     leadingContent = { LoadingIndicator(Modifier.size(24.dp)) }
                 )
             }
             state.managerSettingsError != null -> {
                 ExpressiveListItem(
-                    title = "后端设置读取失败",
+                    title = "Failed to load backend settings",
                     subtitle = state.managerSettingsError,
                     leadingIcon = Icons.Default.Error,
                     trailingContent = {
                         IconButton(onClick = { vm.refreshManagerSettings(force = true) }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "重试")
+                            Icon(Icons.Default.Refresh, contentDescription = "Retry")
                         }
                     }
                 )
@@ -620,7 +620,7 @@ private fun ManagerInjectedSettingsGroup(
                     subtitle = item.subtitle,
                     leadingIcon = managerSettingIcon(item.id),
                     enabled = item.enabled && !actionInFlight,
-                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入") },
+                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "Open") },
                     onClick = {
                         when (item.id) {
                             "app_profile_templates" -> onOpenAppProfileTemplates()
@@ -669,7 +669,7 @@ private fun ManagerModeSettingItem(
                     if (actionInFlight) {
                         LoadingIndicator(Modifier.size(18.dp))
                     } else {
-                        Text(item.options.getOrElse(item.selectedIndex) { "选择" })
+                        Text(item.options.getOrElse(item.selectedIndex) { "Select" })
                         Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                     }
                 }
@@ -728,21 +728,21 @@ private fun ManagerToolsSettingsScreen(
             .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SettingsGroup(title = "系统工具") {
+        SettingsGroup(title = "System tools") {
             SwitchSettingsItem(
                 icon = Icons.Default.Security,
-                title = "SELinux 模式",
-                subtitle = "当前：${selinuxModeLabel(state.selinuxModeText)}",
+                title = "SELinux mode",
+                subtitle = "Current: ${selinuxModeLabel(state.selinuxModeText)}",
                 checked = state.selinuxEnforcing,
                 enabled = !state.managerToolsLoading && !selinuxBusy,
                 onCheckedChange = onSelinuxChange
             )
             ExpressiveListItem(
-                title = "Umount 路径管理",
+                title = "Umount path management",
                 subtitle = if (state.umountPaths.isEmpty()) {
-                    "当前无自定义路径"
+                    "No custom paths configured"
                 } else {
-                    "已配置 ${state.umountPaths.size} 条路径"
+                    "${state.umountPaths.size} path(s) configured"
                 },
                 leadingIcon = Icons.Default.FolderDelete,
                 trailingContent = {
@@ -751,31 +751,31 @@ private fun ManagerToolsSettingsScreen(
             )
         }
 
-        SettingsGroup(title = "授权列表") {
+        SettingsGroup(title = "Authorization list") {
             ExpressiveListItem(
-                title = "备份允许列表",
-                subtitle = "选择位置导出允许列表",
+                title = "Backup allow-list",
+                subtitle = "Choose a location to export the allow-list",
                 leadingIcon = Icons.Default.CloudUpload,
                 enabled = !backupBusy,
                 trailingContent = {
                     if (backupBusy) {
                         LoadingIndicator(Modifier.size(22.dp))
                     } else {
-                        Icon(Icons.Default.ChevronRight, contentDescription = "导出")
+                        Icon(Icons.Default.ChevronRight, contentDescription = "Export")
                     }
                 },
                 onClick = { backupLauncher.launch("abk-root-allowlist.json") }
             )
             ExpressiveListItem(
-                title = "还原允许列表",
-                subtitle = "选择备份文件进行导入",
+                title = "Restore allow-list",
+                subtitle = "Select a backup file to import",
                 leadingIcon = Icons.Default.History,
                 enabled = !restoreBusy,
                 trailingContent = {
                     if (restoreBusy) {
                         LoadingIndicator(Modifier.size(22.dp))
                     } else {
-                        Icon(Icons.Default.ChevronRight, contentDescription = "导入")
+                        Icon(Icons.Default.ChevronRight, contentDescription = "Import")
                     }
                 },
                 onClick = { restoreLauncher.launch(arrayOf("application/json", "text/*", "*/*")) }
@@ -783,9 +783,9 @@ private fun ManagerToolsSettingsScreen(
         }
 
         if (state.managerToolsError != null) {
-            SettingsGroup(title = "工具状态") {
+            SettingsGroup(title = "Tool status") {
                 ExpressiveListItem(
-                    title = "操作未完成",
+                    title = "Operation incomplete",
                     subtitle = state.managerToolsError,
                     leadingIcon = Icons.Default.Error
                 )
@@ -798,10 +798,10 @@ private fun ManagerToolsSettingsScreen(
 
 private fun selinuxModeLabel(mode: String): String =
     when (mode.trim().lowercase()) {
-        "enforcing" -> "强制执行"
-        "permissive" -> "宽容"
-        "disabled" -> "已禁用"
-        else -> mode.ifBlank { "未知" }
+        "enforcing" -> "Enforcing"
+        "permissive" -> "Permissive"
+        "disabled" -> "Disabled"
+        else -> mode.ifBlank { "Unknown" }
     }
 
 @Composable
@@ -833,32 +833,32 @@ private fun AppProfileTemplateSettingsScreen(
             .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SettingsGroup(title = "本地模板") {
+        SettingsGroup(title = "Local templates") {
             when {
                 state.appProfileTemplatesLoading -> ExpressiveListItem(
-                    title = "正在读取模板",
-                    subtitle = "从 ReSukiSU profile 存储加载",
+                    title = "Loading templates",
+                    subtitle = "Loading from ReSukiSU profile storage",
                     leadingContent = { LoadingIndicator(Modifier.size(24.dp)) }
                 )
                 state.appProfileTemplates.isEmpty() -> ExpressiveListItem(
-                    title = "暂无模板",
-                    subtitle = "保存后会出现在这里",
+                    title = "No templates",
+                    subtitle = "Templates will appear here after saving",
                     leadingIcon = Icons.Default.Description
                 )
             }
             state.appProfileTemplates.forEach { template ->
                 ExpressiveListItem(
                     title = template.id,
-                    subtitle = if (state.selectedAppProfileTemplateId == template.id) "正在编辑" else "App Profile 模板",
+                    subtitle = if (state.selectedAppProfileTemplateId == template.id) "Editing" else "App Profile template",
                     leadingIcon = Icons.Default.Description,
                     selected = state.selectedAppProfileTemplateId == template.id,
-                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "编辑") },
+                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "Edit") },
                     onClick = { onSelect(template.id) }
                 )
             }
             ExpressiveListItem(
-                title = "新建模板",
-                subtitle = "创建新的 App Profile 模板 JSON",
+                title = "New template",
+                subtitle = "Create a new App Profile template JSON",
                 leadingIcon = Icons.Default.Add,
                 onClick = {
                     creating = true
@@ -870,14 +870,14 @@ private fun AppProfileTemplateSettingsScreen(
         }
 
         if (state.appProfileTemplatesError != null) {
-            SettingsGroup(title = "状态") {
+            SettingsGroup(title = "Status") {
                 ExpressiveListItem(
-                    title = "操作未完成",
+                    title = "Operation incomplete",
                     subtitle = state.appProfileTemplatesError,
                     leadingIcon = Icons.Default.Error,
                     trailingContent = {
                         IconButton(onClick = onRefresh) {
-                            Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
                     }
                 )
@@ -886,12 +886,12 @@ private fun AppProfileTemplateSettingsScreen(
 
         val hasEditor = creating || !state.selectedAppProfileTemplateId.isNullOrBlank()
         if (hasEditor) {
-            SettingsGroup(title = "编辑模板") {
+            SettingsGroup(title = "Edit template") {
                 OutlinedTextField(
                     value = editingId,
                     onValueChange = { editingId = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("模板名称") },
+                    label = { Text("Template name") },
                     singleLine = true,
                     enabled = state.selectedAppProfileTemplateId.isNullOrBlank()
                 )
@@ -901,7 +901,7 @@ private fun AppProfileTemplateSettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 220.dp),
-                    label = { Text("模板 JSON") },
+                    label = { Text("Template JSON") },
                     minLines = 10
                 )
                 Row(
@@ -918,14 +918,14 @@ private fun AppProfileTemplateSettingsScreen(
                             enabled = !state.appProfileTemplateSaving,
                             colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                         ) {
-                            Text("删除")
+                            Text("Delete")
                         }
                     }
                     Button(
                         onClick = { onSave(editingId, editingContent) },
                         enabled = !state.appProfileTemplateSaving && editingId.isNotBlank()
                     ) {
-                        Text("保存")
+                        Text("Save")
                     }
                 }
             }
@@ -1435,13 +1435,13 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             "ReSukiSU" -> "Dynamically loaded based on current ReSukiSU backend capabilities."
             "SukiSU" -> "Dynamically loaded based on current SukiSU backend capabilities."
             "KernelSU" -> "Dynamically loaded based on current KernelSU backend capabilities."
-            "管理器设置" -> "Dynamically loaded based on current KSU backend capabilities."
-            "系统工具" -> "SELinux and module uninstall path tools."
-            "授权列表" -> "Export or import the current Root authorization list."
-            "工具状态" -> "Result of the last tool operation."
-            "本地模板" -> "Manage templates stored in ReSukiSU profile storage."
-            "状态" -> "Result of the last template operation."
-            "编辑模板" -> "Directly edit the App Profile template JSON."
+            "Manager settings" -> "Dynamically loaded based on current KSU backend capabilities."
+            "System tools" -> "SELinux and module uninstall path tools."
+            "Authorization list" -> "Export or import the current Root authorization list."
+            "Tool status" -> "Result of the last tool operation."
+            "Local templates" -> "Manage templates stored in ReSukiSU profile storage."
+            "Status" -> "Result of the last template operation."
+            "Edit template" -> "Directly edit the App Profile template JSON."
             // ↑ конец
             "Appearance mode" -> "Control light/dark display mode."
             "Color source" -> "Choose system dynamic colors or a custom palette."
@@ -1456,13 +1456,13 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             "Navigation" -> Icons.Default.ArrowBack
             stringResource(R.string.settings_theme) -> Icons.Default.Palette
             // ↓ отсутствовало:
-            "ReSukiSU", "SukiSU", "KernelSU", "管理器设置" -> Icons.Default.AdminPanelSettings
-            "系统工具" -> Icons.Default.Build
-            "授权列表" -> Icons.Default.VerifiedUser
-            "工具状态" -> Icons.Default.Info
-            "本地模板" -> Icons.Default.Apps
-            "状态" -> Icons.Default.Info
-            "编辑模板" -> Icons.Default.Edit
+            "ReSukiSU", "SukiSU", "KernelSU", "Manager settings" -> Icons.Default.AdminPanelSettings
+            "System tools" -> Icons.Default.Build
+            "Authorization list" -> Icons.Default.VerifiedUser
+            "Tool status" -> Icons.Default.Info
+            "Local templates" -> Icons.Default.Apps
+            "Status" -> Icons.Default.Info
+            "Edit template" -> Icons.Default.Edit
             // ↑ конец
             "Appearance mode" -> Icons.Default.BrightnessMedium
             "Color source" -> Icons.Default.AutoAwesome
