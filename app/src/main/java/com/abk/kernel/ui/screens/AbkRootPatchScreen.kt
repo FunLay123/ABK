@@ -180,10 +180,11 @@ fun AbkRootPatchScreen(
         ?: ""
     val hasLkmSource = hasLocalLkm || selectedAsset != null
     val showRootInstallModes = rootGranted
+    val hasUserlandKsud = userlandKsudPath != null
     val canPatchSelectedFile = selectedBootPath.isNotBlank() &&
         hasLkmSource &&
         !running &&
-        (userlandKsudPath != null || rootGranted)
+        (hasUserlandKsud || rootGranted)
     val canDirectInstall = rootGranted && hasLkmSource && !running
     val canFlashAnyKernel3 = rootGranted && selectedAnyKernelPath.isNotBlank() && !running
     val canProceed = when (selectedMode) {
@@ -667,7 +668,7 @@ fun AbkRootPatchScreen(
             if (!hasLkmSource && selectedMode != LkmPatchInstallMode.AnyKernel3) {
                 InlineWarning("No bundled LKM for the selected variant and KMI. Please select a local .ko file.")
             }
-            if (selectedMode == LkmPatchInstallMode.SelectFile && userlandKsudPath == null && !rootGranted) {
+            if (selectedMode == LkmPatchInstallMode.SelectFile && !hasUserlandKsud && !rootGranted) {
                 InlineWarning("No executable embedded SukiSU-Ultra ksud found; without Root, a patched image can only be generated after selecting a boot.img.")
             }
 

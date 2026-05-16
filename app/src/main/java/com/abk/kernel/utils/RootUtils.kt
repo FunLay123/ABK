@@ -339,7 +339,8 @@ object RootUtils {
         }
     }
 
-    fun resolveUserlandKsudPath(context: Context): String? = prepareBundledKsudPath(context)
+    fun resolveUserlandKsudPath(context: Context): String? =
+        prepareBundledKsudPath(context) ?: embeddedKsudPath(context)
 
     fun patchAbkLkmBootImage(
         context: Context,
@@ -1538,11 +1539,11 @@ object RootUtils {
         args: List<String>,
         onOutput: ((String) -> Unit)? = null
     ): ShellResult? {
-        val bundledKsud = prepareBundledKsudPath(context) ?: return null
+        val userlandKsud = resolveUserlandKsudPath(context) ?: return null
         onOutput?.invoke("[ABK] Using bundled SukiSU-Ultra ksud for local boot patching")
         onOutput?.invoke("[ABK] ksud path: $bundledKsud")
         return runLocalCommand(
-            command = buildKsudCommand(bundledKsud, args),
+            command = buildKsudCommand(userlandKsud, args),
             timeoutSeconds = 300L,
             onOutput = onOutput
         )
