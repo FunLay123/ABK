@@ -475,8 +475,8 @@ fun AbkRootPatchScreen(
                     )
                     PatchDivider()
                     PatchModeRow(
-                        title = "安装到未使用的槽位（OTA 后）",
-                        subtitle = "修补并写入另一槽位",
+                        title = "Install to unused slot (post-OTA)",
+                        subtitle = "Patch and write to the other slot",
                         selected = selectedMode == LkmPatchInstallMode.OtaInstall,
                         enabled = !running,
                         onClick = {
@@ -639,7 +639,7 @@ fun AbkRootPatchScreen(
                 ) {
                     Column {
                         Text(
-                            text = "高级参数会直接透传给当前 APK 内置 ksud，不再做兼容探测。",
+                            text = "Advanced parameters are passed directly to the APK's embedded ksud without compatibility probing.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
@@ -668,7 +668,7 @@ fun AbkRootPatchScreen(
                 InlineWarning("No bundled LKM for the selected variant and KMI. Please select a local .ko file.")
             }
             if (selectedMode == LkmPatchInstallMode.SelectFile && userlandKsudPath == null && !rootGranted) {
-                InlineWarning("未检测到可执行的 APK 内置 SukiSU-Ultra ksud；未授权 Root 时只能在选择 boot.img 后生成 patched 镜像。")
+                InlineWarning("No executable embedded SukiSU-Ultra ksud found; without Root, a patched image can only be generated after selecting a boot.img.")
             }
 
             Button(
