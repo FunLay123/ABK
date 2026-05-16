@@ -670,7 +670,7 @@ private fun ManagerModeSettingItem(
     } else {
         0
     }
-    val selectedLabel = options.getOrNull(selectedIndex) ?: "不可用"
+    val selectedLabel = options.getOrNull(selectedIndex) ?: "N/A"
     val enabled = item.enabled && !actionInFlight && options.isNotEmpty()
     ExpressiveListItem(
         title = item.title,
@@ -1374,7 +1374,7 @@ private fun aboutLinks(): List<AboutLink> {
     return listOf(
         AboutLink("Upstream repository", BuildConfig.UPSTREAM_REPO_URL),
         AboutLink("Top-level repository", BuildConfig.TOP_LEVEL_REPO_URL),
-        AboutLink("第三方声明", "${sourceRepoUrl()}/blob/main/THIRD_PARTY_NOTICES.md"),
+        AboutLink("Third-party notices", "${sourceRepoUrl()}/blob/main/THIRD_PARTY_NOTICES.md"),
         AboutLink("KernelSU", "https://github.com/tiann/KernelSU"),
         AboutLink("KernelSU Next", "https://github.com/KernelSU-Next/KernelSU-Next"),
         AboutLink("SukiSU Ultra", "https://github.com/SukiSU-Ultra/SukiSU-Ultra"),
