@@ -174,6 +174,9 @@ fun AbkRootPatchScreen(
     val userlandKsudPath by produceState<String?>(initialValue = null, context) {
         value = withContext(Dispatchers.IO) { RootUtils.resolveUserlandKsudPath(context) }
     }
+    val userlandMagiskbootPath by produceState<String?>(initialValue = null, context) {
+        value = withContext(Dispatchers.IO) { RootUtils.resolveUserlandMagiskbootPath(context) }
+    }
     val hasLocalLkm = selectedLocalLkmPath.isNotBlank()
     val activeLkmLabel = selectedLocalLkmName.takeIf { it.isNotBlank() }
         ?: selectedAsset?.let { "${it.variantLabel} · ${it.kmi}" }
@@ -181,10 +184,11 @@ fun AbkRootPatchScreen(
     val hasLkmSource = hasLocalLkm || selectedAsset != null
     val showRootInstallModes = rootGranted
     val hasUserlandKsud = userlandKsudPath != null
+    val hasUserlandMagiskboot = userlandMagiskbootPath != null
     val canPatchSelectedFile = selectedBootPath.isNotBlank() &&
         hasLkmSource &&
         !running &&
-        (hasUserlandKsud || rootGranted)
+        (rootGranted || (hasUserlandKsud && hasUserlandMagiskboot))
     val canDirectInstall = rootGranted && hasLkmSource && !running
     val canFlashAnyKernel3 = rootGranted && selectedAnyKernelPath.isNotBlank() && !running
     val canProceed = when (selectedMode) {
@@ -668,8 +672,11 @@ fun AbkRootPatchScreen(
             if (!hasLkmSource && selectedMode != LkmPatchInstallMode.AnyKernel3) {
                 InlineWarning("No bundled LKM for the selected variant and KMI. Please select a local .ko file.")
             }
-            if (selectedMode == LkmPatchInstallMode.SelectFile && !hasUserlandKsud && !rootGranted) {
-                InlineWarning("No executable embedded SukiSU-Ultra ksud found; without Root, a patched image can only be generated after selecting a boot.img.")
+            if (selectedMode == LkmPatchInstallMode.SelectFile && !rootGranted) {
+                when {
+                    !hasUserlandKsud -> InlineWarning("No executable embedded SukiSu-ultra ksud; without Root, a patched image can only be generated after selecting a boot.img.")
+                    !hasUserlandMagiskboot -> InlineWarning("The current APK does not include an executable bundled magiskboot and cannot unpack boot.img without Root. Please use an APK with a bundled magiskboot, or grant Root access to continue.")
+                }
             }
 
             Button(
