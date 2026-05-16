@@ -530,7 +530,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         hasNativeManagerPermission = access.hasNativeManagerPermission,
                         abkRuntimeStatus = null,
                         abkRuntimeLoading = false,
-                        abkRuntimeError = runtimeError ?: "管理器未激活"
+                        abkRuntimeError = runtimeError ?: "Manager not activated"
                     )
                 }
             }
@@ -582,7 +582,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         rootGrantApps = emptyList(),
                         rootGrantRuntimeBackend = backendAtRequest,
                         rootGrantLoading = false,
-                        rootGrantError = diagnostic ?: "管理器未激活"
+                        rootGrantError = diagnostic ?: "Manager not activated"
                     )
                 } else {
                     it.copy(
@@ -644,7 +644,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     state.copy(
                         rootGrantSavingPackage = null,
-                        rootGrantError = result.second ?: "保存失败"
+                        rootGrantError = result.second ?: "Save failed"
                     )
                 }
             }
@@ -949,7 +949,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 RootUtils.refreshRootState()
             }
             if (!hasRoot) {
-                _uiState.update { it.copy(abkRuntimeError = "操作未完成") }
+                _uiState.update { it.copy(abkRuntimeError = "Operation incomplete") }
                 return@launch
             }
             val module = _uiState.value.abkRuntimeStatus?.modules?.firstOrNull { it.id == cleanId }
@@ -972,7 +972,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         abkRuntimeModuleActionId = null,
-                        abkRuntimeError = "操作未完成"
+                        abkRuntimeError = "Operation incomplete"
                     )
                 }
             } else {
@@ -991,12 +991,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 RootUtils.refreshRootState()
             }
             if (!hasRoot) {
-                _uiState.update { it.copy(abkRuntimeError = "操作未完成") }
+                _uiState.update { it.copy(abkRuntimeError = "Operation incomplete") }
                 return@launch
             }
             val module = _uiState.value.abkRuntimeStatus?.modules?.firstOrNull { it.id == cleanId }
             if (module?.isKsuBacked() != true) {
-                _uiState.update { it.copy(abkRuntimeError = "当前模块不支持卸载") }
+                _uiState.update { it.copy(abkRuntimeError = "Uninstall not supported for this module") }
                 return@launch
             }
             _uiState.update {
@@ -1013,7 +1013,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         abkRuntimeModuleActionId = null,
-                        abkRuntimeError = "操作未完成"
+                        abkRuntimeError = "Operation incomplete"
                     )
                 }
             } else {
@@ -1046,7 +1046,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 state.copy(
                     abkRuntimeModuleActionId = null,
                     abkRuntimeModuleActionOutput = output,
-                    abkRuntimeError = if (result.success) null else "操作未完成"
+                    abkRuntimeError = if (result.success) null else "Operation incomplete"
                 )
             }
         }
@@ -1062,7 +1062,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun AbkRuntimeModule.displayNameForRuntime(): String =
-        name.ifBlank { id.ifBlank { "模块" } }
+        name.ifBlank { id.ifBlank { "Module" } }
 
     private suspend fun applyInitialBuildConfigIfNeeded(recommended: KernelBuildConfig?): KernelBuildConfig? {
         if (recommended == null || hasSavedBuildConfig) return null
@@ -1138,7 +1138,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 _uiState.update {
                                     it.copy(
                                         isPollingToken = false,
-                                        error = "授权失败: ${tokenResp.error}"
+                                        error = "Authorization failed: ${tokenResp.error}"
                                     )
                                 }
                             }
@@ -1311,7 +1311,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     }
                                     if (reportError) {
                                         showWorkflowEnablementPrompt(
-                                            "工作流仍未启用，当前状态: ${refreshed.data.state}",
+                                            "Workflow still not enabled, current state: ${refreshed.data.state}",
                                             actionUrl
                                         )
                                     }
@@ -1400,7 +1400,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(buildQueueProcessing = true, isLoading = true, error = null) }
                 val wfId = ensureBuildWorkflowEnabled(username, repoName, reportError = true)
                 if (wfId == null) {
-                    markBuildQueueItemFailed(next.id, "无法确认构建工作流")
+                    markBuildQueueItemFailed(next.id, "Unable to confirm build workflow")
                     return@launch
                 }
 
@@ -1410,7 +1410,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         buildStatus = BuildStatus.QUEUED,
-                        buildProgress = BuildProgress(percent = 0, currentStep = "正在提交队列中的构建")
+                        buildProgress = BuildProgress(percent = 0, currentStep = "Submitting queued build")
                     )
                 }
                 val previousRunId = when (val prior = github.listRecentRuns(username, repoName, 1, wfId)) {
@@ -1422,7 +1422,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _uiState.update {
                             it.copy(
                                 buildStatus = BuildStatus.QUEUED,
-                                buildProgress = BuildProgress(percent = 0, currentStep = "构建已排队")
+                                buildProgress = BuildProgress(percent = 0, currentStep = "Build queued")
                             )
                         }
                         delay(5000)
@@ -1431,13 +1431,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     is Result.Error -> {
                         markBuildQueueItemFailed(next.id, r.message)
                         if (r.code == 403 || r.code == 404) {
-                            showWorkflowEnablementPrompt("触发工作流失败: ${r.message}", workflowActionsUrl(username, repoName))
+                            showWorkflowEnablementPrompt("Failed to trigger workflow: ${r.message}", workflowActionsUrl(username, repoName))
                         } else {
                             _uiState.update { it.copy(error = r.message, buildStatus = BuildStatus.FAILURE) }
                         }
                     }
                     Result.Loading -> {
-                        markBuildQueueItemFailed(next.id, "触发构建未返回结果")
+                        markBuildQueueItemFailed(next.id, "Build trigger returned no result")
                         _uiState.update { it.copy(buildStatus = BuildStatus.FAILURE) }
                     }
                 }
@@ -1485,7 +1485,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 status = BuildStatus.QUEUED,
                                 progress = BuildProgress(
                                     percent = 0,
-                                    currentStep = "构建已排队",
+                                    currentStep = "Build queued",
                                     completedSteps = 0,
                                     totalSteps = 1
                                 )
@@ -1502,11 +1502,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         _uiState.update {
             it.copy(
-                error = "已提交构建，但暂未找到工作流运行，请稍后刷新最近构建。",
+                error = "Build submitted, but no workflow run was found. Please refresh recent builds later.",
                 buildStatus = BuildStatus.FAILURE
             )
         }
-        queueItemId?.let { markBuildQueueItemFailed(it, "已提交构建，但暂未找到工作流运行") }
+        queueItemId?.let { markBuildQueueItemFailed(it, "Build submitted, but no workflow run was found") }
     }
 
     fun loadRecentRuns() {
@@ -1575,9 +1575,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 progress = BuildProgress(
                     percent = if (run.status == "in_progress") 5 else 0,
                     currentStep = if (run.status == "in_progress") {
-                        "已接管运行中的工作流"
+                        "Took over running workflow"
                     } else {
-                        "发现运行中的工作流，等待 Runner"
+                        "Found running workflow, waiting for Runner"
                     },
                     completedSteps = 0,
                     totalSteps = 1
@@ -1641,7 +1641,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             runId = runId,
                             fallbackStatus = if (affectsDisplay) BuildStatus.CANCELLED else it.buildStatus,
                             fallbackProgress = if (affectsDisplay) {
-                                it.buildProgress.copy(currentStep = "已请求取消工作流")
+                                it.buildProgress.copy(currentStep = "Workflow cancellation requested")
                             } else {
                                 it.buildProgress
                             },
@@ -1651,7 +1651,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     loadRecentRuns()
                     processBuildQueue()
                 }
-                is Result.Error -> _uiState.update { it.copy(error = "取消工作流失败: ${result.message}") }
+                is Result.Error -> _uiState.update { it.copy(error = "Failed to cancel workflow: ${result.message}") }
                 Result.Loading -> {}
             }
             _uiState.update { it.copy(cancellingWorkflowRunIds = it.cancellingWorkflowRunIds - runId) }
@@ -1738,7 +1738,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 is Result.Error -> _uiState.update {
-                    it.copy(isLoadingPrebuiltGkiReleases = false, error = "获取预编译 GKI Release 失败: ${result.message}")
+                    it.copy(isLoadingPrebuiltGkiReleases = false, error = "Failed to fetch prebuilt GKI release: ${result.message}")
                 }
                 else -> _uiState.update { it.copy(isLoadingPrebuiltGkiReleases = false) }
             }
@@ -1799,7 +1799,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is Result.Error -> _uiState.update {
                     it.copy(
                         loadingPrebuiltGkiAssetReleaseIds = it.loadingPrebuiltGkiAssetReleaseIds - release.id,
-                        error = "获取 ${release.name} 资产失败: ${result.message}"
+                        error = "Failed to fetch assets for ${release.name}: ${result.message}"
                     )
                 }
                 Result.Loading -> _uiState.update {
@@ -1843,12 +1843,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val owner = _uiState.value.user?.login
                     val repoName = _uiState.value.forkRepo?.name
                     if (owner.isNullOrBlank() || repoName.isNullOrBlank()) {
-                        _uiState.update { it.copy(error = "无法删除远程工作流记录: 仓库信息不完整") }
+                        _uiState.update { it.copy(error = "Unable to delete remote workflow record: incomplete repository info") }
                         return@launch
                     }
                     when (val result = github.deleteWorkflowRun(owner, repoName, runId)) {
                         is Result.Error -> {
-                            _uiState.update { it.copy(error = "删除远程工作流记录失败: ${result.message}") }
+                            _uiState.update { it.copy(error = "Failed to delete remote workflow record: ${result.message}") }
                             return@launch
                         }
                         else -> {}
@@ -1936,7 +1936,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             asset.name,
             asset.sizeBytes,
             PREBUILT_GKI_RUN_ID,
-            "预编译 GKI"
+            "Prebuilt GKI"
         ) { pct ->
             NotificationUtils.notifyDownloadProgress(getApplication(), pct, asset.name)
             _uiState.update { s ->
@@ -1962,14 +1962,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
         } else {
-            finishArtifactDownloadWithError(progressKey, "下载预编译 GKI 失败: ${asset.name}")
+            finishArtifactDownloadWithError(progressKey, "Failed to download prebuilt GKI: ${asset.name}")
         }
     }
-
     private suspend fun downloadArtifactNow(artifact: BuildArtifact) {
         val token = prefs.accessToken.first()
         if (token.isNullOrBlank()) {
-            _uiState.update { it.copy(isDownloading = false, error = "未登录，无法下载构建产物") }
+            _uiState.update { it.copy(isDownloading = false, error = "Not logged in, cannot download build artifact") }
             return
         }
         _uiState.update {
@@ -1984,7 +1983,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val mirrorEnabled = mirrorBaseUrl.isNotBlank()
         val downloadUrl = if (mirrorEnabled) {
             monitorMirrorAndResolveDownloadUrl(artifact, mirrorBaseUrl) ?: run {
-                finishArtifactDownloadWithError(artifact.id, "镜像下载准备失败: ${artifact.name}")
+                finishArtifactDownloadWithError(artifact.id, "Failed to prepare image download: ${artifact.name}")
                 return
             }
         } else {
@@ -2022,7 +2021,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
         } else {
-            finishArtifactDownloadWithError(artifact.id, "下载失败: ${artifact.name}")
+            finishArtifactDownloadWithError(artifact.id, "Download failed: ${artifact.name}")
         }
     }
 
@@ -2068,15 +2067,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val targetNames = mirrorTargetArtifactNames(artifact)
         if (targetNames.isEmpty()) {
-            _uiState.update { it.copy(error = "没有可镜像的构建产物: ${artifact.name}") }
+            _uiState.update { it.copy(error = "No mirrorable build artifact: ${artifact.name}") }
             return null
         }
-
         markMirrorProgress(artifact.id, 1)
         val workflowId = when (val wf = github.getWorkflowId(username, repoName, MIRROR_WORKFLOW_FILE)) {
             is Result.Success -> wf.data
             is Result.Error -> {
-                _uiState.update { it.copy(error = "镜像工作流不存在，请同步 Fork: ${wf.message}") }
+                _uiState.update { it.copy(error = "Mirror workflow not found, please sync fork: ${wf.message}") }
                 return null
             }
             else -> return null
@@ -2092,24 +2090,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         when (val dispatch = github.dispatchWorkflow(username, repoName, workflowId, inputs, ref)) {
             is Result.Error -> {
-                _uiState.update { it.copy(error = "触发镜像工作流失败: ${dispatch.message}") }
+                _uiState.update { it.copy(error = "Failed to trigger mirror workflow: ${dispatch.message}") }
                 return null
             }
             else -> {}
         }
         delay(5_000)
         val run = findMirrorWorkflowRun(username, repoName, workflowId, previousRunId) ?: run {
-            _uiState.update { it.copy(error = "已触发镜像工作流，但暂未找到运行记录") }
+            _uiState.update { it.copy(error = "Mirror workflow triggered, but no run record found yet") }
             return null
         }
         val completed = waitForMirrorWorkflow(username, repoName, run.id, artifact.id) ?: return null
         if (completed.conclusion != "success") {
-            _uiState.update { it.copy(error = "镜像工作流失败: ${completed.conclusion ?: "unknown"}") }
+            _uiState.update { it.copy(error = "Mirror workflow failed: ${completed.conclusion ?: "unknown"}") }
             return null
         }
         markMirrorProgress(artifact.id, 50)
         val releaseAssetUrl = findMirrorReleaseAssetUrlWithRetry(username, repoName, artifact.runId, artifact.name) ?: run {
-            _uiState.update { it.copy(error = "镜像 Release 已创建，但未找到产物: ${artifact.name}.zip") }
+            _uiState.update { it.copy(error = "Mirror release created, but artifact not found: ${artifact.name}.zip") }
             return null
         }
         preparedMirrorArtifacts[artifact.runId] = (preparedMirrorArtifacts[artifact.runId].orEmpty() + targetNames).toSet()
@@ -2169,14 +2167,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     markMirrorProgress(artifactId, progress)
                 }
                 is Result.Error -> {
-                    _uiState.update { it.copy(error = "查询镜像工作流失败: ${run.message}") }
+                    _uiState.update { it.copy(error = "Failed to query mirror workflow: ${run.message}") }
                     return null
                 }
                 else -> {}
             }
             if (attempt < MIRROR_WORKFLOW_MAX_POLLS - 1) delay(15_000)
         }
-        _uiState.update { it.copy(error = "镜像工作流等待超时") }
+        _uiState.update { it.copy(error = "Mirror workflow timed out") }
         return null
     }
 
@@ -2198,7 +2196,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ?.firstOrNull { it.name == "$artifactName.zip" }
                 ?.browserDownloadUrl
             is Result.Error -> {
-                _uiState.update { it.copy(error = "查询镜像 Release 失败: ${release.message}") }
+                _uiState.update { it.copy(error = "Failed to query mirror release: ${release.message}") }
                 null
             }
             else -> null
@@ -2346,7 +2344,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }.getOrElse { error ->
                 ManagerSettingsLoad(
-                    error = error.message?.takeIf { it.isNotBlank() } ?: "后端设置读取失败"
+                    error = error.message?.takeIf { it.isNotBlank() } ?: "Failed to read backend settings"
                 )
             }
             _uiState.update {
@@ -2389,13 +2387,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         MANAGER_SETTING_DEFAULT_UMOUNT -> {
                             val ok = RootUtils.setDefaultUmountModules(checked)
-                            RootUtils.ShellResult(ok, if (ok) emptyList() else listOf("保存失败"))
+                            RootUtils.ShellResult(ok, if (ok) emptyList() else listOf("Save failed"))
                         }
-                        else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
+                        else -> RootUtils.ShellResult(false, listOf("Unsupported setting"))
                     }
                 }
             }.getOrElse { error ->
-                RootUtils.ShellResult(false, listOf(error.message ?: "操作失败"))
+                RootUtils.ShellResult(false, listOf(error.message ?: "Operation failed"))
             }
             if (result.success) {
                 refreshManagerSettings(force = true)
@@ -2404,7 +2402,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         managerSettingActionId = null,
                         managerSettingsError = result.output.lastOrNull()?.takeIf { line -> line.isNotBlank() }
-                            ?: "操作未完成"
+                            ?: "Operation incomplete"
                     )
                 }
             }
@@ -2426,11 +2424,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     when (settingId) {
                         MANAGER_SETTING_SU_COMPAT -> RootUtils.setSuCompatMode(selectedIndex.coerceIn(0, 2))
-                        else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
+                        else -> RootUtils.ShellResult(false, listOf("Unsupported setting"))
                     }
                 }
             }.getOrElse { error ->
-                RootUtils.ShellResult(false, listOf(error.message ?: "操作失败"))
+                RootUtils.ShellResult(false, listOf(error.message ?: "Operation failed"))
             }
             if (result.success) {
                 refreshManagerSettings(force = true)
@@ -2439,7 +2437,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         managerSettingActionId = null,
                         managerSettingsError = result.output.lastOrNull()?.takeIf { line -> line.isNotBlank() }
-                            ?: "操作未完成"
+                            ?: "Operation incomplete"
                     )
                 }
             }
@@ -2474,7 +2472,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     managerAccessError = null,
                     hasNativeManagerPermission = true,
                     managerToolsLoading = false,
-                    selinuxModeText = mode.ifBlank { "未知" },
+                    selinuxModeText = mode.ifBlank { "Unknown" },
                     selinuxEnforcing = mode.equals("Enforcing", ignoreCase = true),
                     umountPaths = if (pathsResult.success) {
                         pathsResult.output.map { line -> line.trim() }.filter { line -> line.isNotBlank() }
@@ -2483,7 +2481,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     },
                     managerToolsError = when {
                         modeResult.success -> null
-                        else -> modeResult.output.lastOrNull() ?: "工具状态读取失败"
+                        else -> modeResult.output.lastOrNull() ?: "Failed to read tool status"
                     },
                     managerToolActionId = null
                 )
@@ -2511,7 +2509,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         managerToolActionId = null,
                         managerToolsError = result.output.lastOrNull()?.takeIf { line -> line.isNotBlank() }
-                            ?: "SELinux 模式切换失败"
+                            ?: "Failed to switch SELinux mode"
                     )
                 }
             }
@@ -2534,16 +2532,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         .map { app -> app.profile }
                     getApplication<Application>().contentResolver.openOutputStream(uri)?.use { stream ->
                         stream.write(gson.toJson(profiles).toByteArray(StandardCharsets.UTF_8))
-                    } ?: error("无法打开导出位置")
-                    RootUtils.ShellResult(true, listOf("已导出 ${profiles.size} 个授权项"))
+                    } ?: error("Cannot open export location")
+                    RootUtils.ShellResult(true, listOf("Exported ${profiles.size} auth entries"))
                 }.getOrElse { error ->
-                    RootUtils.ShellResult(false, listOf(error.message ?: "导出失败"))
+                    RootUtils.ShellResult(false, listOf(error.message ?: "Export failed"))
                 }
             }
             _uiState.update {
                 it.copy(
                     managerToolActionId = null,
-                    managerToolsError = if (result.success) null else result.output.lastOrNull() ?: "导出失败"
+                    managerToolsError = if (result.success) null else result.output.lastOrNull() ?: "Export failed"
                 )
             }
         }
@@ -2562,7 +2560,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     val json = getApplication<Application>().contentResolver.openInputStream(uri)?.use { stream ->
                         stream.readBytes().toString(StandardCharsets.UTF_8)
-                    } ?: error("无法读取备份文件")
+                    } ?: error("Cannot read backup file")
                     val type = object : TypeToken<List<RootGrantProfile>>() {}.type
                     val profiles: List<RootGrantProfile> = gson.fromJson(json, type) ?: emptyList()
                     var restored = 0
@@ -2570,18 +2568,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (profile.name.isNotBlank() && RootUtils.setRootGrantProfile(profile)) restored++
                     }
                     if (restored == profiles.size) {
-                        RootUtils.ShellResult(true, listOf("已还原 $restored 个授权项"))
+                        RootUtils.ShellResult(true, listOf("Restored $restored auth entries"))
                     } else {
-                        RootUtils.ShellResult(false, listOf("已还原 $restored/${profiles.size} 个授权项"))
+                        RootUtils.ShellResult(false, listOf("Restored $restored/${profiles.size} auth entries"))
                     }
                 }.getOrElse { error ->
-                    RootUtils.ShellResult(false, listOf(error.message ?: "还原失败"))
+                    RootUtils.ShellResult(false, listOf(error.message ?: "Restore failed"))
                 }
             }
             _uiState.update {
                 it.copy(
                     managerToolActionId = null,
-                    managerToolsError = if (result.success) null else result.output.lastOrNull() ?: "还原失败"
+                    managerToolsError = if (result.success) null else result.output.lastOrNull() ?: "Restore failed"
                 )
             }
             if (result.success) refreshRootGrantApps(force = true)
@@ -2633,7 +2631,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         managerAccessError = null,
                         hasNativeManagerPermission = true,
                         appProfileTemplatesLoading = false,
-                        appProfileTemplatesError = result.output.lastOrNull() ?: "模板列表读取失败"
+                        appProfileTemplatesError = result.output.lastOrNull() ?: "Failed to read template list"
                     )
                 }
             }
@@ -2676,7 +2674,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         appProfileTemplatesError = null
                     )
                 } else {
-                    it.copy(appProfileTemplatesError = result.output.lastOrNull() ?: "模板读取失败")
+                    it.copy(appProfileTemplatesError = result.output.lastOrNull() ?: "Failed to read template")
                 }
             }
         }
@@ -2685,7 +2683,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun saveAppProfileTemplate(id: String, content: String) {
         val cleanId = id.trim()
         if (cleanId.isBlank()) {
-            _uiState.update { it.copy(appProfileTemplatesError = "模板名称不能为空") }
+            _uiState.update { it.copy(appProfileTemplatesError = "Template name cannot be empty") }
             return
         }
         if (_uiState.value.appProfileTemplateSaving) return
@@ -2707,7 +2705,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     appProfileTemplateSaving = false,
                     selectedAppProfileTemplateId = if (result.success) cleanId else it.selectedAppProfileTemplateId,
                     selectedAppProfileTemplateContent = if (result.success) content else it.selectedAppProfileTemplateContent,
-                    appProfileTemplatesError = if (result.success) null else result.output.lastOrNull() ?: "模板保存失败"
+                    appProfileTemplatesError = if (result.success) null else result.output.lastOrNull() ?: "Failed to save template"
                 )
             }
             if (result.success) refreshAppProfileTemplates()
@@ -2735,7 +2733,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     appProfileTemplateSaving = false,
                     selectedAppProfileTemplateId = if (result.success) null else it.selectedAppProfileTemplateId,
                     selectedAppProfileTemplateContent = if (result.success) "" else it.selectedAppProfileTemplateContent,
-                    appProfileTemplatesError = if (result.success) null else result.output.lastOrNull() ?: "模板删除失败"
+                    appProfileTemplatesError = if (result.success) null else result.output.lastOrNull() ?: "Failed to delete template"
                 )
             }
             if (result.success) refreshAppProfileTemplates()
@@ -2777,7 +2775,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }.getOrElse { error ->
             ManagerSettingsLoad(
-                error = error.message?.takeIf { it.isNotBlank() } ?: "后端设置读取失败"
+                error = error.message?.takeIf { it.isNotBlank() } ?: "Failed to read backend settings"
             )
         }
 
@@ -2799,19 +2797,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_APP_PROFILE_TEMPLATES,
-                    title = "App Profile 模板",
-                    subtitle = "管理本地 App Profile 模板",
+                    title = "App Profile Templates",
+                    subtitle = "Manage local App Profile templates",
                     kind = ManagerSettingKind.NAVIGATION
                 )
             )
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_SU_COMPAT,
-                    title = "传统 su 命令支持",
-                    subtitle = featureSubtitle(suCompat, "允许通过 /system/bin/su 获取 Root 权限", "ReSukiSU"),
+                    title = "Legacy su command support",
+                    subtitle = featureSubtitle(suCompat, "Allow Root access via /system/bin/su", "ReSukiSU"),
                     kind = ManagerSettingKind.MODE,
                     selectedIndex = suCompatMode,
-                    options = listOf("默认", "临时关闭", "永久关闭"),
+                    options = listOf("Default", "Temporarily disabled", "Permanently disabled"),
                     enabled = suCompat.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = suCompat.toManagerSettingStatus()
                 )
@@ -2819,8 +2817,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_KERNEL_UMOUNT,
-                    title = "内核处理卸载模块",
-                    subtitle = featureSubtitle(kernelUmount, "在内核给需要的应用卸载模块", "ReSukiSU"),
+                    title = "Kernel-level module uninstall",
+                    subtitle = featureSubtitle(kernelUmount, "Uninstall modules at kernel level for apps that need it", "ReSukiSU"),
                     checked = kernelUmount.value != 0L,
                     enabled = kernelUmount.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = kernelUmount.toManagerSettingStatus()
@@ -2831,7 +2829,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ManagerSettingItem(
                         id = MANAGER_SETTING_KPM,
                         title = "KPM",
-                        subtitle = "使用 KPM 管理内核模块",
+                        subtitle = "Manage kernel modules with KPM",
                         kind = ManagerSettingKind.NAVIGATION
                     )
                 )
@@ -2840,8 +2838,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 add(
                     ManagerSettingItem(
                         id = MANAGER_SETTING_SELINUX_HIDE,
-                        title = "隐藏 SELinux 修改",
-                        subtitle = featureSubtitle(selinuxHide, "阻止应用检测 SELinux 修改", "ReSukiSU"),
+                        title = "Hide SELinux modifications",
+                        subtitle = featureSubtitle(selinuxHide, "Prevent apps from detecting SELinux modifications", "ReSukiSU"),
                         checked = selinuxHide.value != 0L,
                         enabled = true,
                         status = selinuxHide.toManagerSettingStatus()
@@ -2853,7 +2851,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ManagerSettingItem(
                         id = MANAGER_SETTING_ADB_ROOT,
                         title = "ADB Root",
-                        subtitle = featureSubtitle(adbRoot, "以 root 权限运行 adbd 守护进程", "ReSukiSU"),
+                        subtitle = featureSubtitle(adbRoot, "Run adbd daemon with root privileges", "ReSukiSU"),
                         checked = (adbRoot.configValue ?: adbRoot.value ?: 0L) != 0L,
                         enabled = adbRoot.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                         status = adbRoot.toManagerSettingStatus()
@@ -2863,8 +2861,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_SULOG,
-                    title = "超级用户访问日志",
-                    subtitle = featureSubtitle(sulog, "记录与 Root 有关的事件到 KernelSU 超级用户访问日志文件", "ReSukiSU"),
+                    title = "Superuser access log",
+                    subtitle = featureSubtitle(sulog, "Log Root-related events to KernelSU superuser access log file", "ReSukiSU"),
                     checked = sulog.value != 0L,
                     enabled = sulog.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = sulog.toManagerSettingStatus()
@@ -2873,11 +2871,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_DEFAULT_UMOUNT,
-                    title = "默认卸载模块",
+                    title = "Default module uninstall",
                     subtitle = if (nativeProfileAvailable) {
-                        "App Profile 中卸载模块的全局默认值"
+                        "Global default for module uninstall in App Profile"
                     } else {
-                        "ABK 被识别为原生管理器后可用"
+                        "Available once ABK is recognized as a native manager"
                     },
                     checked = nativeProfileAvailable && RootUtils.isDefaultUmountModules(),
                     enabled = nativeProfileAvailable
@@ -2895,7 +2893,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             includeSulog = true,
             includeAdbRoot = true,
             includeWebViewDebug = false,
-            kernelUmountTitle = "卸载模块（内核级）",
+            kernelUmountTitle = "Module uninstall (kernel-level)",
             suLogTitle = "SU Log"
         )
 
@@ -2908,7 +2906,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             includeSulog = false,
             includeAdbRoot = false,
             includeWebViewDebug = true,
-            kernelUmountTitle = "内核处理卸载模块",
+            kernelUmountTitle = "Kernel-level module uninstall",
             suLogTitle = "SU Log"
         )
 
@@ -2940,8 +2938,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_APP_PROFILE_TEMPLATES,
-                    title = "App Profile 模板",
-                    subtitle = "管理本地和在线的 App Profile 模板",
+                    title = "App Profile Templates",
+                    subtitle = "Manage local and online App Profile templates",
                     kind = ManagerSettingKind.NAVIGATION
                 )
             )
@@ -2949,8 +2947,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 add(
                     ManagerSettingItem(
                         id = MANAGER_SETTING_TOOLS,
-                        title = "工具",
-                        subtitle = "更多高级功能",
+                        title = "Tools",
+                        subtitle = "More advanced features",
                         kind = ManagerSettingKind.NAVIGATION
                     )
                 )
@@ -2960,7 +2958,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ManagerSettingItem(
                         id = MANAGER_SETTING_KPM,
                         title = "KPM",
-                        subtitle = "使用 KPM 管理内核模块",
+                        subtitle = "Manage kernel modules with KPM",
                         kind = ManagerSettingKind.NAVIGATION
                     )
                 )
@@ -2968,11 +2966,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_SU_COMPAT,
-                    title = "传统 su 命令支持",
-                    subtitle = featureSubtitle(suCompat, "允许通过 /system/bin/su 获取 Root 权限", backendTitle),
+                    title = "Legacy su command support",
+                    subtitle = featureSubtitle(suCompat, "Allow Root access via /system/bin/su", backendTitle),
                     kind = ManagerSettingKind.MODE,
                     selectedIndex = suCompatMode,
-                    options = listOf("默认", "临时关闭", "永久关闭"),
+                    options = listOf("Default", "Temporarily disabled", "Permanently disabled"),
                     enabled = suCompat.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = suCompat.toManagerSettingStatus()
                 )
@@ -2981,7 +2979,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ManagerSettingItem(
                     id = MANAGER_SETTING_KERNEL_UMOUNT,
                     title = kernelUmountTitle,
-                    subtitle = featureSubtitle(kernelUmount, "在内核给需要的应用卸载模块", backendTitle),
+                    subtitle = featureSubtitle(kernelUmount, "Uninstall modules at kernel level for apps that need it", backendTitle),
                     checked = kernelUmount.value != 0L,
                     enabled = kernelUmount.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = kernelUmount.toManagerSettingStatus()
@@ -2991,8 +2989,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 add(
                     ManagerSettingItem(
                         id = MANAGER_SETTING_SELINUX_HIDE,
-                        title = "隐藏 SELinux 修改",
-                        subtitle = featureSubtitle(selinuxHide, "阻止应用检测 SELinux 修改", backendTitle),
+                        title = "Hide SELinux modifications",
+                        subtitle = featureSubtitle(selinuxHide, "Prevent apps from detecting SELinux modifications", backendTitle),
                         checked = selinuxHide.value != 0L,
                         enabled = true,
                         status = selinuxHide.toManagerSettingStatus()
@@ -3016,7 +3014,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ManagerSettingItem(
                         id = MANAGER_SETTING_ADB_ROOT,
                         title = "ADB Root",
-                        subtitle = featureSubtitle(adbRoot, "以 root 权限运行 adbd 守护进程", backendTitle),
+                        subtitle = featureSubtitle(adbRoot, "Run adbd daemon with root privileges", backendTitle),
                         checked = (adbRoot.configValue ?: adbRoot.value ?: 0L) != 0L,
                         enabled = adbRoot.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                         status = adbRoot.toManagerSettingStatus()
@@ -3026,11 +3024,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_DEFAULT_UMOUNT,
-                    title = "默认卸载模块",
+                    title = "Default module uninstall",
                     subtitle = if (nativeProfileAvailable) {
-                        "App Profile 中「卸载模块」的全局默认值"
+                        "Global default for module uninstall in App Profile"
                     } else {
-                        "ABK 被识别为原生管理器后可用"
+                        "Available once ABK is recognized as a native manager"
                     },
                     checked = nativeProfileAvailable && RootUtils.isDefaultUmountModules(),
                     enabled = nativeProfileAvailable
@@ -3040,8 +3038,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 add(
                     ManagerSettingItem(
                         id = MANAGER_SETTING_WEBVIEW_DEBUG,
-                        title = "WebView 调试",
-                        subtitle = "可用于调试 WebUI，请仅在需要时启用",
+                        title = "WebView debugging",
+                        subtitle = "For debugging WebUI — enable only when needed",
                         checked = _uiState.value.webViewDebugEnabled
                     )
                 )
@@ -3087,7 +3085,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ManagerSettingKind.MODE -> {
                     val hasOptions = options.isNotEmpty()
                     item.copy(
-                        title = item.title.ifBlank { "未命名设置" },
+                        title = item.title.ifBlank { "Unnamed setting" },
                         subtitle = item.subtitle.trim(),
                         options = options,
                         selectedIndex = if (hasOptions) {
@@ -3099,7 +3097,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 else -> item.copy(
-                    title = item.title.ifBlank { "未命名设置" },
+                    title = item.title.ifBlank { "Unnamed setting" },
                     subtitle = item.subtitle.trim(),
                     options = options
                 )
@@ -3109,18 +3107,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun managerSettingsTitle(manager: RootUtils.ManagerRuntimeProbe): String =
         manager.displayName
             .ifBlank { manager.variant }
-            .ifBlank { "管理器设置" }
+            .ifBlank { "Manager settings" }
 
     private fun buildUnknownManagerSettingsError(manager: RootUtils.ManagerRuntimeProbe): String {
         val detail = manager.diagnostics.firstOrNull { it.isNotBlank() }
-        val base = "当前后端已激活，但 ABK 无法稳定识别其类型；已跳过不安全的设置注入。"
+        val base = "Backend is active but ABK cannot reliably identify its type; unsafe settings injection has been skipped."
         return if (detail == null) base else "$base $detail"
     }
 
     private fun featureSubtitle(feature: RootUtils.KsuFeatureState, normal: String, backendTitle: String): String =
         when (feature.support) {
-            RootUtils.KsuFeatureSupport.UNSUPPORTED -> "当前 $backendTitle 后端不支持此功能"
-            RootUtils.KsuFeatureSupport.MANAGED -> "此功能已由模块接管，不能在管理器中直接修改"
+            RootUtils.KsuFeatureSupport.UNSUPPORTED -> "Current $backendTitle backend does not support this feature"
+            RootUtils.KsuFeatureSupport.MANAGED -> "This feature is managed by a module and cannot be modified here"
             RootUtils.KsuFeatureSupport.SUPPORTED -> normal
         }
 
@@ -3199,11 +3197,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ): BuildPlanImportPreview {
         val compact = code.trim().replace(Regex("\\s+"), "")
         require(!compact.startsWith(BUILD_PLAN_LEGACY_CODE_PREFIX)) {
-            "旧版 ABKP1 方案码太长，已不再支持，请重新分享"
+            "Legacy ABKP1 plan code is too long and no longer supported, please share again"
         }
-        require(compact.startsWith(BUILD_PLAN_CODE_PREFIX)) { "方案码格式不正确" }
+        require(compact.startsWith(BUILD_PLAN_CODE_PREFIX)) { "Invalid plan code format" }
         val payload = compact.removePrefix(BUILD_PLAN_CODE_PREFIX)
-        require(payload.isNotBlank()) { "方案码为空" }
+        require(payload.isNotBlank()) { "Plan code is empty" }
         val decoded = decodeBuildPlanPayload(
             bytes = Base64.getUrlDecoder().decode(padBase64Url(payload)),
             baseConfig = KernelSupport.normalize(baseConfig)
@@ -3241,7 +3239,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun addModuleCatalogRepository(url: String) {
         val cleanUrl = normalizeModuleCatalogUrl(url)
         if (cleanUrl.isBlank()) {
-            _uiState.update { it.copy(error = "模块仓库链接不能为空") }
+            _uiState.update { it.copy(error = "Module repository URL cannot be empty") }
             return
         }
 
@@ -3374,7 +3372,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun checkCustomExternalModuleMetadata(url: String): ExternalModuleMetadata? {
         val cleanUrl = url.trim()
         if (cleanUrl.isBlank()) {
-            _uiState.update { it.copy(customExternalModuleError = "模块仓库链接不能为空") }
+            _uiState.update { it.copy(customExternalModuleError = "Module repository URL cannot be empty") }
             return null
         }
         _uiState.update { it.copy(validatingCustomExternalModule = true, customExternalModuleError = null) }
@@ -3395,7 +3393,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun addCustomExternalModulesFromUrl(url: String, stages: List<String>): Boolean {
         val cleanUrl = url.trim()
         if (cleanUrl.isBlank()) {
-            _uiState.update { it.copy(customExternalModuleError = "模块仓库链接不能为空") }
+            _uiState.update { it.copy(customExternalModuleError = "Module repository URL cannot be empty") }
             return false
         }
         val normalizedStages = stages
@@ -3425,7 +3423,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return if (normalizedStage in metadata.supportedStages) {
             addCustomExternalModulesFromUrl(url, listOf(normalizedStage))
         } else {
-            _uiState.update { it.copy(customExternalModuleError = "该模块不支持 $normalizedStage") }
+            _uiState.update { it.copy(customExternalModuleError = "This module does not support $normalizedStage") }
             false
         }
     }
@@ -3490,7 +3488,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             BuildStatus.IDLE -> return
         }
         val error = when (itemStatus) {
-            BuildQueueItemStatus.FAILED -> "工作流结束: ${run.conclusion ?: run.status}"
+            BuildQueueItemStatus.FAILED -> "Workflow ended: ${run.conclusion ?: run.status}"
             else -> null
         }
         val current = _uiState.value.buildQueue
@@ -3547,7 +3545,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is Result.Success -> jobsResult.data.firstOrNull { job ->
                     job.steps.orEmpty().any { step -> step.name == BUILD_SUMMARY_STEP_NAME }
                 }.also {
-                    if (it == null) firstFailure = "未找到“$BUILD_SUMMARY_STEP_NAME”步骤"
+                    if (it == null) firstFailure = "\"$BUILD_SUMMARY_STEP_NAME\" step not found"
                 }
                 is Result.Error -> {
                     firstFailure = jobsResult.message
@@ -3564,13 +3562,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             saveBuildParameterSummary(runId, summary)
                             return@launch
                         }
-                        firstFailure = "job 日志中没有可解析的构建信息摘要"
+                        firstFailure = "No parseable build summary found in job logs"
                     }
                     is Result.Error -> firstFailure = logsResult.message
                     Result.Loading -> Unit
                 }
             }
-
             when (val runLogsResult = github.downloadRunLogs(username, repoName, runId)) {
                 is Result.Success -> {
                     val summary = parseBuildParameterSummary(runLogsResult.data, runId, run)
@@ -3578,14 +3575,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         saveBuildParameterSummary(runId, summary)
                         return@launch
                     }
-                    val prefix = firstFailure?.let { "$it；" }.orEmpty()
-                    setBuildParameterLoadError(runId, "${prefix}workflow 日志中没有可解析的构建信息摘要")
+                    val prefix = firstFailure?.let { "$it; " }.orEmpty()
+                    setBuildParameterLoadError(runId, "${prefix}No parseable build summary found in workflow logs")
                 }
                 is Result.Error -> {
-                    val prefix = firstFailure?.let { "job 日志读取失败：$it；" }.orEmpty()
-                    setBuildParameterLoadError(runId, "${prefix}workflow 日志读取失败：${runLogsResult.message}")
+                    val prefix = firstFailure?.let { "Job log read failed: $it; " }.orEmpty()
+                    setBuildParameterLoadError(runId, "${prefix}Workflow log read failed: ${runLogsResult.message}")
                 }
-                Result.Loading -> setBuildParameterLoadError(runId, "日志读取尚未完成")
+                Result.Loading -> setBuildParameterLoadError(runId, "Log read not yet complete")
             }
         }
     }
@@ -3738,7 +3735,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ModuleCatalogRepository(
             id = OFFICIAL_MODULE_CATALOG_ID,
             url = OFFICIAL_MODULE_CATALOG_URL,
-            name = "ABK 官方模块仓库"
+            name = "ABK Official Module Repository"
         )
     )
 
@@ -3808,10 +3805,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 private fun externalManagerAccessDeniedMessage(): String =
-    "未授予 ABK Root 权限，无法读取外部 Root 后端。请先为 ABK 授权，或使用已将 ABK 识别为原生管理器的内核。"
+    "ABK has not been granted Root permission and cannot read the external Root backend. Please grant Root to ABK first, or use a kernel that recognises ABK as a native manager."
 
 private fun externalRootManagerPermissionDeniedMessage(): String =
-    "当前仅接入外部 Root / ksud 兼容层，ABK 没有原生管理权限，无法访问原生桥、管理器设置或 Root 授权策略。"
+    "Currently connected only via external Root / ksud compatibility layer; ABK has no native manager permission and cannot access the native bridge, manager settings, or Root grant policies."
 
 private fun resolveManagerAccess(rootGranted: Boolean): RootUtils.ManagerAccessInfo =
     RootUtils.resolveManagerAccess(rootGranted)
@@ -3826,7 +3823,7 @@ private fun managerAccessErrorMessage(
         RootUtils.ManagerAccessKind.NO_ROOT -> externalManagerAccessDeniedMessage()
         RootUtils.ManagerAccessKind.ROOT_ONLY -> externalRootManagerPermissionDeniedMessage()
         RootUtils.ManagerAccessKind.NATIVE_KERNEL_NO_MANAGER ->
-            "当前 ABK 已连接到内核接口，但没有原生管理权限。请确认内核已将当前 ABK APK 识别为管理器。"
+            "ABK is connected to the kernel interface but has no native manager permission. Please confirm the kernel recognises the current ABK APK as a manager."
     }
 }
 
@@ -3855,7 +3852,7 @@ private fun String.moduleCatalogFallbackName(): String = trim()
     .substringAfterLast('/')
     .removeSuffix(".git")
     .removeSuffix(".json")
-    .ifBlank { "模块仓库" }
+    .ifBlank { "Module Repository" }
 
 private fun padBase64Url(value: String): String =
     value + "=".repeat((4 - value.length % 4) % 4)
@@ -3918,7 +3915,7 @@ private fun encodeBuildPlanPayload(
 private fun decodeBuildPlanPayload(bytes: ByteArray, baseConfig: KernelBuildConfig): DecodedBuildPlanCode {
     val reader = BuildPlanBinaryReader(bytes)
     val version = reader.readByte()
-    require(version == BUILD_PLAN_CODE_VERSION) { "不支持的方案码版本" }
+    require(version == BUILD_PLAN_CODE_VERSION) { "Unsupported plan code version" }
     val scope = buildPlanShareScopeFromWireValue(reader.readByte())
     val name = reader.readString()
     val versionBase = if (scope == BuildPlanShareScope.FULL) {
@@ -3944,7 +3941,7 @@ private fun decodeBuildPlanPayload(bytes: ByteArray, baseConfig: KernelBuildConf
     val zramExtraAlgos = reader.readString()
     val kpmPassword = reader.readString()
     val moduleCount = reader.readVarInt()
-    require(moduleCount in 0..BUILD_PLAN_MAX_MODULES) { "外部模块数量超出限制" }
+    require(moduleCount in 0..BUILD_PLAN_MAX_MODULES) { "External module count exceeds limit" }
     val modules = List(moduleCount) {
         CustomExternalModule(
             url = reader.readString().trim(),
@@ -3991,7 +3988,7 @@ private class BuildPlanBinaryWriter {
     }
 
     fun writeVarInt(value: Int) {
-        require(value >= 0) { "负数无法写入方案码" }
+        require(value >= 0) { "Negative values cannot be written to plan code" }
         var remaining = value
         do {
             var byteValue = remaining and 0x7f
@@ -4000,25 +3997,20 @@ private class BuildPlanBinaryWriter {
             writeByte(byteValue)
         } while (remaining != 0)
     }
-
     fun writeString(value: String) {
         val bytes = value.toByteArray(StandardCharsets.UTF_8)
-        require(bytes.size <= BUILD_PLAN_MAX_STRING_BYTES) { "方案字段过长" }
+        require(bytes.size <= BUILD_PLAN_MAX_STRING_BYTES) { "Plan field too long" }
         writeVarInt(bytes.size)
         output.write(bytes)
     }
-
     fun toByteArray(): ByteArray = output.toByteArray()
 }
-
 private class BuildPlanBinaryReader(private val bytes: ByteArray) {
     private var position = 0
-
     fun readByte(): Int {
-        require(position < bytes.size) { "方案码内容不完整" }
+        require(position < bytes.size) { "Plan code content is incomplete" }
         return bytes[position++].toInt() and 0xff
     }
-
     fun readVarInt(): Int {
         var result = 0
         var shift = 0
@@ -4028,20 +4020,18 @@ private class BuildPlanBinaryReader(private val bytes: ByteArray) {
             if (byteValue and 0x80 == 0) return result
             shift += 7
         }
-        throw IllegalArgumentException("方案码数字字段异常")
+        throw IllegalArgumentException("Plan code numeric field is malformed")
     }
-
     fun readString(): String {
         val length = readVarInt()
-        require(length in 0..BUILD_PLAN_MAX_STRING_BYTES) { "方案字段过长" }
-        require(position + length <= bytes.size) { "方案码内容不完整" }
+        require(length in 0..BUILD_PLAN_MAX_STRING_BYTES) { "Plan field too long" }
+        require(position + length <= bytes.size) { "Plan code content is incomplete" }
         val value = String(bytes, position, length, StandardCharsets.UTF_8)
         position += length
         return value
     }
-
     fun requireFullyRead() {
-        require(position == bytes.size) { "方案码包含无法识别的数据" }
+        require(position == bytes.size) { "Plan code contains unrecognized data" }
     }
 }
 
@@ -4080,7 +4070,7 @@ private fun List<String>.valueOrDefault(index: Int, fallback: String): String =
 private fun buildPlanShareScopeFromWireValue(value: Int): BuildPlanShareScope = when (value) {
     0 -> BuildPlanShareScope.FULL
     1 -> BuildPlanShareScope.FEATURES_ONLY
-    else -> throw IllegalArgumentException("不支持的方案分享类型")
+    else -> throw IllegalArgumentException("Unsupported plan share type")
 }
 
 private const val BUILD_PLAN_CODE_PREFIX = "ABKP2:"
@@ -4100,7 +4090,7 @@ private val BUILD_PLAN_MODULE_STAGES = listOf(
     CustomExternalModuleStage.BEFORE_BUILD
 )
 
-private const val BUILD_SUMMARY_STEP_NAME = "构建信息摘要"
+private const val BUILD_SUMMARY_STEP_NAME = "Build info summary"
 
 private fun parseBuildParameterSummary(
     logs: String,
@@ -4112,11 +4102,11 @@ private fun parseBuildParameterSummary(
     logs.lineSequence()
         .map(::cleanBuildSummaryLogLine)
         .forEach { line ->
-            if (line.contains("内核构建配置摘要")) {
+            if (line.contains("内核构建配置摘要") || line.contains("Build config summary")) {
                 summarySeen = true
                 return@forEach
             }
-            if (!summarySeen && !line.contains("Android 版本")) return@forEach
+            if (!summarySeen && !line.contains("Android 版本") && !line.contains("Android version")) return@forEach
             if (summarySeen && values.isNotEmpty() && line.all { it == '=' || it.isWhitespace() }) return@forEach
 
             val separator = listOf(line.indexOf(':'), line.indexOf('：'))
@@ -4195,12 +4185,12 @@ private fun normalizeBuildSummaryLabel(label: String): String? {
 }
 
 private fun sanitizeBuildSummaryValue(key: String, value: String): String {
-    if (key != "kpmPassword") return value.ifBlank { "无" }
+    if (key != "kpmPassword") return value.ifBlank { "None" }
     val normalized = value.trim().lowercase()
     return when {
-        normalized.isBlank() -> "默认"
-        normalized in setOf("默认", "default", "无", "none", "not set") -> "默认"
-        else -> "已设置"
+        normalized.isBlank() -> "Default"
+        normalized in setOf("default", "默认", "none", "not set") -> "Default"
+        else -> "Set"
     }
 }
 
@@ -4259,13 +4249,13 @@ private fun isPrebuiltGkiReleaseCandidate(release: GitHubReleaseSummary): Boolea
         "gki",
         "prebuilt",
         "pre-built",
-        "预编译",
+        "Pre-built",
         "boot.img",
         "anykernel",
         "ak3",
         "kernel image",
-        "内核镜像",
-        "刷写包"
+        "Kernel image",
+        "Flash package"
     )
     if (strongPrebuiltTerms.any { haystack.contains(it) }) return true
 
@@ -4274,8 +4264,8 @@ private fun isPrebuiltGkiReleaseCandidate(release: GitHubReleaseSummary): Boolea
         "apk",
         "app",
         "android application",
-        "应用",
-        "客户端",
+        "Apply",
+        "Client",
         "abk"
     )
     return appReleaseTerms.none { haystack.contains(it) } &&
@@ -4523,7 +4513,7 @@ private fun Artifact.toBuildArtifact(runId: Long): BuildArtifact = BuildArtifact
     expired = expired,
     createdAt = createdAt,
     runId = runId,
-    runTitle = "工作流 #$runId",
+    runTitle = "Workflow #$runId",
     runNumber = 0,
     runCreatedAt = createdAt
 )
