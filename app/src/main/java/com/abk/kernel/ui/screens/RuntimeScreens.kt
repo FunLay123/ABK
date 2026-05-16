@@ -574,18 +574,18 @@ private fun RuntimeStatusHeader(
     }
     ExpressiveHeroCard(
         title = when {
-            runtimeStatus != null && hasNativeManagerPermission -> "管理器已激活"
-            runtimeStatus != null -> "原生管理权限缺失"
-            else -> "管理器未激活"
+            runtimeStatus != null && hasNativeManagerPermission -> "Manager activated"
+            runtimeStatus != null -> "Native manager permission missing"
+            else -> "Manager not activated"
         },
         subtitle = runtimeStatus?.let {
             if (!hasNativeManagerPermission && !error.isNullOrBlank()) {
                 error
             } else {
                 val managerName = it.manager?.displayName?.takeIf { name -> name.isNotBlank() } ?: "Root"
-                "$managerName · ABK ${it.abkVersion.ifBlank { "unknown" }} · ${it.modules.size} 个模块"
+                "$managerName · ABK ${it.abkVersion.ifBlank { "unknown" }} · ${it.modules.size} modules"
             }
-        } ?: (error ?: "安装并启用支持管理器的内核后可查看运行态信息"),
+        } ?: (error ?: "Install and enable a kernel with manager support to view runtime info"),
         icon = if (runtimeStatus != null && hasNativeManagerPermission) Icons.Default.CheckCircle else Icons.Default.Error,
         containerColor = if (runtimeStatus != null && hasNativeManagerPermission) {
             MaterialTheme.colorScheme.primaryContainer
