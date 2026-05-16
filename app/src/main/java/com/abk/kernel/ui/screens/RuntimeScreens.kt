@@ -924,7 +924,7 @@ private fun InstalledRuntimeModuleCard(
                         ) {
                             Icon(
                                 if (module.remove) Icons.Default.RestartAlt else Icons.Default.Delete,
-                                contentDescription = if (module.remove) "撤销卸载" else "卸载模块",
+                                contentDescription = if (module.remove) "Undo uninstall" else "Uninstall module",
                                 tint = if (module.remove) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
@@ -1028,11 +1028,11 @@ private fun RuntimeModuleUninstallConfirmDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    val title = if (pending) "确认卸载模块" else "撤销卸载模块"
+    val title = if (pending) "Confirm module uninstall" else "Undo module uninstall"
     val message = if (pending) {
-        "确认后会将该普通模块标记为待卸载，重启后由 KernelSU 完成删除。"
+        "After confirming, the module will be marked for removal and deleted by KernelSU on next reboot."
     } else {
-        "确认后会移除待卸载标记，模块将继续保留。"
+        "After confirming, the pending-removal mark will be cleared and the module will be kept."
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1082,12 +1082,12 @@ private fun RuntimeModuleUninstallConfirmDialog(
                     modifier = Modifier.size(17.dp)
                 )
                 Spacer(Modifier.width(4.dp))
-                Text(if (pending) "卸载" else "撤销")
+                Text(if (pending) "Uninstall" else "Undo")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text("Cancel")
             }
         }
     )
