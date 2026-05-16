@@ -1543,7 +1543,7 @@ object RootUtils {
     ): ShellResult? {
         val userlandKsud = resolveUserlandKsudPath(context) ?: return null
         onOutput?.invoke("[ABK] Using bundled SukiSU-Ultra ksud for local boot patching")
-        onOutput?.invoke("[ABK] ksud path: $bundledKsud")
+        onOutput?.invoke("[ABK] ksud path: $userlandKsud")
         return runLocalCommand(
             command = buildKsudCommand(userlandKsud, args),
             timeoutSeconds = 300L,
