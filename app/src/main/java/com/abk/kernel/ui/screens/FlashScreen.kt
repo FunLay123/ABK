@@ -1398,12 +1398,12 @@ private fun normalizeReleaseParameterLabel(label: String): String? {
     val compact = label.replace(Regex("\\s+"), "").lowercase()
     return when {
         compact.contains("android版本") -> "androidVersion"
-        compact.contains("内核版本") -> "kernelVersion"
-        compact.contains("子版本号") -> "subLevel"
-        compact.contains("补丁级别") -> "osPatchLevel"
+        compact.contains("Kernel version") -> "kernelVersion"
+        compact.contains("Sub-version") -> "subLevel"
+        compact.contains("Patch level") -> "osPatchLevel"
         compact.contains("ksu变体") -> "ksuVariant"
         compact.contains("ksu分支") -> "ksuBranch"
-        compact.contains("构建时间") -> "buildTime"
+        compact.contains("Build time") -> "buildTime"
         compact.contains("susfs状态") -> "susfsEnabled"
         compact.contains("zram增强") -> "zramEnabled"
         compact.contains("zram完整算法") -> "zramFullAlgo"
@@ -1411,12 +1411,12 @@ private fun normalizeReleaseParameterLabel(label: String): String? {
         compact.contains("bbg补丁") -> "bbgEnabled"
         compact.contains("ddklsm") -> "ddkLsm"
         compact.contains("ntsync补丁") -> "ntsyncEnabled"
-        compact.contains("网络增强") || compact.contains("networking增强") || compact.contains("networing增强") -> "networkingEnabled"
+        compact.contains("Networking enhancement") || compact.contains("networking增强") || compact.contains("networing增强") -> "networkingEnabled"
         compact.contains("kpm功能") -> "kpmEnabled"
         compact.contains("kpm密码") -> "kpmPassword"
         compact.contains("re-kernel") || compact.contains("rekernel") -> "reKernelEnabled"
-        compact.contains("虚拟化支持") -> "virtualizationSupport"
-        compact == "自定义注入" -> "customInjection"
+        compact.contains("Virtualization support") -> "virtualizationSupport"
+        compact == "Custom injection" -> "customInjection"
         compact.contains("stockconfig") -> "stockConfig"
         else -> null
     }
@@ -1464,47 +1464,47 @@ private data class PrebuiltVersionFields(
 )
 
 private val RELEASE_PARAMETER_LABELS = listOf(
-    "自定义注入参数列表",
-    "网络增强 (IPSet + BBR)",
-    "Release asset 数",
-    "5.10 修订版本",
-    "自定义版本名",
-    "一加 8E 支持",
-    "Android 版本",
+    "Custom injection parameter list",
+    "Networking enhancement (IPSet + BBR)",
+    "Release asset count",
+    "5.10 revision",
+    "Custom version name",
+    "OnePlus 8E support",
+    "Android version",
     "Stock Config",
-    "ZRAM 完整算法",
-    "ZRAM 额外算法",
-    "NTsync 补丁",
-    "虚拟化支持",
-    "自定义注入",
-    "内核版本",
-    "子版本号",
-    "补丁级别",
-    "KSU 变体",
-    "KSU 分支",
-    "构建时间",
-    "SUSFS 状态",
-    "ZRAM 增强",
-    "BBG 补丁",
+    "ZRAM full algorithm",
+    "ZRAM extra algorithms",
+    "NTsync patch",
+    "Virtualization support",
+    "Custom injection",
+    "Kernel version",
+    "Sub-version",
+    "Patch level",
+    "KSU variant",
+    "KSU branch",
+    "Build time",
+    "SUSFS status",
+    "ZRAM enhancement",
+    "BBG patch",
     "DDK LSM",
-    "网络增强",
-    "KPM 功能",
-    "KPM 密码",
+    "Networking enhancement",
+    "KPM features",
+    "KPM password",
     "Re-Kernel",
-    "Artifact 数",
-    "源 commit",
-    "源 run"
+    "Artifact count",
+    "Source commit",
+    "Source run"
 ).sortedByDescending { it.length }
 
 private val RELEASE_EXTRA_PARAMETER_LABELS = setOf(
-    "源run",
-    "源commit",
-    "artifact数",
-    "releaseasset数",
-    "自定义版本名",
-    "5.10修订版本",
-    "一加8e支持",
-    "自定义注入参数列表"
+    "sourcerun",
+    "sourcecommit",
+    "artifactcount",
+    "releaseassetcount",
+    "Custom version name",
+    "5.10revision",
+    "oneplus8esupport",
+    "Custom injection parameter list"
 )
 
 @Composable
