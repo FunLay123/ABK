@@ -113,6 +113,7 @@ private enum class LkmPatchInstallMode {
 @Composable
 fun AbkRootPatchScreen(
     rootGranted: Boolean,
+    hasNativeManagerPermission: Boolean,
     runtimeVariant: String,
     backgroundUri: String?,
     backgroundImageEnabled: Boolean,
@@ -178,6 +179,7 @@ fun AbkRootPatchScreen(
         ?: selectedAsset?.let { "${it.variantLabel} · ${it.kmi}" }
         ?: ""
     val hasLkmSource = hasLocalLkm || selectedAsset != null
+    val showRootInstallModes = rootGranted
     val canPatchSelectedFile = selectedBootPath.isNotBlank() &&
         hasLkmSource &&
         !running &&
@@ -211,6 +213,16 @@ fun AbkRootPatchScreen(
 
     LaunchedEffect(running) {
         onBackEnabledChange(!running)
+    }
+
+    LaunchedEffect(showRootInstallModes) {
+        if (!showRootInstallModes && selectedMode != null && selectedMode != LkmPatchInstallMode.SelectFile) {
+            selectedMode = null
+            patchedImagePath = ""
+            success = null
+            currentAction = ""
+            logLines = emptyList()
+        }
     }
 
     DisposableEffect(Unit) {
@@ -446,49 +458,51 @@ fun AbkRootPatchScreen(
                         bootPicker.launch(arrayOf("application/octet-stream", "image/*", "*/*"))
                     }
                 )
-                PatchDivider()
-                PatchModeRow(
-                    title = "Direct Install (Recommended)",
-                    subtitle = if (rootGranted) "Auto-detects current boot / init_boot and patches directly" else "Requires Root access",
-                    selected = selectedMode == LkmPatchInstallMode.DirectInstall,
-                    enabled = !running && rootGranted,
-                    onClick = {
-                        selectedMode = LkmPatchInstallMode.DirectInstall
-                        patchedImagePath = ""
-                        success = null
-                        currentAction = ""
-                        logLines = emptyList()
-                    }
-                )
-                PatchDivider()
-                PatchModeRow(
-                    title = "Install to Inactive Slot (Post-OTA)",
-                    subtitle = if (rootGranted) "Patch and write to the other slot" else "Requires Root access",
-                    selected = selectedMode == LkmPatchInstallMode.OtaInstall,
-                    enabled = !running && rootGranted,
-                    onClick = {
-                        selectedMode = LkmPatchInstallMode.OtaInstall
-                        patchedImagePath = ""
-                        success = null
-                        currentAction = ""
-                        logLines = emptyList()
-                    }
-                )
-                PatchDivider()
-                PatchModeRow(
-                    title = "AnyKernel3 Kernel",
-                    subtitle = selectedAnyKernelName.ifBlank { "Flash a kernel zip in AnyKernel3 format" },
-                    selected = selectedMode == LkmPatchInstallMode.AnyKernel3,
-                    enabled = !running && rootGranted,
-                    onClick = {
-                        selectedMode = LkmPatchInstallMode.AnyKernel3
-                        patchedImagePath = ""
-                        success = null
-                        currentAction = ""
-                        logLines = emptyList()
-                        anyKernelPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
-                    }
-                )
+                if (showRootInstallModes) {
+                    PatchDivider()
+                    PatchModeRow(
+                        title = "Direct Install (Recommended)",
+                        subtitle = "Auto-detects current boot / init_boot and patches directly",
+                        selected = selectedMode == LkmPatchInstallMode.DirectInstall,
+                        enabled = !running,
+                        onClick = {
+                            selectedMode = LkmPatchInstallMode.DirectInstall
+                            patchedImagePath = ""
+                            success = null
+                            currentAction = ""
+                            logLines = emptyList()
+                        }
+                    )
+                    PatchDivider()
+                    PatchModeRow(
+                        title = "安装到未使用的槽位（OTA 后）",
+                        subtitle = "修补并写入另一槽位",
+                        selected = selectedMode == LkmPatchInstallMode.OtaInstall,
+                        enabled = !running,
+                        onClick = {
+                            selectedMode = LkmPatchInstallMode.OtaInstall
+                            patchedImagePath = ""
+                            success = null
+                            currentAction = ""
+                            logLines = emptyList()
+                        }
+                    )
+                    PatchDivider()
+                    PatchModeRow(
+                        title = "AnyKernel3 kernel",
+                        subtitle = selectedAnyKernelName.ifBlank { "Flash a kernel zip in AnyKernel format" },
+                        selected = selectedMode == LkmPatchInstallMode.AnyKernel3,
+                        enabled = !running,
+                        onClick = {
+                            selectedMode = LkmPatchInstallMode.AnyKernel3
+                            patchedImagePath = ""
+                            success = null
+                            currentAction = ""
+                            logLines = emptyList()
+                            anyKernelPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                        }
+                    )
+                }
             }
 
             PatchGroupCard {
@@ -653,11 +667,7 @@ fun AbkRootPatchScreen(
             if (!hasLkmSource && selectedMode != LkmPatchInstallMode.AnyKernel3) {
                 InlineWarning("No bundled LKM for the selected variant and KMI. Please select a local .ko file.")
             }
-            if (
-                selectedMode == LkmPatchInstallMode.SelectFile &&
-                userlandKsudPath == null &&
-                !rootGranted
-            ) {
+            if (selectedMode == LkmPatchInstallMode.SelectFile && userlandKsudPath == null && !rootGranted) {
                 InlineWarning("未检测到可执行的 APK 内置 SukiSU-Ultra ksud；未授权 Root 时只能在选择 boot.img 后生成 patched 镜像。")
             }
 
