@@ -133,9 +133,9 @@ object RootUtils {
             if [ -n "${'$'}installer" ]; then
                 ksud_source=${'$'}(abk_ksud_source "${'$'}installer")
                 ksud_label=${'$'}(abk_ksud_label "${'$'}ksud_source")
-                echo "[ABK] 使用${'$'}ksud_label ksud 安装模块: ${'$'}installer"
+                echo "[ABK] Installing module with ${'$'}ksud_label ksud: ${'$'}installer"
                 if [ "${'$'}ksud_source" != "embedded" ]; then
-                    echo "[ABK] 内置 SukiSU-Ultra ksud 不可用，已回退到${'$'}ksud_label ksud"
+                    echo "[ABK] Bundled SukiSU-Ultra ksud not available, falling back to ${'$'}ksud_label ksud"
                 fi
                 if "${'$'}installer" module install $safeZip; then
                     echo "[ABK] KernelSU module install command completed"
@@ -410,9 +410,9 @@ object RootUtils {
             )
             val requiresRootShell = flash || sourceBoot == null
             if (asset != null) {
-                onOutput?.invoke("[ABK] 使用 APK 内置 LKM: ${asset.variantLabel} · ${asset.kmi}")
+                onOutput?.invoke("[ABK] Using bundled APK LKM: ${asset.variantLabel} · ${asset.kmi}")
             } else {
-                onOutput?.invoke("[ABK] 使用本地 LKM: ${moduleFile.name}")
+                onOutput?.invoke("[ABK] Using local LKM: ${moduleFile.name}")
             }
             val result = when {
                 allowRootFallback -> {
@@ -424,27 +424,27 @@ object RootUtils {
                     when {
                         rootResult != null -> rootResult
                         !requiresRootShell -> {
-                            onOutput?.invoke("[ABK] Root shell 不可用，改用 APK 内置 SukiSU-Ultra ksud 仅修补本地 boot 镜像")
+                            onOutput?.invoke("[ABK] Root shell unavailable, using bundled SukiSU-Ultra ksud for local boot image patching only")
                             runBundledUserlandBootPatch(
                                 context = context,
                                 args = baseArgs,
                                 onOutput = onOutput
                             ) ?: ShellResult(
                                 false,
-                                listOf("未找到可执行的 APK 内置 SukiSU-Ultra ksud；无 Root 时只能在选择 boot.img 后生成 patched 镜像。")
+                                listOf("No executable bundled SukiSU-Ultra ksud found; without Root, a patched image can only be generated after selecting a boot.img.")
                             )
                         }
-                        else -> ShellResult(false, listOf("该安装方式需要 Root 权限。"))
+                        else -> ShellResult(false, listOf("This installation method requires Root permission."))
                     }
                 }
-                requiresRootShell -> ShellResult(false, listOf("该安装方式需要 Root 权限。"))
+                requiresRootShell -> ShellResult(false, listOf("This installation method requires Root permission."))
                 else -> runBundledUserlandBootPatch(
                     context = context,
                     args = baseArgs,
                     onOutput = onOutput
                 ) ?: ShellResult(
                     false,
-                    listOf("未找到可执行的 APK 内置 SukiSU-Ultra ksud；无 Root 时只能在选择 boot.img 后生成 patched 镜像。")
+                    listOf("No executable bundled SukiSU-Ultra ksud found; without Root, a patched image can only be generated after selecting a boot.img.")
                 )
             }
             val outputPath = outputImage.takeIf { result.success && it.isFile }?.absolutePath
@@ -1287,7 +1287,7 @@ object RootUtils {
         val displayVariant = controlVariant.ifBlank { nativeVariant }
         val diagnostics = buildList {
             if (controlJson == null && !status.isLkmMode) {
-                add("ABK control not responding；kernel may not have CONFIG_ABK_CONTROL enabled，or the ABK Control external module is missing the before_build stage.")
+                add("ABK control not responding; kernel may not have CONFIG_ABK_CONTROL enabled, or the ABK Control external module is missing the before_build stage.")
             }
         }
         val capabilities = buildList {
@@ -1519,8 +1519,8 @@ object RootUtils {
         val embedded = embeddedKsudPath(context) ?: return null
         return try {
             createRootShell(timeoutSeconds = 300L).use { shell ->
-                onOutput?.invoke("[ABK] 通过 Root shell 调用内置 libksud.so")
-                onOutput?.invoke("[ABK] ksud 路径: $embedded")
+                onOutput?.invoke("[ABK] Invoking embedded libksud.so via Root shell")
+                onOutput?.invoke("[ABK] ksud path: $embedded")
                 execWithShell(
                     shell,
                     buildKsudShellCommand(embedded, args),
@@ -1539,8 +1539,8 @@ object RootUtils {
         onOutput: ((String) -> Unit)? = null
     ): ShellResult? {
         val bundledKsud = prepareBundledKsudPath(context) ?: return null
-        onOutput?.invoke("[ABK] 使用 APK 内置 SukiSU-Ultra ksud 进行本地 boot 修补")
-        onOutput?.invoke("[ABK] ksud 路径: $bundledKsud")
+        onOutput?.invoke("[ABK] Using bundled SukiSU-Ultra ksud for local boot patching")
+        onOutput?.invoke("[ABK] ksud path: $bundledKsud")
         return runLocalCommand(
             command = buildKsudCommand(bundledKsud, args),
             timeoutSeconds = 300L,
@@ -1687,9 +1687,9 @@ object RootUtils {
             }
             abk_ksud_label() {
                 case "$1" in
-                    embedded) printf '%s\n' "内置 SukiSU-Ultra" ;;
-                    data_adb) printf '%s\n' "外部 /data/adb" ;;
-                    *) printf '%s\n' "系统" ;;
+                    embedded) printf '%s\n' "Bundled SukiSU-Ultra" ;;
+                    data_adb) printf '%s\n' "External /data/adb" ;;
+                    *) printf '%s\n' "System" ;;
                 esac
             }
             $script
@@ -1744,7 +1744,7 @@ object RootUtils {
     }
 
     private fun nativeManagerPermissionDeniedMessage(): String =
-        "当前 ABK 没有原生管理权限，无法访问该功能。请使用已将 ABK 识别为原生管理器的内核。"
+        "ABK has no native manager permission and cannot access this feature. Please use a kernel that recognises ABK as a native manager."
 
     private fun nativeManagerPermissionDeniedResult(): ShellResult =
         ShellResult(false, listOf(nativeManagerPermissionDeniedMessage()))
