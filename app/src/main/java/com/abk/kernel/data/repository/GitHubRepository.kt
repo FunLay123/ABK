@@ -63,7 +63,7 @@ class GitHubRepository(
         withContext(Dispatchers.IO) {
             val candidates = externalModuleConfCandidates(repositoryUrl)
             if (candidates.isEmpty()) {
-                return@withContext Result.Error("模块仓库链接格式不支持")
+                return@withContext Result.Error("Unsupported module repository URL format")
             }
 
             var lastError = ""
@@ -74,7 +74,7 @@ class GitHubRepository(
                     .build()
                 val response = runCatching { publicHttpClient.newCall(request).execute() }
                     .getOrElse {
-                        lastError = it.message ?: "网络请求失败"
+                        lastError = it.message ?: "Network request failed"
                         null
                     } ?: continue
 
@@ -88,19 +88,19 @@ class GitHubRepository(
                     return@withContext runCatching { parseExternalModuleConf(body) }
                         .fold(
                             onSuccess = { Result.Success(it) },
-                            onFailure = { Result.Error("module.conf 无效: ${it.message ?: "格式错误"}") }
+                            onFailure = { Result.Error("Invalid module.conf: ${it.message ?: "Malformed format"}") }
                         )
                 }
             }
 
-            Result.Error("无法读取 module.conf: $lastError")
+            Result.Error("Failed to read module.conf: $lastError")
         }
 
     suspend fun fetchModuleCatalog(repositoryUrl: String): Result<ModuleCatalogFetchResult> =
         withContext(Dispatchers.IO) {
             val candidates = moduleCatalogIndexCandidates(repositoryUrl)
             if (candidates.isEmpty()) {
-                return@withContext Result.Error("模块仓库链接格式不支持")
+                return@withContext Result.Error("Unsupported module repository URL format")
             }
 
             var lastError = ""
@@ -111,23 +111,20 @@ class GitHubRepository(
                     .build()
                 val response = runCatching { publicHttpClient.newCall(request).execute() }
                     .getOrElse {
-                        lastError = it.message ?: "网络请求失败"
+                        lastError = it.message ?: "Network request failed"
                         null
                     } ?: continue
-
                 response.use { resp ->
                     if (!resp.isSuccessful) {
                         lastError = "HTTP ${resp.code}"
                         return@use
                     }
-
                     val body = resp.body?.string().orEmpty()
                     val catalog = runCatching { parseModuleCatalogDocument(body, repositoryUrl) }
                         .getOrElse {
-                            lastError = "JSON 解析失败: ${it.message ?: "格式错误"}"
+                            lastError = "JSON parse failed: ${it.message ?: "Malformed format"}"
                             return@use
                         }
-
                     return@withContext Result.Success(
                         ModuleCatalogFetchResult(
                             name = catalog.name,
@@ -138,8 +135,7 @@ class GitHubRepository(
                     )
                 }
             }
-
-            Result.Error("无法读取模块仓库 JSON: $lastError")
+            Result.Error("Failed to read module repository JSON: $lastError")
         }
 
     // ── User ──────────────────────────────────────────────────────────────
@@ -512,7 +508,7 @@ class GitHubRepository(
 
     private fun parseModuleCatalogDocument(body: String, repositoryUrl: String): ParsedModuleCatalogDocument {
         val root = JsonParser.parseString(body)
-        val document = root.asJsonObjectOrNull() ?: error("根节点必须是 JSON 对象")
+        val document = root.asJsonObjectOrNull() ?: error("Root node must be a JSON object")
         val rawModules = document.arrayOrEmpty("modules")
         val modules = rawModules.mapNotNull { element ->
             element.asJsonObjectOrNull()?.let(::sanitizeCatalogItem)
@@ -560,7 +556,7 @@ class GitHubRepository(
     private fun parseExternalModuleConf(body: String): ExternalModuleMetadata {
         val values = parseShellLikeConf(body)
         val name = values["ABK_MODULE_NAME"].orEmpty().trim()
-        if (name.isBlank()) error("缺少 ABK_MODULE_NAME")
+        if (name.isBlank()) error("Missing ABK_MODULE_NAME")
         val supportedStages = values["ABK_MODULE_SUPPORTED_STAGES"]
             ?.takeIf { it.isNotBlank() }
             ?.split(',')
@@ -654,7 +650,7 @@ class GitHubRepository(
         .trimEnd('/')
         .substringAfterLast('/')
         .removeSuffix(".git")
-        .ifBlank { "模块仓库" }
+        .ifBlank { "Module Repository" }
 
     private companion object {
         const val DEFAULT_LOG_BUFFER_SIZE = 8 * 1024
