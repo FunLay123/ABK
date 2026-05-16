@@ -309,20 +309,20 @@ object RootUtils {
             ?.takeIf { it.isNotBlank() }
             ?.let { File(it) }
         if (sourceBoot != null && !sourceBoot.isFile) {
-            return BootPatchResult(false, listOf("boot 镜像不存在: $bootImagePath"), null)
+            return BootPatchResult(false, listOf("Boot image not found: $bootImagePath"), null)
         }
 
         val localModule = localModulePath
             ?.takeIf { it.isNotBlank() }
             ?.let { File(it) }
         if (localModule != null && !localModule.isFile) {
-            return BootPatchResult(false, listOf("LKM 文件不存在: $localModulePath"), null)
+            return BootPatchResult(false, listOf("LKM file not found: $localModulePath"), null)
         }
 
         val asset = if (localModule == null) {
             listBundledAbkLkmAssets(context).firstOrNull {
                 it.variantId == variantId && it.kmi == kmi
-            } ?: return BootPatchResult(false, listOf("未内置 $variantId / $kmi 的 LKM 模块"), null)
+            } ?: return BootPatchResult(false, listOf("No built-in LKM module for $variantId / $kmi"), null)
         } else {
             null
         }
@@ -378,14 +378,14 @@ object RootUtils {
             val userlandKsud = resolveUserlandKsudPath(context)
             val result = when {
                 !requiresRootShell && userlandKsud != null -> {
-                    onOutput?.invoke("[ABK] 使用用户态 ksud: $userlandKsud")
+                    onOutput?.invoke("[ABK] Using userland ksud: $userlandKsud")
                     runLocalCommand(listOf(userlandKsud) + args, timeoutSeconds = 300L, onOutput = onOutput)
                 }
                 allowRootFallback -> {
                     if (requiresRootShell) {
-                        onOutput?.invoke("[ABK] 通过 Root shell 执行 ksud boot-patch")
+                        onOutput?.invoke("[ABK] Running ksud boot-patch via Root shell")
                     } else {
-                        onOutput?.invoke("[ABK] 未找到用户态 ksud，尝试通过 Root shell 使用系统 ksud")
+                        onOutput?.invoke("[ABK] Userland ksud not found, trying system ksud via Root shell")
                     }
                     val command = args.joinToString(" ") { shellQuote(it) }
                     execRootScript(
@@ -393,7 +393,7 @@ object RootUtils {
                             """
                                 set -e
                                 ksud_path=${'$'}(abk_find_ksud)
-                                [ -n "${'$'}ksud_path" ] || { echo "未找到 ksud"; exit 127; }
+                                [ -n "${'$'}ksud_path" ] || { echo "ksud not found"; exit 127; }
                                 "${'$'}ksud_path" $command
                             """.trimIndent()
                         ),
@@ -401,10 +401,10 @@ object RootUtils {
                         onOutput = onOutput
                     )
                 }
-                requiresRootShell -> ShellResult(false, listOf("该安装方式需要 Root 权限。"))
+                requiresRootShell -> ShellResult(false, listOf("This installation method requires Root access."))
                 else -> ShellResult(
                     false,
-                    listOf("未找到可执行 ksud；无 Root 时需要 APK 内置或系统可直接执行的 ksud 才能仅修补 boot。")
+                    listOf("No executable ksud found; without Root, a bundled or system-executable ksud is required for boot-patch-only mode.")
                 )
             }
             val outputPath = outputImage.takeIf { result.success && it.isFile }?.absolutePath
@@ -575,13 +575,13 @@ object RootUtils {
                 }
             }
             2 -> setNativeKsuFeatureValue(FEATURE_SU_COMPAT, 0L, persist = true)
-            else -> ShellResult(false, listOf("未知 su 兼容模式"))
+            else -> ShellResult(false, listOf("Unknown su compatibility mode"))
         }
     }
 
     fun setKsuFeatureEnabled(featureName: String, enabled: Boolean): ShellResult {
         val feature = normalizeKsuFeatureName(featureName)
-            ?: return ShellResult(false, listOf("未知 Feature"))
+            ?: return ShellResult(false, listOf("Unknown feature"))
         val value = if (enabled) 1L else 0L
         return if (feature == FEATURE_ADB_ROOT) {
             val setResult = setKsuFeatureValue(feature, value, persist = false)
@@ -618,14 +618,14 @@ object RootUtils {
 
     fun readAppProfileTemplate(id: String): ShellResult {
         if (!isSafeTemplateId(id)) {
-            return ShellResult(false, listOf("模板名称无效"))
+            return ShellResult(false, listOf("Invalid template name"))
         }
         return runKsudCommand("profile get-template ${shellQuote(id)}", timeoutSeconds = 30L)
     }
 
     fun writeAppProfileTemplate(id: String, content: String): ShellResult {
         if (!isSafeTemplateId(id)) {
-            return ShellResult(false, listOf("模板名称无效"))
+            return ShellResult(false, listOf("Invalid template name"))
         }
         return runKsudCommand(
             "profile set-template ${shellQuote(id)} ${shellQuote(content)}",
@@ -635,7 +635,7 @@ object RootUtils {
 
     fun deleteAppProfileTemplate(id: String): ShellResult {
         if (!isSafeTemplateId(id)) {
-            return ShellResult(false, listOf("模板名称无效"))
+            return ShellResult(false, listOf("Invalid template name"))
         }
         return runKsudCommand("profile delete-template ${shellQuote(id)}", timeoutSeconds = 30L)
     }
@@ -864,7 +864,7 @@ object RootUtils {
 
     private fun runKsudCommand(args: String, timeoutSeconds: Long): ShellResult {
         val cleanArgs = args.trim()
-        if (cleanArgs.isBlank()) return ShellResult(false, listOf("ksud 参数为空"))
+        if (cleanArgs.isBlank()) return ShellResult(false, listOf("ksud arguments are empty"))
         val script = """
             set -e
             ksud_path=${'$'}(abk_find_ksud)
@@ -915,11 +915,11 @@ object RootUtils {
         val setResult = when (featureName) {
             FEATURE_SU_COMPAT -> {
                 val ok = AbkKsuNative.setSuEnabled(enabled)
-                ShellResult(ok, if (ok) emptyList() else listOf("传统 su 命令支持切换失败"))
+                ShellResult(ok, if (ok) emptyList() else listOf("Failed to toggle legacy su command support"))
             }
             FEATURE_SELINUX_HIDE -> {
                 val code = AbkKsuNative.setSelinuxHideEnabled(enabled)
-                ShellResult(code == 0, if (code == 0) emptyList() else listOf("隐藏 SELinux 修改切换失败: $code"))
+                ShellResult(code == 0, if (code == 0) emptyList() else listOf("Failed to toggle SELinux modification hiding: $code"))
             }
             else -> setKsuFeatureValue(featureName, value, persist = false)
         }
@@ -998,7 +998,7 @@ object RootUtils {
             val completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
             if (!completed) {
                 process.destroyForcibly()
-                val line = "命令超时"
+                val line = "Command timed out"
                 output.add(line)
                 onOutput?.invoke(line)
                 return ShellResult(false, output.toList())
@@ -1060,7 +1060,7 @@ object RootUtils {
         }
 
         return nativeRuntime ?: ManagerRuntimeProbe(
-            diagnostics = listOf("未检测到可用的 KernelSU/ReSukiSU 管理器接口或 Root shell。")
+            diagnostics = listOf("No usable KernelSU/ReSukiSU manager interface or Root shell detected.")
         )
     }
 
