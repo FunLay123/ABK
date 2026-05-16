@@ -932,12 +932,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 RootUtils.refreshRootState()
             }
             if (!hasRoot) {
-                _uiState.update { it.copy(abkRuntimeError = "操作未完成") }
+                _uiState.update { it.copy(abkRuntimeError = "Operation incomplete") }
                 return@launch
             }
             val module = _uiState.value.abkRuntimeStatus?.modules?.firstOrNull { it.id == cleanId }
             if (module?.isKsuBacked() != true) {
-                _uiState.update { it.copy(abkRuntimeError = "当前模块不支持卸载") }
+                _uiState.update { it.copy(abkRuntimeError = "Uninstall not supported for this module") }
                 return@launch
             }
             _uiState.update {
@@ -954,7 +954,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         abkRuntimeModuleActionId = null,
-                        abkRuntimeError = "操作未完成"
+                        abkRuntimeError = "Operation incomplete"
                     )
                 }
             } else {
@@ -2295,9 +2295,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     MANAGER_SETTING_DEFAULT_UMOUNT -> {
                         val ok = RootUtils.setDefaultUmountModules(checked)
-                        RootUtils.ShellResult(ok, if (ok) emptyList() else listOf("保存失败"))
+                        RootUtils.ShellResult(ok, if (ok) emptyList() else listOf("Save failed"))
                     }
-                    else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
+                    else -> RootUtils.ShellResult(false, listOf("Unsupported setting"))
                 }
             }
             if (result.success) {
@@ -2307,7 +2307,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         managerSettingActionId = null,
                         managerSettingsError = result.output.lastOrNull()?.takeIf { line -> line.isNotBlank() }
-                            ?: "操作未完成"
+                            ?: "Operation incomplete"
                     )
                 }
             }
@@ -2323,7 +2323,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val result = withContext(Dispatchers.IO) {
                 when (settingId) {
                     MANAGER_SETTING_SU_COMPAT -> RootUtils.setSuCompatMode(selectedIndex)
-                    else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
+                    else -> RootUtils.ShellResult(false, listOf("Unsupported setting"))
                 }
             }
             if (result.success) {
@@ -2333,7 +2333,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         managerSettingActionId = null,
                         managerSettingsError = result.output.lastOrNull()?.takeIf { line -> line.isNotBlank() }
-                            ?: "操作未完成"
+                            ?: "Operation incomplete"
                     )
                 }
             }
@@ -2350,7 +2350,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(
                     managerToolsLoading = false,
-                    selinuxModeText = mode.ifBlank { "未知" },
+                    selinuxModeText = mode.ifBlank { "Unknown" },
                     selinuxEnforcing = mode.equals("Enforcing", ignoreCase = true),
                     umountPaths = if (pathsResult.success) {
                         pathsResult.output.map { line -> line.trim() }.filter { line -> line.isNotBlank() }
@@ -2359,7 +2359,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     },
                     managerToolsError = when {
                         modeResult.success -> null
-                        else -> modeResult.output.lastOrNull() ?: "工具状态读取失败"
+                        else -> modeResult.output.lastOrNull() ?: "Failed to read tool status"
                     },
                     managerToolActionId = null
                 )
@@ -2379,7 +2379,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         managerToolActionId = null,
                         managerToolsError = result.output.lastOrNull()?.takeIf { line -> line.isNotBlank() }
-                            ?: "SELinux 模式切换失败"
+                            ?: "Failed to switch SELinux mode"
                     )
                 }
             }
@@ -2397,16 +2397,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         .map { app -> app.profile }
                     getApplication<Application>().contentResolver.openOutputStream(uri)?.use { stream ->
                         stream.write(gson.toJson(profiles).toByteArray(StandardCharsets.UTF_8))
-                    } ?: error("无法打开导出位置")
-                    RootUtils.ShellResult(true, listOf("已导出 ${profiles.size} 个授权项"))
+                    } ?: error("Cannot open export location")
+                    RootUtils.ShellResult(true, listOf("Exported ${profiles.size} auth entries"))
                 }.getOrElse { error ->
-                    RootUtils.ShellResult(false, listOf(error.message ?: "导出失败"))
+                    RootUtils.ShellResult(false, listOf(error.message ?: "Export failed"))
                 }
             }
             _uiState.update {
                 it.copy(
                     managerToolActionId = null,
-                    managerToolsError = if (result.success) null else result.output.lastOrNull() ?: "导出失败"
+                    managerToolsError = if (result.success) null else result.output.lastOrNull() ?: "Export failed"
                 )
             }
         }
@@ -2420,7 +2420,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching {
                     val json = getApplication<Application>().contentResolver.openInputStream(uri)?.use { stream ->
                         stream.readBytes().toString(StandardCharsets.UTF_8)
-                    } ?: error("无法读取备份文件")
+                    } ?: error("Cannot read backup file")
                     val type = object : TypeToken<List<RootGrantProfile>>() {}.type
                     val profiles: List<RootGrantProfile> = gson.fromJson(json, type) ?: emptyList()
                     var restored = 0
@@ -2428,18 +2428,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (profile.name.isNotBlank() && RootUtils.setRootGrantProfile(profile)) restored++
                     }
                     if (restored == profiles.size) {
-                        RootUtils.ShellResult(true, listOf("已还原 $restored 个授权项"))
+                        RootUtils.ShellResult(true, listOf("Restored $restored auth entries"))
                     } else {
-                        RootUtils.ShellResult(false, listOf("已还原 $restored/${profiles.size} 个授权项"))
+                        RootUtils.ShellResult(false, listOf("Restored $restored/${profiles.size} auth entries"))
                     }
                 }.getOrElse { error ->
-                    RootUtils.ShellResult(false, listOf(error.message ?: "还原失败"))
+                    RootUtils.ShellResult(false, listOf(error.message ?: "Restore failed"))
                 }
             }
             _uiState.update {
                 it.copy(
                     managerToolActionId = null,
-                    managerToolsError = if (result.success) null else result.output.lastOrNull() ?: "还原失败"
+                    managerToolsError = if (result.success) null else result.output.lastOrNull() ?: "Restore failed"
                 )
             }
             if (result.success) refreshRootGrantApps(force = true)
@@ -2468,7 +2468,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     it.copy(
                         appProfileTemplatesLoading = false,
-                        appProfileTemplatesError = result.output.lastOrNull() ?: "模板列表读取失败"
+                        appProfileTemplatesError = result.output.lastOrNull() ?: "Failed to read template list"
                     )
                 }
             }
@@ -2505,7 +2505,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         appProfileTemplatesError = null
                     )
                 } else {
-                    it.copy(appProfileTemplatesError = result.output.lastOrNull() ?: "模板读取失败")
+                    it.copy(appProfileTemplatesError = result.output.lastOrNull() ?: "Failed to read template")
                 }
             }
         }
@@ -2514,7 +2514,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun saveAppProfileTemplate(id: String, content: String) {
         val cleanId = id.trim()
         if (cleanId.isBlank()) {
-            _uiState.update { it.copy(appProfileTemplatesError = "模板名称不能为空") }
+            _uiState.update { it.copy(appProfileTemplatesError = "Template name cannot be empty") }
             return
         }
         if (_uiState.value.appProfileTemplateSaving) return
@@ -2530,7 +2530,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     appProfileTemplateSaving = false,
                     selectedAppProfileTemplateId = if (result.success) cleanId else it.selectedAppProfileTemplateId,
                     selectedAppProfileTemplateContent = if (result.success) content else it.selectedAppProfileTemplateContent,
-                    appProfileTemplatesError = if (result.success) null else result.output.lastOrNull() ?: "模板保存失败"
+                    appProfileTemplatesError = if (result.success) null else result.output.lastOrNull() ?: "Failed to save template"
                 )
             }
             if (result.success) refreshAppProfileTemplates()
@@ -2552,7 +2552,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     appProfileTemplateSaving = false,
                     selectedAppProfileTemplateId = if (result.success) null else it.selectedAppProfileTemplateId,
                     selectedAppProfileTemplateContent = if (result.success) "" else it.selectedAppProfileTemplateContent,
-                    appProfileTemplatesError = if (result.success) null else result.output.lastOrNull() ?: "模板删除失败"
+                    appProfileTemplatesError = if (result.success) null else result.output.lastOrNull() ?: "Failed to delete template"
                 )
             }
             if (result.success) refreshAppProfileTemplates()
@@ -2603,19 +2603,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_APP_PROFILE_TEMPLATES,
-                    title = "App Profile 模板",
-                    subtitle = "管理本地 App Profile 模板",
+                    title = "App Profile Templates",
+                    subtitle = "Manage local App Profile templates",
                     kind = ManagerSettingKind.NAVIGATION
                 )
             )
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_SU_COMPAT,
-                    title = "传统 su 命令支持",
-                    subtitle = featureSubtitle(suCompat, "允许通过 /system/bin/su 获取 Root 权限", "ReSukiSU"),
+                    title = "Legacy su command support",
+                    subtitle = featureSubtitle(suCompat, "Allow Root access via /system/bin/su", "ReSukiSU"),
                     kind = ManagerSettingKind.MODE,
                     selectedIndex = suCompatMode,
-                    options = listOf("默认", "临时关闭", "永久关闭"),
+                    options = listOf("Default", "Temporarily disabled", "Permanently disabled"),
                     enabled = suCompat.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = suCompat.toManagerSettingStatus()
                 )
@@ -2623,8 +2623,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_KERNEL_UMOUNT,
-                    title = "内核处理卸载模块",
-                    subtitle = featureSubtitle(kernelUmount, "在内核给需要的应用卸载模块", "ReSukiSU"),
+                    title = "Kernel-level module uninstall",
+                    subtitle = featureSubtitle(kernelUmount, "Uninstall modules at kernel level for apps that need it", "ReSukiSU"),
                     checked = kernelUmount.value != 0L,
                     enabled = kernelUmount.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = kernelUmount.toManagerSettingStatus()
@@ -2635,7 +2635,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ManagerSettingItem(
                         id = MANAGER_SETTING_KPM,
                         title = "KPM",
-                        subtitle = "使用 KPM 管理内核模块",
+                        subtitle = "Manage kernel modules with KPM",
                         kind = ManagerSettingKind.NAVIGATION
                     )
                 )
@@ -2644,8 +2644,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 add(
                     ManagerSettingItem(
                         id = MANAGER_SETTING_SELINUX_HIDE,
-                        title = "隐藏 SELinux 修改",
-                        subtitle = featureSubtitle(selinuxHide, "阻止应用检测 SELinux 修改", "ReSukiSU"),
+                        title = "Hide SELinux modifications",
+                        subtitle = featureSubtitle(selinuxHide, "Prevent apps from detecting SELinux modifications", "ReSukiSU"),
                         checked = selinuxHide.value != 0L,
                         enabled = true,
                         status = selinuxHide.toManagerSettingStatus()
@@ -2657,7 +2657,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ManagerSettingItem(
                         id = MANAGER_SETTING_ADB_ROOT,
                         title = "ADB Root",
-                        subtitle = featureSubtitle(adbRoot, "以 root 权限运行 adbd 守护进程", "ReSukiSU"),
+                        subtitle = featureSubtitle(adbRoot, "Run adbd daemon with root privileges", "ReSukiSU"),
                         checked = (adbRoot.configValue ?: adbRoot.value ?: 0L) != 0L,
                         enabled = adbRoot.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                         status = adbRoot.toManagerSettingStatus()
@@ -2667,8 +2667,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_SULOG,
-                    title = "超级用户访问日志",
-                    subtitle = featureSubtitle(sulog, "记录与 Root 有关的事件到 KernelSU 超级用户访问日志文件", "ReSukiSU"),
+                    title = "Superuser access log",
+                    subtitle = featureSubtitle(sulog, "Log Root-related events to KernelSU superuser access log file", "ReSukiSU"),
                     checked = sulog.value != 0L,
                     enabled = sulog.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = sulog.toManagerSettingStatus()
@@ -2677,11 +2677,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_DEFAULT_UMOUNT,
-                    title = "默认卸载模块",
+                    title = "Default module uninstall",
                     subtitle = if (nativeProfileAvailable) {
-                        "App Profile 中卸载模块的全局默认值"
+                        "Global default for module uninstall in App Profile"
                     } else {
-                        "ABK 被识别为原生管理器后可用"
+                        "Available once ABK is recognized as a native manager"
                     },
                     checked = nativeProfileAvailable && RootUtils.isDefaultUmountModules(),
                     enabled = nativeProfileAvailable
@@ -2699,7 +2699,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             includeSulog = true,
             includeAdbRoot = true,
             includeWebViewDebug = false,
-            kernelUmountTitle = "卸载模块（内核级）",
+            kernelUmountTitle = "Module uninstall (kernel-level)",
             suLogTitle = "SU Log"
         )
 
@@ -2712,7 +2712,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             includeSulog = false,
             includeAdbRoot = false,
             includeWebViewDebug = true,
-            kernelUmountTitle = "内核处理卸载模块",
+            kernelUmountTitle = "Kernel-level module uninstall",
             suLogTitle = "SU Log"
         )
 
@@ -2744,8 +2744,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_APP_PROFILE_TEMPLATES,
-                    title = "App Profile 模板",
-                    subtitle = "管理本地和在线的 App Profile 模板",
+                    title = "App Profile Templates",
+                    subtitle = "Manage local and online App Profile templates",
                     kind = ManagerSettingKind.NAVIGATION
                 )
             )
@@ -2753,8 +2753,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 add(
                     ManagerSettingItem(
                         id = MANAGER_SETTING_TOOLS,
-                        title = "工具",
-                        subtitle = "更多高级功能",
+                        title = "Tools",
+                        subtitle = "More advanced features",
                         kind = ManagerSettingKind.NAVIGATION
                     )
                 )
@@ -2764,7 +2764,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ManagerSettingItem(
                         id = MANAGER_SETTING_KPM,
                         title = "KPM",
-                        subtitle = "使用 KPM 管理内核模块",
+                        subtitle = "Manage kernel modules with KPM",
                         kind = ManagerSettingKind.NAVIGATION
                     )
                 )
@@ -2772,11 +2772,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_SU_COMPAT,
-                    title = "传统 su 命令支持",
-                    subtitle = featureSubtitle(suCompat, "允许通过 /system/bin/su 获取 Root 权限", backendTitle),
+                    title = "Legacy su command support",
+                    subtitle = featureSubtitle(suCompat, "Allow Root access via /system/bin/su", backendTitle),
                     kind = ManagerSettingKind.MODE,
                     selectedIndex = suCompatMode,
-                    options = listOf("默认", "临时关闭", "永久关闭"),
+                    options = listOf("Default", "Temporarily disabled", "Permanently disabled"),
                     enabled = suCompat.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = suCompat.toManagerSettingStatus()
                 )
@@ -2785,7 +2785,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ManagerSettingItem(
                     id = MANAGER_SETTING_KERNEL_UMOUNT,
                     title = kernelUmountTitle,
-                    subtitle = featureSubtitle(kernelUmount, "在内核给需要的应用卸载模块", backendTitle),
+                    subtitle = featureSubtitle(kernelUmount, "Uninstall modules at kernel level for apps that need it", backendTitle),
                     checked = kernelUmount.value != 0L,
                     enabled = kernelUmount.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = kernelUmount.toManagerSettingStatus()
@@ -2795,8 +2795,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 add(
                     ManagerSettingItem(
                         id = MANAGER_SETTING_SELINUX_HIDE,
-                        title = "隐藏 SELinux 修改",
-                        subtitle = featureSubtitle(selinuxHide, "阻止应用检测 SELinux 修改", backendTitle),
+                        title = "Hide SELinux modifications",
+                        subtitle = featureSubtitle(selinuxHide, "Prevent apps from detecting SELinux modifications", backendTitle),
                         checked = selinuxHide.value != 0L,
                         enabled = true,
                         status = selinuxHide.toManagerSettingStatus()
@@ -2820,7 +2820,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ManagerSettingItem(
                         id = MANAGER_SETTING_ADB_ROOT,
                         title = "ADB Root",
-                        subtitle = featureSubtitle(adbRoot, "以 root 权限运行 adbd 守护进程", backendTitle),
+                        subtitle = featureSubtitle(adbRoot, "Run adbd daemon with root privileges", backendTitle),
                         checked = (adbRoot.configValue ?: adbRoot.value ?: 0L) != 0L,
                         enabled = adbRoot.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                         status = adbRoot.toManagerSettingStatus()
@@ -2830,11 +2830,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(
                 ManagerSettingItem(
                     id = MANAGER_SETTING_DEFAULT_UMOUNT,
-                    title = "默认卸载模块",
+                    title = "Default module uninstall",
                     subtitle = if (nativeProfileAvailable) {
-                        "App Profile 中「卸载模块」的全局默认值"
+                        "Global default for module uninstall in App Profile"
                     } else {
-                        "ABK 被识别为原生管理器后可用"
+                        "Available once ABK is recognized as a native manager"
                     },
                     checked = nativeProfileAvailable && RootUtils.isDefaultUmountModules(),
                     enabled = nativeProfileAvailable
@@ -2844,8 +2844,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 add(
                     ManagerSettingItem(
                         id = MANAGER_SETTING_WEBVIEW_DEBUG,
-                        title = "WebView 调试",
-                        subtitle = "可用于调试 WebUI，请仅在需要时启用",
+                        title = "WebView debugging",
+                        subtitle = "For debugging WebUI — enable only when needed",
                         checked = _uiState.value.webViewDebugEnabled
                     )
                 )
@@ -2873,8 +2873,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun featureSubtitle(feature: RootUtils.KsuFeatureState, normal: String, backendTitle: String): String =
         when (feature.support) {
-            RootUtils.KsuFeatureSupport.UNSUPPORTED -> "当前 $backendTitle 后端不支持此功能"
-            RootUtils.KsuFeatureSupport.MANAGED -> "此功能已由模块接管，不能在管理器中直接修改"
+            RootUtils.KsuFeatureSupport.UNSUPPORTED -> "Current $backendTitle backend does not support this feature"
+            RootUtils.KsuFeatureSupport.MANAGED -> "This feature is managed by a module and cannot be modified here"
             RootUtils.KsuFeatureSupport.SUPPORTED -> normal
         }
 
@@ -3815,7 +3815,7 @@ private val BUILD_PLAN_MODULE_STAGES = listOf(
     CustomExternalModuleStage.BEFORE_BUILD
 )
 
-private const val BUILD_SUMMARY_STEP_NAME = "构建信息摘要"
+private const val BUILD_SUMMARY_STEP_NAME = "Build info summary"
 
 private fun parseBuildParameterSummary(
     logs: String,
@@ -3827,11 +3827,11 @@ private fun parseBuildParameterSummary(
     logs.lineSequence()
         .map(::cleanBuildSummaryLogLine)
         .forEach { line ->
-            if (line.contains("内核构建配置摘要")) {
+            if (line.contains("内核构建配置摘要") || line.contains("Build config summary")) {
                 summarySeen = true
                 return@forEach
             }
-            if (!summarySeen && !line.contains("Android 版本")) return@forEach
+            if (!summarySeen && !line.contains("Android 版本") && !line.contains("Android version")) return@forEach
             if (summarySeen && values.isNotEmpty() && line.all { it == '=' || it.isWhitespace() }) return@forEach
 
             val separator = listOf(line.indexOf(':'), line.indexOf('：'))
@@ -3914,7 +3914,7 @@ private fun sanitizeBuildSummaryValue(key: String, value: String): String {
     val normalized = value.trim().lowercase()
     return when {
         normalized.isBlank() -> "Default"
-        normalized in setOf("默认", "default", "none", "not set") -> "Default"
+        normalized in setOf("default", "默认", "none", "not set") -> "Default"
         else -> "Set"
     }
 }
