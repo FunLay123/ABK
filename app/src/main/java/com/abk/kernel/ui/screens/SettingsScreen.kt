@@ -107,6 +107,13 @@ fun SettingsScreen(
         vm.refreshManagerSettings(force = true)
     }
 
+    LaunchedEffect(state.hasNativeManagerPermission) {
+        if (!state.hasNativeManagerPermission) {
+            showAppProfileTemplates = false
+            showManagerTools = false
+        }
+    }
+
     LaunchedEffect(showChildPage) {
         if (showChildPage) {
             onThemePageVisibleChange(true)
@@ -586,6 +593,7 @@ private fun ManagerInjectedSettingsGroup(
     onOpenManagerTools: () -> Unit,
     onOpenInstalledModules: () -> Unit
 ) {
+    if (!state.hasNativeManagerPermission) return
     val hasInjectedSettings = state.managerSettingsItems.isNotEmpty()
     if (!hasInjectedSettings && !state.managerSettingsLoading && state.managerSettingsError == null) return
 
@@ -654,7 +662,16 @@ private fun ManagerModeSettingItem(
     onSelected: (Int) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val enabled = item.enabled && !actionInFlight
+    val options = remember(item.options) {
+        item.options.map { it.trim() }.filter { it.isNotBlank() }
+    }
+    val selectedIndex = if (options.isNotEmpty()) {
+        item.selectedIndex.coerceIn(0, options.lastIndex)
+    } else {
+        0
+    }
+    val selectedLabel = options.getOrNull(selectedIndex) ?: "不可用"
+    val enabled = item.enabled && !actionInFlight && options.isNotEmpty()
     ExpressiveListItem(
         title = item.title,
         subtitle = item.subtitle,
@@ -669,7 +686,7 @@ private fun ManagerModeSettingItem(
                     if (actionInFlight) {
                         LoadingIndicator(Modifier.size(18.dp))
                     } else {
-                        Text(item.options.getOrElse(item.selectedIndex) { "Select" })
+                        Text(selectedLabel)
                         Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                     }
                 }
@@ -677,17 +694,17 @@ private fun ManagerModeSettingItem(
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
                 ) {
-                    item.options.forEachIndexed { index, option ->
+                    options.forEachIndexed { index, option ->
                         DropdownMenuItem(
                             text = { Text(option) },
                             leadingIcon = {
-                                if (index == item.selectedIndex) {
+                                if (index == selectedIndex) {
                                     Icon(Icons.Default.Check, contentDescription = null)
                                 }
                             },
                             onClick = {
                                 expanded = false
-                                if (index != item.selectedIndex) onSelected(index)
+                                if (index != selectedIndex) onSelected(index)
                             }
                         )
                     }
@@ -1357,6 +1374,7 @@ private fun aboutLinks(): List<AboutLink> {
     return listOf(
         AboutLink("Upstream repository", BuildConfig.UPSTREAM_REPO_URL),
         AboutLink("Top-level repository", BuildConfig.TOP_LEVEL_REPO_URL),
+        AboutLink("第三方声明", "${sourceRepoUrl()}/blob/main/THIRD_PARTY_NOTICES.md"),
         AboutLink("KernelSU", "https://github.com/tiann/KernelSU"),
         AboutLink("KernelSU Next", "https://github.com/KernelSU-Next/KernelSU-Next"),
         AboutLink("SukiSU Ultra", "https://github.com/SukiSU-Ultra/SukiSU-Ultra"),

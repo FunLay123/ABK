@@ -14,6 +14,8 @@ import com.topjohnwu.superuser.Shell
 import org.json.JSONObject
 import java.io.File
 import java.util.Collections
+import java.util.Properties
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
@@ -25,8 +27,30 @@ object RootUtils {
     private const val FEATURE_SULOG = "sulog"
     private const val FEATURE_ADB_ROOT = "adb_root"
     private const val FEATURE_SELINUX_HIDE = "selinux_hide"
+    private const val BUNDLED_KSUD_ASSET_DIR = "ksud"
+    private const val BUNDLED_KSUD_BINARY_NAME = "ksud"
+    private const val BUNDLED_KSUD_METADATA_NAME = "source.properties"
+    private const val BUNDLED_KSUD_INSTALL_DIR = "bundled-ksud"
+    private val BOOT_PATCH_PARTITIONS = listOf("init_boot", "boot", "vendor_boot")
     private val KSU_FEATURE_NAME_REGEX = Regex("^[a-z0-9_]+$")
     private var appContext: Context? = null
+    private val bundledKsudLock = Any()
+
+    private data class BundledKsudMetadata(
+        val ref: String,
+        val commit: String,
+        val supportedAbis: List<String>,
+        val sha256ByAbi: Map<String, String>
+    ) {
+        val installToken: String
+            get() {
+                val raw = listOf(ref, commit.take(12))
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                    .joinToString("-")
+                return raw.replace(Regex("""[^A-Za-z0-9._-]"""), "_").ifBlank { "default" }
+            }
+    }
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -98,7 +122,6 @@ object RootUtils {
 
     fun installModule(zipPath: String, onOutput: ((String) -> Unit)? = null): ShellResult {
         val safeZip = shellQuote(zipPath)
-        val embeddedKsud = embeddedKsudPath()?.let(::shellQuote) ?: ""
         val script = """
             set -e
             echo "[ABK] Starting module installation"
@@ -106,15 +129,14 @@ object RootUtils {
             module_size=${'$'}(wc -c < $safeZip 2>/dev/null || echo 0)
             echo "[ABK] Module size: ${'$'}module_size bytes"
             chmod 0644 $safeZip 2>/dev/null || true
-            installer=""
-            for candidate in $embeddedKsud ${'$'}(command -v ksud 2>/dev/null || true) /data/adb/ksud; do
-                [ -n "${'$'}candidate" ] || continue
-                [ -x "${'$'}candidate" ] || continue
-                installer="${'$'}candidate"
-                break
-            done
+            installer=${'$'}(abk_find_ksud 2>/dev/null || true)
             if [ -n "${'$'}installer" ]; then
-                echo "[ABK] Installing module via KernelSU: ${'$'}installer"
+                ksud_source=${'$'}(abk_ksud_source "${'$'}installer")
+                ksud_label=${'$'}(abk_ksud_label "${'$'}ksud_source")
+                echo "[ABK] 使用${'$'}ksud_label ksud 安装模块: ${'$'}installer"
+                if [ "${'$'}ksud_source" != "embedded" ]; then
+                    echo "[ABK] 内置 SukiSU-Ultra ksud 不可用，已回退到${'$'}ksud_label ksud"
+                fi
                 if "${'$'}installer" module install $safeZip; then
                     echo "[ABK] KernelSU module install command completed"
                 else
@@ -150,7 +172,11 @@ object RootUtils {
             sync
             echo "[ABK] Module installation complete, a reboot is usually required to take effect"
         """.trimIndent()
-        return execRootScript(script, timeoutSeconds = 240, onOutput = onOutput)
+        return execRootScript(
+            withManagerShellHelpers(script),
+            timeoutSeconds = 240,
+            onOutput = onOutput
+        )
     }
 
     fun installApk(
@@ -251,6 +277,34 @@ object RootUtils {
     }
 
     fun detectCurrentKmi(): String? {
+        readEmbeddedBootInfoLine(listOf("current-kmi"))?.let { return it }
+        return detectCurrentKmiFallback()
+    }
+
+    fun listBootPatchPartitions(): List<String> {
+        val detected = readEmbeddedBootInfoLines(listOf("available-partitions"))
+            .map { it.trim() }
+            .filter { it in BOOT_PATCH_PARTITIONS }
+            .distinct()
+        return detected.ifEmpty { listBootPatchPartitionsFallback() }
+    }
+
+    fun detectDefaultBootPartition(): String {
+        val detected = readEmbeddedBootInfoLine(listOf("default-partition"))
+            ?.takeIf { it in BOOT_PATCH_PARTITIONS }
+        if (detected != null) return detected
+        return detectDefaultBootPartitionFallback()
+    }
+
+    fun detectBootSlotSuffix(ota: Boolean = false): String? {
+        val args = buildList {
+            add("slot-suffix")
+            if (ota) add("--ota")
+        }
+        return readEmbeddedBootInfoLine(args)
+    }
+
+    private fun detectCurrentKmiFallback(): String? {
         val release = getKernelVersion().lowercase()
         Regex("""(\d+\.\d+).*?(android\d+)""").find(release)?.let { match ->
             val kernel = match.groupValues[1]
@@ -270,26 +324,22 @@ object RootUtils {
         return "$android-$kernel"
     }
 
-    fun resolveUserlandKsudPath(context: Context): String? {
-        File(context.applicationInfo.nativeLibraryDir, "libksud.so")
-            .takeIf { it.isFile && it.canExecute() }
-            ?.let { return it.absolutePath }
-        File("/data/adb/ksud")
-            .takeIf { it.isFile && it.canExecute() }
-            ?.let { return it.absolutePath }
-        return runCatching {
-            val process = ProcessBuilder("sh", "-c", "command -v ksud 2>/dev/null")
-                .redirectErrorStream(true)
-                .start()
-            if (!process.waitFor(2, TimeUnit.SECONDS)) {
-                process.destroyForcibly()
-                return@runCatching null
-            }
-            if (process.exitValue() != 0) return@runCatching null
-            process.inputStream.bufferedReader().use { it.readLine()?.trim() }
-                ?.takeIf { it.isNotBlank() }
-        }.getOrNull()
+    private fun listBootPatchPartitionsFallback(): List<String> {
+        val detected = BOOT_PATCH_PARTITIONS.filter(::partitionExists)
+        return detected.ifEmpty { BOOT_PATCH_PARTITIONS }
     }
+
+    private fun detectDefaultBootPartitionFallback(): String {
+        val partitions = listBootPatchPartitionsFallback()
+        return when {
+            detectCurrentKmiFallback()?.startsWith("android12-") == true && "boot" in partitions -> "boot"
+            "init_boot" in partitions -> "init_boot"
+            "boot" in partitions -> "boot"
+            else -> partitions.firstOrNull().orEmpty().ifBlank { "boot" }
+        }
+    }
+
+    fun resolveUserlandKsudPath(context: Context): String? = prepareBundledKsudPath(context)
 
     fun patchAbkLkmBootImage(
         context: Context,
@@ -327,18 +377,15 @@ object RootUtils {
             null
         }
 
-        val workDir = File(context.filesDir, "abk-lkm-patch").apply { mkdirs() }
+        val workDir = File(context.cacheDir, "abk-lkm-patch").apply {
+            deleteRecursively()
+            mkdirs()
+        }
         return runCatching {
             val moduleFile = if (localModule != null) {
                 localModule
             } else {
-                val bundled = checkNotNull(asset)
-                File(workDir, "${bundled.variantId}_${bundled.kmi}_kernelsu.ko").also { target ->
-                    context.assets.open(bundled.assetPath).use { input ->
-                        target.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    target.setReadable(true, false)
-                }
+                stageBundledAbkLkmAsset(context, workDir, checkNotNull(asset))
             }
 
             val outputDir = File(
@@ -349,62 +396,55 @@ object RootUtils {
                 .replace(Regex("""[^A-Za-z0-9._-]"""), "_")
             val outputName = "abk-${moduleName}-patched-${System.currentTimeMillis()}.img"
             val outputImage = File(outputDir, outputName)
-            val args = buildList {
-                add("boot-patch")
-                if (sourceBoot != null) {
-                    add("--boot")
-                    add(sourceBoot.absolutePath)
-                }
-                add("--module")
-                add(moduleFile.absolutePath)
-                if (flash) add("--flash")
-                if (ota) add("--ota")
-                partition?.takeIf { it.isNotBlank() }?.let {
-                    add("--partition")
-                    add(it)
-                }
-                add("--out")
-                add(outputDir.absolutePath)
-                add("--out-name")
-                add(outputName)
-                kmi.takeIf { it.isNotBlank() }?.let {
-                    add("--kmi")
-                    add(it)
-                }
-                if (allowShell) add("--allow-shell")
-                if (enableAdb) add("--enable-adbd")
-            }
+            val baseArgs = buildBootPatchArgs(
+                context = context,
+                bootImage = sourceBoot,
+                moduleFile = moduleFile,
+                flash = flash,
+                ota = ota,
+                partition = partition,
+                outputDir = outputDir,
+                outputName = outputName,
+                allowShell = allowShell,
+                enableAdb = enableAdb
+            )
             val requiresRootShell = flash || sourceBoot == null
-            val userlandKsud = resolveUserlandKsudPath(context)
+            if (asset != null) {
+                onOutput?.invoke("[ABK] 使用 APK 内置 LKM: ${asset.variantLabel} · ${asset.kmi}")
+            } else {
+                onOutput?.invoke("[ABK] 使用本地 LKM: ${moduleFile.name}")
+            }
             val result = when {
-                !requiresRootShell && userlandKsud != null -> {
-                    onOutput?.invoke("[ABK] Using userland ksud: $userlandKsud")
-                    runLocalCommand(listOf(userlandKsud) + args, timeoutSeconds = 300L, onOutput = onOutput)
-                }
                 allowRootFallback -> {
-                    if (requiresRootShell) {
-                        onOutput?.invoke("[ABK] Running ksud boot-patch via Root shell")
-                    } else {
-                        onOutput?.invoke("[ABK] Userland ksud not found, trying system ksud via Root shell")
-                    }
-                    val command = args.joinToString(" ") { shellQuote(it) }
-                    execRootScript(
-                        withManagerShellHelpers(
-                            """
-                                set -e
-                                ksud_path=${'$'}(abk_find_ksud)
-                                [ -n "${'$'}ksud_path" ] || { echo "ksud not found"; exit 127; }
-                                "${'$'}ksud_path" $command
-                            """.trimIndent()
-                        ),
-                        timeoutSeconds = 300L,
+                    val rootResult = runEmbeddedBootPatchWithRoot(
+                        context = context,
+                        args = baseArgs,
                         onOutput = onOutput
                     )
+                    when {
+                        rootResult != null -> rootResult
+                        !requiresRootShell -> {
+                            onOutput?.invoke("[ABK] Root shell 不可用，改用 APK 内置 SukiSU-Ultra ksud 仅修补本地 boot 镜像")
+                            runBundledUserlandBootPatch(
+                                context = context,
+                                args = baseArgs,
+                                onOutput = onOutput
+                            ) ?: ShellResult(
+                                false,
+                                listOf("未找到可执行的 APK 内置 SukiSU-Ultra ksud；无 Root 时只能在选择 boot.img 后生成 patched 镜像。")
+                            )
+                        }
+                        else -> ShellResult(false, listOf("该安装方式需要 Root 权限。"))
+                    }
                 }
-                requiresRootShell -> ShellResult(false, listOf("This installation method requires Root access."))
-                else -> ShellResult(
+                requiresRootShell -> ShellResult(false, listOf("该安装方式需要 Root 权限。"))
+                else -> runBundledUserlandBootPatch(
+                    context = context,
+                    args = baseArgs,
+                    onOutput = onOutput
+                ) ?: ShellResult(
                     false,
-                    listOf("No executable ksud found; without Root, a bundled or system-executable ksud is required for boot-patch-only mode.")
+                    listOf("未找到可执行的 APK 内置 SukiSU-Ultra ksud；无 Root 时只能在选择 boot.img 后生成 patched 镜像。")
                 )
             }
             val outputPath = outputImage.takeIf { result.success && it.isFile }?.absolutePath
@@ -457,6 +497,9 @@ object RootUtils {
     fun reboot(): ShellResult = execRootScript("svc power reboot || reboot", timeoutSeconds = 15L)
 
     fun readAbkControlStatus(): ShellResult {
+        if (!isNativeManagerActive()) {
+            return nativeManagerPermissionDeniedResult()
+        }
         val status = AbkKsuNative.controlStatus()
         return if (status != null) {
             ShellResult(true, listOf(status))
@@ -506,7 +549,7 @@ object RootUtils {
     fun isNativeManagerActive(): Boolean = AbkKsuNative.isUsableManager()
 
     fun listRootGrantApps(context: Context): List<RootGrantApp> {
-        if (!AbkKsuNative.isUsableManager()) return emptyList()
+        if (!isNativeManagerActive()) return emptyList()
         val packageManager = context.packageManager
         val apps = installedApplications(packageManager)
         return apps
@@ -538,7 +581,7 @@ object RootUtils {
     }
 
     fun setRootGrantProfile(profile: RootGrantProfile): Boolean {
-        if (!AbkKsuNative.isUsableManager()) return false
+        if (!isNativeManagerActive()) return false
         if (profile.allowSu && !profile.rootUseDefault && profile.rules.isNotBlank()) {
             if (!setProfileSepolicy(profile.name, profile.rules)) return false
         }
@@ -605,18 +648,22 @@ object RootUtils {
         setKsuFeatureEnabled(featureName, enabled)
 
     fun isDefaultUmountModules(): Boolean {
+        if (!isNativeManagerActive()) return false
         return AbkKsuNative.isDefaultUmountModules() ?: false
     }
 
     fun setDefaultUmountModules(enabled: Boolean): Boolean {
+        if (!isNativeManagerActive()) return false
         return AbkKsuNative.setDefaultUmountModules(enabled)
     }
 
     fun listAppProfileTemplates(): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         return runKsudCommand("profile list-templates", timeoutSeconds = 30L)
     }
 
     fun readAppProfileTemplate(id: String): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         if (!isSafeTemplateId(id)) {
             return ShellResult(false, listOf("Invalid template name"))
         }
@@ -624,6 +671,7 @@ object RootUtils {
     }
 
     fun writeAppProfileTemplate(id: String, content: String): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         if (!isSafeTemplateId(id)) {
             return ShellResult(false, listOf("Invalid template name"))
         }
@@ -634,6 +682,7 @@ object RootUtils {
     }
 
     fun deleteAppProfileTemplate(id: String): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         if (!isSafeTemplateId(id)) {
             return ShellResult(false, listOf("Invalid template name"))
         }
@@ -645,7 +694,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" module list
+            abk_exec_ksud "${'$'}ksud_path" module list
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -656,7 +705,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" module action $safeId
+            abk_exec_ksud "${'$'}ksud_path" module action $safeId
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 300L, onOutput = onOutput)
     }
@@ -668,7 +717,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" module $verb $safeId
+            abk_exec_ksud "${'$'}ksud_path" module $verb $safeId
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -680,7 +729,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" module $verb $safeId
+            abk_exec_ksud "${'$'}ksud_path" module $verb $safeId
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -690,7 +739,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" kpm list
+            abk_exec_ksud "${'$'}ksud_path" kpm list
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -715,12 +764,15 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" kpm info $safeName
+            abk_exec_ksud "${'$'}ksud_path" kpm info $safeName
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
 
     fun writeAbkControlCommand(command: String): ShellResult {
+        if (!isNativeManagerActive()) {
+            return nativeManagerPermissionDeniedResult()
+        }
         return if (AbkKsuNative.controlCommand(command)) {
             ShellResult(true, emptyList())
         } else {
@@ -801,7 +853,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" profile set-sepolicy $safePackage $safeRules
+            abk_exec_ksud "${'$'}ksud_path" profile set-sepolicy $safePackage $safeRules
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L).success
     }
@@ -862,6 +914,49 @@ object RootUtils {
         val diagnostics: List<String> = emptyList()
     )
 
+    enum class ManagerAccessKind {
+        NATIVE_MANAGER,
+        ROOT_ONLY,
+        NO_ROOT,
+        NATIVE_KERNEL_NO_MANAGER
+    }
+
+    data class ManagerAccessInfo(
+        val kind: ManagerAccessKind,
+        val diagnostic: String? = null,
+        val runtime: ManagerRuntimeProbe? = null
+    ) {
+        val hasNativeManagerPermission: Boolean
+            get() = kind == ManagerAccessKind.NATIVE_MANAGER
+    }
+
+    fun resolveManagerAccess(rootGranted: Boolean): ManagerAccessInfo {
+        val nativeRuntime = detectNativeManagerRuntime()
+        if (nativeRuntime?.active == true) {
+            return ManagerAccessInfo(
+                kind = ManagerAccessKind.NATIVE_MANAGER,
+                diagnostic = nativeRuntime.diagnostics.firstOrNull(),
+                runtime = nativeRuntime
+            )
+        }
+        if (nativeRuntime != null) {
+            return ManagerAccessInfo(
+                kind = ManagerAccessKind.NATIVE_KERNEL_NO_MANAGER,
+                diagnostic = nativeRuntime.diagnostics.firstOrNull(),
+                runtime = nativeRuntime
+            )
+        }
+        if (!rootGranted) {
+            return ManagerAccessInfo(ManagerAccessKind.NO_ROOT)
+        }
+        val shellRuntime = detectShellManagerRuntime(nativeRuntime = null)
+        return ManagerAccessInfo(
+            kind = ManagerAccessKind.ROOT_ONLY,
+            diagnostic = shellRuntime?.diagnostics?.firstOrNull(),
+            runtime = shellRuntime
+        )
+    }
+
     private fun runKsudCommand(args: String, timeoutSeconds: Long): ShellResult {
         val cleanArgs = args.trim()
         if (cleanArgs.isBlank()) return ShellResult(false, listOf("ksud arguments are empty"))
@@ -869,12 +964,13 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" $cleanArgs
+            abk_exec_ksud "${'$'}ksud_path" $cleanArgs
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = timeoutSeconds)
     }
 
     private fun getKsuFeatureSupport(featureName: String): KsuFeatureSupport? {
+        if (!isNativeManagerActive()) return null
         val result = runKsudCommand("feature check ${shellQuote(featureName)}", timeoutSeconds = 15L)
         val status = result.output
             .asReversed()
@@ -890,18 +986,21 @@ object RootUtils {
     }
 
     private fun getKsuFeatureValue(featureName: String): Long? {
+        if (!isNativeManagerActive()) return null
         val result = runKsudCommand("feature get ${shellQuote(featureName)}", timeoutSeconds = 15L)
         if (!result.success) return null
         return parseKsuFeatureValue(result.output)
     }
 
     private fun getKsuFeatureConfigValue(featureName: String): Long? {
+        if (!isNativeManagerActive()) return null
         val result = runKsudCommand("feature get ${shellQuote(featureName)} --config", timeoutSeconds = 15L)
         if (!result.success) return null
         return parseKsuFeatureValue(result.output)
     }
 
     private fun setKsuFeatureValue(featureName: String, value: Long, persist: Boolean): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         val setResult = runKsudCommand(
             "feature set ${shellQuote(featureName)} $value",
             timeoutSeconds = 30L
@@ -911,6 +1010,7 @@ object RootUtils {
     }
 
     private fun setNativeKsuFeatureValue(featureName: String, value: Long, persist: Boolean): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         val enabled = value != 0L
         val setResult = when (featureName) {
             FEATURE_SU_COMPAT -> {
@@ -928,9 +1028,14 @@ object RootUtils {
     }
 
     private fun saveKsuFeatureConfig(): ShellResult =
-        runKsudCommand("feature save", timeoutSeconds = 30L)
+        if (isNativeManagerActive()) {
+            runKsudCommand("feature save", timeoutSeconds = 30L)
+        } else {
+            nativeManagerPermissionDeniedResult()
+        }
 
     private fun readNativeFeature(featureName: String): KsuFeatureState? {
+        if (!isNativeManagerActive()) return null
         val featureId = when (featureName) {
             FEATURE_SU_COMPAT -> 0
             FEATURE_KERNEL_UMOUNT -> 1
@@ -1080,7 +1185,9 @@ object RootUtils {
                     val safeKsud = shellQuote(ksudPath)
                     val version = execWithShell(
                         shell,
-                        "$safeKsud --version 2>/dev/null || true",
+                        withManagerShellHelpers(
+                            "abk_exec_ksud $safeKsud --version 2>/dev/null || true"
+                        ),
                         normalizeOutput = false
                     )
                         .output
@@ -1089,14 +1196,16 @@ object RootUtils {
                         .orEmpty()
                     val capabilityOutput = execWithShell(
                         shell,
-                        """
-                        caps="root_shell modules"
-                        $safeKsud module list >/dev/null 2>&1 && caps="${'$'}caps module_control"
-                        $safeKsud susfs status >/dev/null 2>&1 && caps="${'$'}caps susfs"
-                        $safeKsud kpm version >/dev/null 2>&1 && caps="${'$'}caps kpm"
-                        $safeKsud feature check su_compat >/dev/null 2>&1 && caps="${'$'}caps features"
-                        printf '%s\n' "${'$'}caps"
-                        """.trimIndent(),
+                        withManagerShellHelpers(
+                            """
+                            caps="root_shell modules"
+                            abk_exec_ksud $safeKsud module list >/dev/null 2>&1 && caps="${'$'}caps module_control"
+                            abk_exec_ksud $safeKsud susfs status >/dev/null 2>&1 && caps="${'$'}caps susfs"
+                            abk_exec_ksud $safeKsud kpm version >/dev/null 2>&1 && caps="${'$'}caps kpm"
+                            abk_exec_ksud $safeKsud feature check su_compat >/dev/null 2>&1 && caps="${'$'}caps features"
+                            printf '%s\n' "${'$'}caps"
+                            """.trimIndent()
+                        ),
                         normalizeOutput = false
                     ).output.firstOrNull().orEmpty()
                     val capabilities = capabilityOutput
@@ -1210,20 +1319,13 @@ object RootUtils {
             .setFlags(Shell.FLAG_MOUNT_MASTER or Shell.FLAG_REDIRECT_STDERR)
             .setTimeout(timeoutSeconds)
         val candidates = mutableListOf<Array<String>>()
-        embeddedKsudPath()?.let { path ->
-            if (globalMount) {
-                candidates += arrayOf(path, "debug", "su", "-g")
-            } else {
-                candidates += arrayOf(path, "debug", "su")
-            }
-        }
         if (globalMount) {
-            candidates += arrayOf("ksud", "debug", "su", "-g")
             candidates += arrayOf("/data/adb/ksud", "debug", "su", "-g")
+            candidates += arrayOf("ksud", "debug", "su", "-g")
             candidates += arrayOf("su", "-mm")
         } else {
-            candidates += arrayOf("ksud", "debug", "su")
             candidates += arrayOf("/data/adb/ksud", "debug", "su")
+            candidates += arrayOf("ksud", "debug", "su")
             candidates += arrayOf("su")
         }
 
@@ -1252,24 +1354,343 @@ object RootUtils {
         return result.isSuccess && output.firstOrNull()?.trim() == "0"
     }
 
-    private fun embeddedKsudPath(): String? {
-        val context = appContext ?: return null
-        return File(context.applicationInfo.nativeLibraryDir, "libksud.so")
-            .takeIf { it.isFile && it.canExecute() }
+    private fun embeddedKsudPath(context: Context? = appContext): String? {
+        val safeContext = context ?: return null
+        return File(safeContext.applicationInfo.nativeLibraryDir, "libksud.so")
+            .takeIf { it.isFile }
             ?.absolutePath
     }
 
+    private fun isEmbeddedKsudPath(path: String): Boolean =
+        File(path).name == "libksud.so"
+
+    private fun resolveAndroidLinkerPath(): String {
+        val embeddedPath = embeddedKsudPath()
+        val prefers64Bit = embeddedPath?.contains("/arm64-v8a/") == true ||
+            embeddedPath?.contains("/x86_64/") == true ||
+            embeddedPath?.contains("64") == true
+        val candidates = if (prefers64Bit) {
+            listOf("/apex/com.android.runtime/bin/linker64", "/system/bin/linker64")
+        } else {
+            listOf("/apex/com.android.runtime/bin/linker", "/system/bin/linker")
+        }
+        return candidates.firstOrNull { File(it).isFile } ?: candidates.first()
+    }
+
+    private fun buildKsudCommand(ksudPath: String, args: List<String>): List<String> {
+        return if (isEmbeddedKsudPath(ksudPath)) {
+            listOf(resolveAndroidLinkerPath(), ksudPath) + args
+        } else {
+            listOf(ksudPath) + args
+        }
+    }
+
+    private fun buildKsudShellCommand(ksudPath: String, args: List<String>): String =
+        buildShellCommand(buildKsudCommand(ksudPath, args))
+
+    private fun embeddedMagiskbootPath(context: Context? = appContext): String? {
+        val safeContext = context ?: return null
+        return File(safeContext.applicationInfo.nativeLibraryDir, "libmagiskboot.so")
+            .takeIf { it.isFile }
+            ?.absolutePath
+    }
+
+    private fun runEmbeddedKsudWithRoot(
+        context: Context,
+        args: List<String>,
+        timeoutSeconds: Long,
+        onOutput: ((String) -> Unit)? = null
+    ): ShellResult? {
+        val embedded = embeddedKsudPath(context) ?: return null
+        return try {
+            createRootShell(timeoutSeconds = timeoutSeconds).use { shell ->
+                execWithShell(
+                    shell,
+                    buildKsudShellCommand(embedded, args),
+                    onOutput = onOutput
+                )
+            }
+        } catch (error: Throwable) {
+            Log.w(TAG, "embedded ksud root command unavailable", error)
+            null
+        }
+    }
+
+    private fun prepareBundledKsudPath(context: Context): String? {
+        val metadata = readBundledKsudMetadata(context) ?: return null
+        val abi = selectBundledKsudAbi(context, metadata) ?: return null
+        val assetPath = "$BUNDLED_KSUD_ASSET_DIR/$abi/$BUNDLED_KSUD_BINARY_NAME"
+        if (!assetExists(context, assetPath)) return null
+
+        val rootDir = File(context.filesDir, BUNDLED_KSUD_INSTALL_DIR).apply { mkdirs() }
+        val installDir = File(rootDir, "${metadata.installToken}/$abi").apply { mkdirs() }
+        val binaryFile = File(installDir, BUNDLED_KSUD_BINARY_NAME)
+
+        if (isBundledKsudReady(binaryFile, abi, metadata)) {
+            cleanupObsoleteBundledKsud(rootDir, metadata.installToken)
+            return binaryFile.absolutePath
+        }
+
+        installDir.deleteRecursively()
+        installDir.mkdirs()
+        val tempFile = File(installDir, "$BUNDLED_KSUD_BINARY_NAME.tmp")
+        return runCatching {
+            context.assets.open(assetPath).use { input ->
+                tempFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            tempFile.setReadable(true, true)
+            tempFile.setWritable(true, true)
+            tempFile.setExecutable(true, true)
+            val installed = File(installDir, BUNDLED_KSUD_BINARY_NAME)
+            if (!tempFile.renameTo(installed)) {
+                tempFile.copyTo(installed, overwrite = true)
+                tempFile.delete()
+            }
+            installed.setReadable(true, true)
+            installed.setWritable(true, true)
+            installed.setExecutable(true, true)
+            if (!isBundledKsudReady(installed, abi, metadata)) {
+                installed.delete()
+                return@runCatching null
+            }
+            cleanupObsoleteBundledKsud(rootDir, metadata.installToken)
+            installed.absolutePath
+        }.getOrNull()
+    }
+
+    private fun stageBundledAbkLkmAsset(
+        context: Context,
+        workDir: File,
+        asset: AbkLkmAsset
+    ): File {
+        val target = File(workDir, "${asset.variantId}_${asset.kmi}_kernelsu.ko")
+        context.assets.open(asset.assetPath).use { input ->
+            target.outputStream().use { output -> input.copyTo(output) }
+        }
+        target.setReadable(true, false)
+        target.setWritable(true, true)
+        return target
+    }
+
+    private fun buildBootPatchArgs(
+        context: Context,
+        bootImage: File?,
+        moduleFile: File,
+        flash: Boolean,
+        ota: Boolean,
+        partition: String?,
+        outputDir: File,
+        outputName: String,
+        allowShell: Boolean,
+        enableAdb: Boolean
+    ): List<String> {
+        return buildList {
+            add("boot-patch")
+            embeddedMagiskbootPath(context)?.let { magiskboot ->
+                add("--magiskboot")
+                add(magiskboot)
+            }
+            if (bootImage != null) {
+                add("--boot")
+                add(bootImage.absolutePath)
+            }
+            add("--module")
+            add(moduleFile.absolutePath)
+            if (flash) add("--flash")
+            if (ota) add("--ota")
+            partition?.takeIf { it.isNotBlank() }?.let {
+                add("--partition")
+                add(it)
+            }
+            add("--out")
+            add(outputDir.absolutePath)
+            add("--out-name")
+            add(outputName)
+            if (allowShell) add("--allow-shell")
+            if (enableAdb) add("--enable-adbd")
+        }
+    }
+
+    private fun runEmbeddedBootPatchWithRoot(
+        context: Context,
+        args: List<String>,
+        onOutput: ((String) -> Unit)? = null
+    ): ShellResult? {
+        val embedded = embeddedKsudPath(context) ?: return null
+        return try {
+            createRootShell(timeoutSeconds = 300L).use { shell ->
+                onOutput?.invoke("[ABK] 通过 Root shell 调用内置 libksud.so")
+                onOutput?.invoke("[ABK] ksud 路径: $embedded")
+                execWithShell(
+                    shell,
+                    buildKsudShellCommand(embedded, args),
+                    onOutput = onOutput
+                )
+            }
+        } catch (error: Throwable) {
+            Log.w(TAG, "root boot-patch shell unavailable", error)
+            null
+        }
+    }
+
+    private fun runBundledUserlandBootPatch(
+        context: Context,
+        args: List<String>,
+        onOutput: ((String) -> Unit)? = null
+    ): ShellResult? {
+        val bundledKsud = prepareBundledKsudPath(context) ?: return null
+        onOutput?.invoke("[ABK] 使用 APK 内置 SukiSU-Ultra ksud 进行本地 boot 修补")
+        onOutput?.invoke("[ABK] ksud 路径: $bundledKsud")
+        return runLocalCommand(
+            command = buildKsudCommand(bundledKsud, args),
+            timeoutSeconds = 300L,
+            onOutput = onOutput
+        )
+    }
+
+    private fun readEmbeddedBootInfoLine(args: List<String>): String? =
+        readEmbeddedBootInfoLines(args).firstOrNull()
+
+    private fun readEmbeddedBootInfoLines(args: List<String>): List<String> {
+        val context = appContext ?: return emptyList()
+        val result = runEmbeddedKsudWithRoot(
+            context = context,
+            args = listOf("boot-info") + args,
+            timeoutSeconds = 15L
+        ) ?: return emptyList()
+        if (!result.success) return emptyList()
+        return result.output
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+    }
+
+    private fun readBundledKsudMetadata(context: Context): BundledKsudMetadata? {
+        return runCatching {
+            val props = Properties()
+            context.assets.open("$BUNDLED_KSUD_ASSET_DIR/$BUNDLED_KSUD_METADATA_NAME").use(props::load)
+            val listedAbis = runCatching {
+                context.assets.list(BUNDLED_KSUD_ASSET_DIR).orEmpty().toList()
+            }.getOrDefault(emptyList())
+                .filter { it.isNotBlank() && it != BUNDLED_KSUD_METADATA_NAME }
+            val supportedAbis = props.getProperty("abis")
+                ?.split(',')
+                ?.map { it.trim() }
+                ?.filter { it.isNotBlank() }
+                ?.ifEmpty { listedAbis }
+                ?: listedAbis
+            val sha256ByAbi = supportedAbis.mapNotNull { abi ->
+                props.getProperty("sha256.$abi")
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { digest -> abi to digest.lowercase() }
+            }.toMap()
+            BundledKsudMetadata(
+                ref = props.getProperty("ref").orEmpty(),
+                commit = props.getProperty("commit").orEmpty(),
+                supportedAbis = supportedAbis,
+                sha256ByAbi = sha256ByAbi
+            )
+        }.getOrNull()
+    }
+
+    private fun selectBundledKsudAbi(
+        context: Context,
+        metadata: BundledKsudMetadata
+    ): String? {
+        val supported = metadata.supportedAbis.toSet()
+        Build.SUPPORTED_ABIS.forEach { abi ->
+            if (abi in supported && assetExists(context, "$BUNDLED_KSUD_ASSET_DIR/$abi/$BUNDLED_KSUD_BINARY_NAME")) {
+                return abi
+            }
+        }
+        return metadata.supportedAbis.firstOrNull { abi ->
+            assetExists(context, "$BUNDLED_KSUD_ASSET_DIR/$abi/$BUNDLED_KSUD_BINARY_NAME")
+        }
+    }
+
+    private fun assetExists(context: Context, assetPath: String): Boolean =
+        runCatching {
+            context.assets.open(assetPath).use { true }
+        }.getOrDefault(false)
+
+    private fun isBundledKsudReady(
+        binaryFile: File,
+        abi: String,
+        metadata: BundledKsudMetadata
+    ): Boolean {
+        if (!binaryFile.isFile || binaryFile.length() <= 0L) return false
+        if (!binaryFile.canExecute()) {
+            binaryFile.setExecutable(true, true)
+        }
+        if (!binaryFile.canExecute()) return false
+        val expectedSha256 = metadata.sha256ByAbi[abi] ?: return true
+        return sha256(binaryFile)?.equals(expectedSha256, ignoreCase = true) == true
+    }
+
+    private fun sha256(file: File): String? {
+        return runCatching {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        }.getOrNull()
+    }
+
+    private fun cleanupObsoleteBundledKsud(rootDir: File, currentToken: String) {
+        rootDir.listFiles()
+            ?.filter { it.isDirectory && it.name != currentToken }
+            ?.forEach { it.deleteRecursively() }
+    }
+
     private fun withManagerShellHelpers(script: String): String {
-        val embedded = embeddedKsudPath()?.let(::shellQuote).orEmpty()
+        val embedded = embeddedKsudPath()?.let(::shellQuote) ?: "''"
+        val linker = shellQuote(resolveAndroidLinkerPath())
         return """
+            abk_embedded_ksud=$embedded
+            abk_embedded_linker=$linker
             abk_find_ksud() {
-                for candidate in $embedded ${'$'}(command -v ksud 2>/dev/null || true) /data/adb/ksud; do
+                for candidate in "${'$'}abk_embedded_ksud" /data/adb/ksud ${'$'}(command -v ksud 2>/dev/null || true); do
                     [ -n "${'$'}candidate" ] || continue
-                    [ -x "${'$'}candidate" ] || continue
+                    if [ -n "${'$'}abk_embedded_ksud" ] && [ "${'$'}candidate" = "${'$'}abk_embedded_ksud" ]; then
+                        [ -r "${'$'}candidate" ] || continue
+                    else
+                        [ -x "${'$'}candidate" ] || continue
+                    fi
                     printf '%s\n' "${'$'}candidate"
                     return 0
                 done
                 return 1
+            }
+            abk_exec_ksud() {
+                local candidate="$1"
+                shift
+                if [ -n "${'$'}abk_embedded_ksud" ] && [ "${'$'}candidate" = "${'$'}abk_embedded_ksud" ]; then
+                    "${'$'}abk_embedded_linker" "${'$'}candidate" "${'$'}@"
+                else
+                    "${'$'}candidate" "${'$'}@"
+                fi
+            }
+            abk_ksud_source() {
+                if [ -n "${'$'}abk_embedded_ksud" ] && [ "$1" = "${'$'}abk_embedded_ksud" ]; then
+                    printf '%s\n' "embedded"
+                elif [ "$1" = "/data/adb/ksud" ]; then
+                    printf '%s\n' "data_adb"
+                else
+                    printf '%s\n' "system"
+                fi
+            }
+            abk_ksud_label() {
+                case "$1" in
+                    embedded) printf '%s\n' "内置 SukiSU-Ultra" ;;
+                    data_adb) printf '%s\n' "外部 /data/adb" ;;
+                    *) printf '%s\n' "系统" ;;
+                esac
             }
             $script
         """.trimIndent()
@@ -1321,6 +1742,23 @@ object RootUtils {
         onOutput?.invoke(fallback)
         return listOf(fallback)
     }
+
+    private fun nativeManagerPermissionDeniedMessage(): String =
+        "当前 ABK 没有原生管理权限，无法访问该功能。请使用已将 ABK 识别为原生管理器的内核。"
+
+    private fun nativeManagerPermissionDeniedResult(): ShellResult =
+        ShellResult(false, listOf(nativeManagerPermissionDeniedMessage()))
+
+    private fun partitionExists(name: String): Boolean {
+        return listOf(
+            "/dev/block/by-name/$name",
+            "/dev/block/bootdevice/by-name/$name",
+            "/dev/block/mapper/$name"
+        ).any { File(it).exists() }
+    }
+
+    private fun buildShellCommand(args: List<String>): String =
+        args.joinToString(" ") { shellQuote(it) }
 
     private fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
 

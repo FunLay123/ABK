@@ -82,6 +82,17 @@ android {
         compose = true
         buildConfig = true
     }
+    sourceSets {
+        getByName("main") {
+            assets.srcDir("build/generated/abk-assets/main")
+            jniLibs.srcDir("build/generated/abk-jniLibs/main")
+        }
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
