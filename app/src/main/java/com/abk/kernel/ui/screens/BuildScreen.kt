@@ -235,7 +235,7 @@ fun BuildScreen(
             text = {
                 val noRootScheme = config.kernelsuVariant == KSU_VARIANT_NONE
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Build config overview：", fontWeight = FontWeight.SemiBold)
+                    Text("Build config overview:", fontWeight = FontWeight.SemiBold)
                     Text("Android ${config.androidVersion} · Kernel ${config.kernelVersion}.${config.subLevel}")
                     Text(
                         if (noRootScheme) {
@@ -726,7 +726,7 @@ fun BuildScreen(
                 )
                 if (noRootScheme) {
                     Text(
-                        text = "不注入任何 Root 授权方案；KSU 分支、SUSFS 和 KPM 会自动关闭。",
+                        text = "No Root grant scheme will be injected; KSU branch, SUSFS, and KPM will be disabled automatically.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1827,7 +1827,7 @@ private fun buildPlanSummary(config: KernelBuildConfig): String {
         "${config.kernelsuVariant} / ${config.kernelsuBranch}"
     }
     return "${config.kernelVersion}.${config.subLevel} · Android $android · ${config.osPatchLevel}\n" +
-        "$ksuSummary · $featureSummary · 外部模块 $externalModuleCount"
+        "$ksuSummary · $featureSummary · External modules: $externalModuleCount"
 }
 
 private fun buildPlanScopeLabel(scope: BuildPlanShareScope): String = when (scope) {
@@ -2208,7 +2208,7 @@ fun SwitchRow(
 
 private fun ksuVariantDisplayName(variant: String): String =
     if (variant == KSU_VARIANT_NONE) {
-        "None（无 Root 方案）"
+        "None (no Root scheme)"
     } else {
         variant
     }
