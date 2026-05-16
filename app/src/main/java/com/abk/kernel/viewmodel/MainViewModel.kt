@@ -2344,7 +2344,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }.getOrElse { error ->
                 ManagerSettingsLoad(
-                    error = error.message?.takeIf { it.isNotBlank() } ?: "后端设置读取失败"
+                    error = error.message?.takeIf { it.isNotBlank() } ?: "Failed to read backend settings"
                 )
             }
             _uiState.update {
@@ -2387,13 +2387,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         MANAGER_SETTING_DEFAULT_UMOUNT -> {
                             val ok = RootUtils.setDefaultUmountModules(checked)
-                            RootUtils.ShellResult(ok, if (ok) emptyList() else listOf("保存失败"))
+                            RootUtils.ShellResult(ok, if (ok) emptyList() else listOf("Save failed"))
                         }
-                        else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
+                        else -> RootUtils.ShellResult(false, listOf("Unsupported setting"))
                     }
                 }
             }.getOrElse { error ->
-                RootUtils.ShellResult(false, listOf(error.message ?: "操作失败"))
+                RootUtils.ShellResult(false, listOf(error.message ?: "Operation failed"))
             }
             if (result.success) {
                 refreshManagerSettings(force = true)
@@ -2428,7 +2428,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }.getOrElse { error ->
-                RootUtils.ShellResult(false, listOf(error.message ?: "操作失败"))
+                RootUtils.ShellResult(false, listOf(error.message ?: "Operation failed"))
             }
             if (result.success) {
                 refreshManagerSettings(force = true)
@@ -2775,7 +2775,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }.getOrElse { error ->
             ManagerSettingsLoad(
-                error = error.message?.takeIf { it.isNotBlank() } ?: "后端设置读取失败"
+                error = error.message?.takeIf { it.isNotBlank() } ?: "Failed to read backend settings"
             )
         }
 
@@ -3085,7 +3085,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ManagerSettingKind.MODE -> {
                     val hasOptions = options.isNotEmpty()
                     item.copy(
-                        title = item.title.ifBlank { "未命名设置" },
+                        title = item.title.ifBlank { "Unnamed setting" },
                         subtitle = item.subtitle.trim(),
                         options = options,
                         selectedIndex = if (hasOptions) {
@@ -3097,7 +3097,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 else -> item.copy(
-                    title = item.title.ifBlank { "未命名设置" },
+                    title = item.title.ifBlank { "Unnamed setting" },
                     subtitle = item.subtitle.trim(),
                     options = options
                 )
@@ -3107,11 +3107,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun managerSettingsTitle(manager: RootUtils.ManagerRuntimeProbe): String =
         manager.displayName
             .ifBlank { manager.variant }
-            .ifBlank { "管理器设置" }
+            .ifBlank { "Manager settings" }
 
     private fun buildUnknownManagerSettingsError(manager: RootUtils.ManagerRuntimeProbe): String {
         val detail = manager.diagnostics.firstOrNull { it.isNotBlank() }
-        val base = "当前后端已激活，但 ABK 无法稳定识别其类型；已跳过不安全的设置注入。"
+        val base = "Backend is active but ABK cannot reliably identify its type; unsafe settings injection has been skipped."
         return if (detail == null) base else "$base $detail"
     }
 
@@ -3805,10 +3805,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 private fun externalManagerAccessDeniedMessage(): String =
-    "未授予 ABK Root 权限，无法读取外部 Root 后端。请先为 ABK 授权，或使用已将 ABK 识别为原生管理器的内核。"
+    "ABK has not been granted Root permission and cannot read the external Root backend. Please grant Root to ABK first, or use a kernel that recognises ABK as a native manager."
 
 private fun externalRootManagerPermissionDeniedMessage(): String =
-    "当前仅接入外部 Root / ksud 兼容层，ABK 没有原生管理权限，无法访问原生桥、管理器设置或 Root 授权策略。"
+    "Currently connected only via external Root / ksud compatibility layer; ABK has no native manager permission and cannot access the native bridge, manager settings, or Root grant policies."
 
 private fun resolveManagerAccess(rootGranted: Boolean): RootUtils.ManagerAccessInfo =
     RootUtils.resolveManagerAccess(rootGranted)
@@ -3823,7 +3823,7 @@ private fun managerAccessErrorMessage(
         RootUtils.ManagerAccessKind.NO_ROOT -> externalManagerAccessDeniedMessage()
         RootUtils.ManagerAccessKind.ROOT_ONLY -> externalRootManagerPermissionDeniedMessage()
         RootUtils.ManagerAccessKind.NATIVE_KERNEL_NO_MANAGER ->
-            "当前 ABK 已连接到内核接口，但没有原生管理权限。请确认内核已将当前 ABK APK 识别为管理器。"
+            "ABK is connected to the kernel interface but has no native manager permission. Please confirm the kernel recognises the current ABK APK as a manager."
     }
 }
 
