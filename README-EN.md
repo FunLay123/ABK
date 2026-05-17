@@ -1,6 +1,11 @@
 <div align="center">
 
+**This is english version of Anybase Kernel by xingguangcuican.
+The main goal was to translate the app fully, seems like I did that. GitHub actions aren't translated**
+
+
 # ABK
+
 
 **AnyBase Kernel**
 

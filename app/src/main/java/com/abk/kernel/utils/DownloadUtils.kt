@@ -166,7 +166,7 @@ object DownloadUtils {
                     type = type,
                     sizeBytes = file.length(),
                     runId = run?.id ?: -1L,
-                    runTitle = run?.displayTitle ?: run?.name ?: run?.let { "#${it.runNumber}" } ?: "未关联工作流",
+                    runTitle = run?.displayTitle ?: run?.name ?: run?.let { "#${it.runNumber}" } ?: "Workflow not linked",
                     runNumber = run?.runNumber ?: 0,
                     category = type.toArtifactCategory()
                 )
