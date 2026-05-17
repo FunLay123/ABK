@@ -2,6 +2,9 @@
 
 # ABK
 
+This is english version of Anybase Kernel by xingguangcuican.
+The main goal was to translate the app fully, seems like I did that. GitHub actions aren't translated 
+
 **AnyBase Kernel**
 
 用于构建、分发和管理 GKI KernelSU / SUSFS 内核的自动化仓库与 Android 应用。
