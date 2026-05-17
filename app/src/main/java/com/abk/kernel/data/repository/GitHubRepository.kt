@@ -440,7 +440,7 @@ class GitHubRepository(
         return "$prefix: $type$detail"
     }
 
-    private fun moduleCatalogIndexCandidates(repositoryUrl: String): List<String> {
+    internal fun moduleCatalogIndexCandidates(repositoryUrl: String): List<String> {
         val clean = repositoryUrl.trim().trimEnd('/')
         if (clean.isBlank()) return emptyList()
         if (clean.endsWith(".json", ignoreCase = true)) return listOf(clean)
@@ -462,7 +462,7 @@ class GitHubRepository(
         return emptyList()
     }
 
-    private fun externalModuleConfCandidates(repositoryUrl: String): List<String> {
+    internal fun externalModuleConfCandidates(repositoryUrl: String): List<String> {
         val clean = repositoryUrl.trim().trimEnd('/')
         if (clean.isBlank()) return emptyList()
         if (clean.endsWith("/module.conf", ignoreCase = true)) return listOf(clean)
@@ -484,7 +484,7 @@ class GitHubRepository(
         return emptyList()
     }
 
-    private fun parseGithubRepository(url: String): GithubRepositoryParts? {
+    internal fun parseGithubRepository(url: String): GithubRepositoryParts? {
         val cleaned = url.trim().trimEnd('/')
         val path = when {
             cleaned.startsWith("git@github.com:") -> cleaned.removePrefix("git@github.com:")
@@ -506,7 +506,7 @@ class GitHubRepository(
         return GithubRepositoryParts(owner, repo, branch)
     }
 
-    private fun parseModuleCatalogDocument(body: String, repositoryUrl: String): ParsedModuleCatalogDocument {
+    internal fun parseModuleCatalogDocument(body: String, repositoryUrl: String): ParsedModuleCatalogDocument {
         val root = JsonParser.parseString(body)
         val document = root.asJsonObjectOrNull() ?: error("Root node must be a JSON object")
         val rawModules = document.arrayOrEmpty("modules")
@@ -553,7 +553,7 @@ class GitHubRepository(
         )
     }
 
-    private fun parseExternalModuleConf(body: String): ExternalModuleMetadata {
+    internal fun parseExternalModuleConf(body: String): ExternalModuleMetadata {
         val values = parseShellLikeConf(body)
         val name = values["ABK_MODULE_NAME"].orEmpty().trim()
         if (name.isBlank()) error("Missing ABK_MODULE_NAME")
@@ -658,13 +658,13 @@ class GitHubRepository(
     }
 }
 
-private data class GithubRepositoryParts(
+internal data class GithubRepositoryParts(
     val owner: String,
     val repo: String,
     val branch: String?
 )
 
-private data class ParsedModuleCatalogDocument(
+internal data class ParsedModuleCatalogDocument(
     val name: String,
     val modules: List<ModuleCatalogItem>,
     val skippedCount: Int
