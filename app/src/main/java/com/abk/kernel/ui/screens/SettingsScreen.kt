@@ -622,11 +622,14 @@ private fun SettingsMainContent(
                 val forkUrl = state.forkRepo?.let { repo ->
                     repo.htmlUrl.takeIf { it.isNotBlank() } ?: "https://github.com/${repo.fullName}"
                 }
+                val onForkClick: (() -> Unit)? = if (forkUrl != null) {
+                    { openUrl(context, forkUrl) }
+                } else null
                 ExpressiveListItem(
                     title = stringResource(R.string.settings_fork_repo),
                     subtitle = state.forkRepo?.fullName ?: stringResource(R.string.settings_waiting_fork),
                     leadingIcon = Icons.Default.ForkRight,
-                    onClick = forkUrl?.let { url -> { openUrl(context, url) } }
+                    onClick = onForkClick
                 )
             } ?: ExpressiveListItem(
                 title = stringResource(R.string.settings_not_logged_in),

@@ -167,8 +167,9 @@ fun StatusScreen(
                     BuildStatus.FAILURE -> StatusRow(Icons.Default.Error, stringResource(R.string.status_recent_build_failed), true)
                     BuildStatus.CANCELLED -> StatusRow(Icons.Default.Cancel, stringResource(R.string.status_build_cancelled), true)
                 }
-                if (state.kernelCurrentRun != null &&
-                    state.kernelCurrentRun.id == state.currentRun?.id &&
+                val kernelRun = state.kernelCurrentRun
+                if (kernelRun != null &&
+                    kernelRun.id == state.currentRun?.id &&
                     state.buildProgress.totalSteps > 0
                 ) {
                     Spacer(Modifier.height(8.dp))
