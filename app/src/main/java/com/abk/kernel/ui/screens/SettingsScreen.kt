@@ -622,8 +622,9 @@ private fun SettingsMainContent(
                 val forkUrl = state.forkRepo?.let { repo ->
                     repo.htmlUrl.takeIf { it.isNotBlank() } ?: "https://github.com/${repo.fullName}"
                 }
+                val openCtx = context
                 val onForkClick: (() -> Unit)? = if (forkUrl != null) {
-                    { openUrl(context, forkUrl) }
+                    { openUrl(openCtx, forkUrl) }
                 } else null
                 ExpressiveListItem(
                     title = stringResource(R.string.settings_fork_repo),
