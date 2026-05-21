@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -54,6 +55,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.FolderSpecial
@@ -75,6 +77,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -211,6 +214,11 @@ fun FlashScreen(
         buildWorkflowGroups(remoteArtifacts, workflowDownloadedArtifacts, unlinkedWorkflowTitle)
     }
     val recentRunById = remember(state.recentRuns) { state.recentRuns.associateBy { it.id } }
+    var filter by rememberSaveable(stateSaver = FlashFilterSaver) { mutableStateOf(FlashFilter()) }
+    var filterMenuExpanded by remember { mutableStateOf(false) }
+    val filteredGroups = remember(workflowGroups, filter, state.buildParameterSummaries, recentRunById) {
+        workflowGroups.filter { it.matchesFilter(filter, state.buildParameterSummaries, recentRunById) }
+    }
     val selectedGroup = selectedRunId?.let { id -> workflowGroups.firstOrNull { it.runId == id } }
     val selectedPrebuiltRelease = selectedPrebuiltReleaseId?.let { id ->
         state.prebuiltGkiReleases.firstOrNull { it.id == id }
@@ -589,51 +597,75 @@ fun FlashScreen(
                 when (currentContentTab) {
                     FlashContentTab.Workflows -> {
                         item {
-                            OutlinedButton(
-                                onClick = { vm.loadRecentRuns() },
-                                modifier = Modifier.fillMaxWidth()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(stringResource(R.string.flash_refresh_artifacts))
+                                OutlinedButton(
+                                    onClick = { vm.loadRecentRuns() },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(stringResource(R.string.flash_refresh_artifacts))
+                                }
+                                FlashFilterButton(
+                                    expanded = filterMenuExpanded,
+                                    onExpandedChange = { filterMenuExpanded = it },
+                                    filter = filter,
+                                    onFilterChange = { filter = it }
+                                )
                             }
                         }
 
-                        if (workflowGroups.isNotEmpty()) {
-                            items(workflowGroups, key = { "workflow-${it.runId}" }) { group ->
-                                val run = recentRunById[group.runId]
-                                WorkflowRunCard(
-                                    group = group,
-                                    active = run?.isActiveFlashRun() == true,
-                                    cancelling = group.runId in state.cancellingWorkflowRunIds,
-                                    onClick = {
-                                        selectedRunId = group.runId
-                                        selectedPrebuiltReleaseId = null
-                                        navController.navigate(flashWorkflowRoute(group.runId))
-                                    },
-                                    onShowParameters = { parameterTarget = group },
-                                    onDelete = {
-                                        deleteWorkflowTarget = group
-                                        deleteRemoteWorkflowRun = false
-                                    },
-                                    onCancel = { vm.cancelWorkflowRun(group.runId) }
-                                )
+                        when {
+                            filteredGroups.isNotEmpty() -> {
+                                items(filteredGroups, key = { "workflow-${it.runId}" }) { group ->
+                                    val run = recentRunById[group.runId]
+                                    WorkflowRunCard(
+                                        group = group,
+                                        active = run?.isActiveFlashRun() == true,
+                                        cancelling = group.runId in state.cancellingWorkflowRunIds,
+                                        onClick = {
+                                            selectedRunId = group.runId
+                                            selectedPrebuiltReleaseId = null
+                                            navController.navigate(flashWorkflowRoute(group.runId))
+                                        },
+                                        onShowParameters = { parameterTarget = group },
+                                        onDelete = {
+                                            deleteWorkflowTarget = group
+                                            deleteRemoteWorkflowRun = false
+                                        },
+                                        onCancel = { vm.cancelWorkflowRun(group.runId) }
+                                    )
+                                }
                             }
-                        } else {
-                            item {
-                                ExpressiveEmptyState(
-                                    title = if (rootGranted) {
-                                        stringResource(R.string.flash_empty_flash_title)
-                                    } else {
-                                        stringResource(R.string.flash_empty_files_title)
-                                    },
-                                    subtitle = if (rootGranted) {
-                                        stringResource(R.string.flash_empty_flash_desc)
-                                    } else {
-                                        stringResource(R.string.flash_empty_files_desc)
-                                    },
-                                    icon = Icons.Default.Inbox
-                                )
+                            workflowGroups.isNotEmpty() -> {
+                                item {
+                                    ExpressiveEmptyState(
+                                        title = stringResource(R.string.flash_filter_empty),
+                                        subtitle = "",
+                                        icon = Icons.Default.FilterList
+                                    )
+                                }
+                            }
+                            else -> {
+                                item {
+                                    ExpressiveEmptyState(
+                                        title = if (rootGranted) {
+                                            stringResource(R.string.flash_empty_flash_title)
+                                        } else {
+                                            stringResource(R.string.flash_empty_files_title)
+                                        },
+                                        subtitle = if (rootGranted) {
+                                            stringResource(R.string.flash_empty_flash_desc)
+                                        } else {
+                                            stringResource(R.string.flash_empty_files_desc)
+                                        },
+                                        icon = Icons.Default.Inbox
+                                    )
+                                }
                             }
                         }
                     }
@@ -2599,4 +2631,238 @@ private fun ArtifactCategory.icon(): ImageVector = when (this) {
     ArtifactCategory.KERNEL -> Icons.Default.Memory
     ArtifactCategory.MANAGER -> Icons.Default.Shield
     ArtifactCategory.MODULE -> Icons.Default.Extension
+}
+
+private enum class FlashFilterKernelKind { ResuKisu, SukiSu, Official, None }
+private enum class FlashFilterManagerKind { Release, Dev }
+private enum class FlashFilterWorkflowState { Running, Finished }
+
+private data class FlashFilter(
+    val kernelEnabled: Boolean = true,
+    val kernelKinds: Set<FlashFilterKernelKind> = emptySet(),
+    val managerEnabled: Boolean = true,
+    val managerKinds: Set<FlashFilterManagerKind> = setOf(FlashFilterManagerKind.Release),
+    val workflowEnabled: Boolean = true,
+    val workflowStates: Set<FlashFilterWorkflowState> = emptySet(),
+)
+
+private val FlashFilterSaver = androidx.compose.runtime.saveable.Saver<FlashFilter, Map<String, String>>(
+    save = { f ->
+        mapOf(
+            "ke" to f.kernelEnabled.toString(),
+            "kk" to f.kernelKinds.joinToString(",") { it.name },
+            "me" to f.managerEnabled.toString(),
+            "mk" to f.managerKinds.joinToString(",") { it.name },
+            "we" to f.workflowEnabled.toString(),
+            "ws" to f.workflowStates.joinToString(",") { it.name }
+        )
+    },
+    restore = { m ->
+        FlashFilter(
+            kernelEnabled = m["ke"]?.toBooleanStrictOrNull() ?: true,
+            kernelKinds = m["kk"]?.takeIf { it.isNotBlank() }?.split(",")
+                ?.mapNotNull { runCatching { FlashFilterKernelKind.valueOf(it) }.getOrNull() }
+                ?.toSet() ?: emptySet(),
+            managerEnabled = m["me"]?.toBooleanStrictOrNull() ?: true,
+            managerKinds = m["mk"]?.takeIf { it.isNotBlank() }?.split(",")
+                ?.mapNotNull { runCatching { FlashFilterManagerKind.valueOf(it) }.getOrNull() }
+                ?.toSet() ?: setOf(FlashFilterManagerKind.Release),
+            workflowEnabled = m["we"]?.toBooleanStrictOrNull() ?: true,
+            workflowStates = m["ws"]?.takeIf { it.isNotBlank() }?.split(",")
+                ?.mapNotNull { runCatching { FlashFilterWorkflowState.valueOf(it) }.getOrNull() }
+                ?.toSet() ?: emptySet(),
+        )
+    }
+)
+
+private fun WorkflowArtifactGroup.kernelKind(
+    summary: BuildParameterSummary?
+): FlashFilterKernelKind {
+    val v = summary?.ksuVariant.orEmpty().lowercase()
+    return when {
+        "resuki" in v || "re-suki" in v || "resukisu" in v -> FlashFilterKernelKind.ResuKisu
+        "sukisu" in v -> FlashFilterKernelKind.SukiSu
+        "kernelsu" in v || "official" in v -> FlashFilterKernelKind.Official
+        else -> FlashFilterKernelKind.None
+    }
+}
+
+private fun WorkflowArtifactGroup.hasManagerArtifact(): Boolean =
+    remote.any { DownloadUtils.classifyArtifact(it.name) == ArtifactType.KSU_MANAGER } ||
+        local.any { it.type == ArtifactType.KSU_MANAGER }
+
+private fun WorkflowArtifactGroup.hasKernelArtifact(): Boolean =
+    remote.any {
+        val t = DownloadUtils.classifyArtifact(it.name)
+        t == ArtifactType.KERNEL_PACKAGE || t == ArtifactType.KERNEL_IMG || t == ArtifactType.ANYKERNEL3
+    } || local.any { it.type in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.KERNEL_IMG, ArtifactType.ANYKERNEL3) }
+
+private fun WorkflowArtifactGroup.managerKind(
+    summary: BuildParameterSummary?
+): FlashFilterManagerKind {
+    val branch = summary?.ksuBranch.orEmpty().lowercase()
+    val hasDevName = remote.any { it.name.lowercase().contains("dev") } ||
+        local.any { it.name.lowercase().contains("dev") }
+    return if ("dev" in branch || hasDevName) FlashFilterManagerKind.Dev else FlashFilterManagerKind.Release
+}
+
+private fun WorkflowRun?.workflowState(): FlashFilterWorkflowState? = when {
+    this == null -> null
+    this.isActiveFlashRun() -> FlashFilterWorkflowState.Running
+    else -> FlashFilterWorkflowState.Finished
+}
+
+private fun WorkflowArtifactGroup.matchesFilter(
+    filter: FlashFilter,
+    summaries: Map<Long, BuildParameterSummary>,
+    runs: Map<Long, WorkflowRun>
+): Boolean {
+    val summary = summaries[runId]
+    val run = runs[runId]
+
+    val isKernel = hasKernelArtifact()
+    val isManager = hasManagerArtifact()
+    val state = run.workflowState()
+
+    if (isKernel && !filter.kernelEnabled) return false
+    if (isManager && !filter.managerEnabled) return false
+    if (state != null && !filter.workflowEnabled) return false
+
+    if (isKernel && filter.kernelKinds.isNotEmpty()) {
+        if (kernelKind(summary) !in filter.kernelKinds) return false
+    }
+    if (isManager && filter.managerKinds.isNotEmpty()) {
+        if (managerKind(summary) !in filter.managerKinds) return false
+    }
+    if (state != null && filter.workflowStates.isNotEmpty()) {
+        if (state !in filter.workflowStates) return false
+    }
+    return true
+}
+
+@StringRes
+private fun FlashFilterKernelKind.labelRes() = when (this) {
+    FlashFilterKernelKind.ResuKisu -> R.string.flash_filter_kernel_resukisu
+    FlashFilterKernelKind.SukiSu -> R.string.flash_filter_kernel_sukisu
+    FlashFilterKernelKind.Official -> R.string.flash_filter_kernel_official
+    FlashFilterKernelKind.None -> R.string.flash_filter_kernel_none
+}
+
+@StringRes
+private fun FlashFilterManagerKind.labelRes() = when (this) {
+    FlashFilterManagerKind.Release -> R.string.flash_filter_manager_release
+    FlashFilterManagerKind.Dev -> R.string.flash_filter_manager_dev
+}
+
+@StringRes
+private fun FlashFilterWorkflowState.labelRes() = when (this) {
+    FlashFilterWorkflowState.Running -> R.string.flash_filter_workflow_running
+    FlashFilterWorkflowState.Finished -> R.string.flash_filter_workflow_finished
+}
+
+@Composable
+private fun FlashFilterButton(
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    filter: FlashFilter,
+    onFilterChange: (FlashFilter) -> Unit
+) {
+    Box {
+        OutlinedButton(
+            onClick = { onExpandedChange(!expanded) },
+            contentPadding = PaddingValues(horizontal = 12.dp),
+            modifier = Modifier.height(40.dp)
+        ) {
+            Icon(
+                Icons.Default.FilterList,
+                contentDescription = stringResource(R.string.flash_filter_title),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+            modifier = Modifier.widthIn(min = 240.dp)
+        ) {
+            FilterCheckRow(
+                label = stringResource(R.string.flash_filter_kernel),
+                checked = filter.kernelEnabled,
+                onCheckedChange = { onFilterChange(filter.copy(kernelEnabled = it)) }
+            )
+            FlashFilterKernelKind.entries.forEach { kind ->
+                FilterCheckRow(
+                    label = stringResource(kind.labelRes()),
+                    checked = kind in filter.kernelKinds,
+                    indent = true,
+                    onCheckedChange = { add ->
+                        onFilterChange(
+                            filter.copy(
+                                kernelKinds = if (add) filter.kernelKinds + kind else filter.kernelKinds - kind
+                            )
+                        )
+                    }
+                )
+            }
+            HorizontalDivider()
+            FilterCheckRow(
+                label = stringResource(R.string.flash_filter_manager),
+                checked = filter.managerEnabled,
+                onCheckedChange = { onFilterChange(filter.copy(managerEnabled = it)) }
+            )
+            FlashFilterManagerKind.entries.forEach { kind ->
+                FilterCheckRow(
+                    label = stringResource(kind.labelRes()),
+                    checked = kind in filter.managerKinds,
+                    indent = true,
+                    onCheckedChange = { add ->
+                        onFilterChange(
+                            filter.copy(
+                                managerKinds = if (add) filter.managerKinds + kind else filter.managerKinds - kind
+                            )
+                        )
+                    }
+                )
+            }
+            HorizontalDivider()
+            FilterCheckRow(
+                label = stringResource(R.string.flash_filter_workflow),
+                checked = filter.workflowEnabled,
+                onCheckedChange = { onFilterChange(filter.copy(workflowEnabled = it)) }
+            )
+            FlashFilterWorkflowState.entries.forEach { st ->
+                FilterCheckRow(
+                    label = stringResource(st.labelRes()),
+                    checked = st in filter.workflowStates,
+                    indent = true,
+                    onCheckedChange = { add ->
+                        onFilterChange(
+                            filter.copy(
+                                workflowStates = if (add) filter.workflowStates + st else filter.workflowStates - st
+                            )
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterCheckRow(
+    label: String,
+    checked: Boolean,
+    indent: Boolean = false,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(start = if (indent) 32.dp else 12.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+    }
 }
