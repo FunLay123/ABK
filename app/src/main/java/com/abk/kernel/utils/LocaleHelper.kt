@@ -39,7 +39,16 @@ object LocaleHelper {
     private fun wrap(context: Context, locale: Locale): Context {
         Locale.setDefault(locale)
         val config = Configuration(context.resources.configuration)
-        config.setLocales(LocaleList(locale))
+        // Per-string fallback via LocaleList: Android 7+ resource framework picks the
+        // first locale that has a given string. The base values/ folder is Chinese
+        // (the historical "default"), so we always keep it as the last fallback.
+        // For non-Chinese users, English is preferred over Chinese.
+        val locales = when (locale.language) {
+            LANG_ZH -> LocaleList(locale)
+            LANG_EN -> LocaleList(locale, Locale.SIMPLIFIED_CHINESE)
+            else -> LocaleList(locale, Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE)
+        }
+        config.setLocales(locales)
         return context.createConfigurationContext(config)
     }
 
