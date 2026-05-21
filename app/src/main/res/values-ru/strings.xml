@@ -300,6 +300,17 @@
     <string name="flash_delete_remote_workflow">Также удалить удалённую запись workflow в GitHub Actions</string>
     <string name="flash_refresh_artifacts">Обновить артефакты сборки</string>
     <string name="flash_filter_title">Фильтр</string>
+    <string name="flash_chip_building">Сборка идёт</string>
+    <string name="flash_chip_kernel_kind">Ядро: %1$s</string>
+    <string name="flash_chip_susfs">SUSFS</string>
+    <string name="flash_chip_kernel_unknown">?</string>
+    <string name="flash_kernel_resukisu">ReSukiSU</string>
+    <string name="flash_kernel_sukisu">SukiSU</string>
+    <string name="flash_kernel_official">Official</string>
+    <string name="flash_kernel_none">None</string>
+    <string name="flash_cancel_build">Отменить сборку</string>
+    <string name="flash_building_title">Сборка в процессе</string>
+    <string name="flash_building_subtitle">Workflow выполняется, артефакты появятся после завершения.</string>
     <string name="flash_filter_kernel">Ядро</string>
     <string name="flash_filter_kernel_resukisu">ReSukiSU</string>
     <string name="flash_filter_kernel_sukisu">SukiSU</string>

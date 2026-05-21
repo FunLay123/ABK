@@ -323,6 +323,17 @@
     <string name="flash_delete_remote_workflow">Also delete remote GitHub Actions workflow record</string>
     <string name="flash_refresh_artifacts">Refresh build artifacts online</string>
     <string name="flash_filter_title">Filter</string>
+    <string name="flash_chip_building">Building</string>
+    <string name="flash_chip_kernel_kind">Kernel: %1$s</string>
+    <string name="flash_chip_susfs">SUSFS</string>
+    <string name="flash_chip_kernel_unknown">?</string>
+    <string name="flash_kernel_resukisu">ReSukiSU</string>
+    <string name="flash_kernel_sukisu">SukiSU</string>
+    <string name="flash_kernel_official">Official</string>
+    <string name="flash_kernel_none">None</string>
+    <string name="flash_cancel_build">Cancel build</string>
+    <string name="flash_building_title">Build in progress</string>
+    <string name="flash_building_subtitle">Workflow is running. Artifacts will appear once it finishes.</string>
     <string name="flash_filter_kernel">Kernel</string>
     <string name="flash_filter_kernel_resukisu">ReSukiSU</string>
     <string name="flash_filter_kernel_sukisu">SukiSU</string>

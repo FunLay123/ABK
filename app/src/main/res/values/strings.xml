@@ -323,6 +323,17 @@
     <string name="flash_delete_remote_workflow">同时删除远程 GitHub Actions 工作流记录</string>
     <string name="flash_refresh_artifacts">联网刷新构建产物</string>
     <string name="flash_filter_title">筛选</string>
+    <string name="flash_chip_building">正在构建</string>
+    <string name="flash_chip_kernel_kind">内核: %1$s</string>
+    <string name="flash_chip_susfs">SUSFS</string>
+    <string name="flash_chip_kernel_unknown">?</string>
+    <string name="flash_kernel_resukisu">ReSukiSU</string>
+    <string name="flash_kernel_sukisu">SukiSU</string>
+    <string name="flash_kernel_official">Official</string>
+    <string name="flash_kernel_none">None</string>
+    <string name="flash_cancel_build">取消构建</string>
+    <string name="flash_building_title">正在构建</string>
+    <string name="flash_building_subtitle">工作流正在运行，完成后会出现产物。</string>
     <string name="flash_filter_kernel">内核</string>
     <string name="flash_filter_kernel_resukisu">ReSukiSU</string>
     <string name="flash_filter_kernel_sukisu">SukiSU</string>

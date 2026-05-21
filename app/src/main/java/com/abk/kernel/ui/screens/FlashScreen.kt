@@ -123,6 +123,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
@@ -136,6 +137,7 @@ import com.abk.kernel.data.model.ArtifactCategory
 import com.abk.kernel.data.model.ArtifactType
 import com.abk.kernel.data.model.BuildArtifact
 import com.abk.kernel.data.model.BuildParameterSummary
+import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.BuildStatus
 import com.abk.kernel.data.model.DownloadedArtifact
 import com.abk.kernel.data.model.KernelBuildConfig
@@ -210,16 +212,38 @@ fun FlashScreen(
         }
     }
     val unlinkedWorkflowTitle = stringResource(R.string.workflow_unlinked)
-    val workflowGroups = remember(remoteArtifacts, workflowDownloadedArtifacts, unlinkedWorkflowTitle) {
-        buildWorkflowGroups(remoteArtifacts, workflowDownloadedArtifacts, unlinkedWorkflowTitle)
-    }
     val recentRunById = remember(state.recentRuns) { state.recentRuns.associateBy { it.id } }
+    val workflowGroups = remember(remoteArtifacts, workflowDownloadedArtifacts, unlinkedWorkflowTitle, recentRunById) {
+        buildWorkflowGroups(remoteArtifacts, workflowDownloadedArtifacts, unlinkedWorkflowTitle, recentRunById)
+    }
+    val allWorkflowGroups = remember(workflowGroups, state.recentRuns, recentRunById) {
+        val activeRunIds = state.recentRuns.filter { it.isActiveFlashRun() }.map { it.id }.toSet()
+        val extraGroups = activeRunIds
+            .filter { id -> workflowGroups.none { it.runId == id } }
+            .mapNotNull { id ->
+                val run = recentRunById[id] ?: return@mapNotNull null
+                WorkflowArtifactGroup(
+                    runId = run.id,
+                    runTitle = run.displayTitle?.ifBlank { null } ?: run.name.orEmpty(),
+                    runNumber = run.runNumber,
+                    runCreatedAt = run.createdAt,
+                    remote = emptyList(),
+                    local = emptyList()
+                )
+            }
+        (workflowGroups + extraGroups).sortedWith(
+            compareByDescending<WorkflowArtifactGroup> { it.runNumber }.thenByDescending { it.runId }
+        )
+    }
     var filter by rememberSaveable(stateSaver = FlashFilterSaver) { mutableStateOf(FlashFilter()) }
     var filterMenuExpanded by remember { mutableStateOf(false) }
-    val filteredGroups = remember(workflowGroups, filter, state.buildParameterSummaries, recentRunById) {
-        workflowGroups.filter { it.matchesFilter(filter, state.buildParameterSummaries, recentRunById) }
+    val filteredGroups = remember(allWorkflowGroups, filter, state.buildParameterSummaries, recentRunById) {
+        allWorkflowGroups.filter { it.matchesFilter(filter, state.buildParameterSummaries, recentRunById) }
     }
-    val selectedGroup = selectedRunId?.let { id -> workflowGroups.firstOrNull { it.runId == id } }
+    LaunchedEffect(allWorkflowGroups) {
+        allWorkflowGroups.forEach { vm.loadBuildParameterSummary(it.runId) }
+    }
+    val selectedGroup = selectedRunId?.let { id -> allWorkflowGroups.firstOrNull { it.runId == id } }
     val selectedPrebuiltRelease = selectedPrebuiltReleaseId?.let { id ->
         state.prebuiltGkiReleases.firstOrNull { it.id == id }
     }
@@ -264,7 +288,7 @@ fun FlashScreen(
         }
     }
 
-    LaunchedEffect(workflowGroups, selectedRunId) {
+    LaunchedEffect(allWorkflowGroups, selectedRunId) {
         if (selectedRunId != null && selectedGroup == null) returnToTopList()
     }
 
@@ -625,6 +649,7 @@ fun FlashScreen(
                                     val run = recentRunById[group.runId]
                                     WorkflowRunCard(
                                         group = group,
+                                        summary = state.buildParameterSummaries[group.runId],
                                         active = run?.isActiveFlashRun() == true,
                                         cancelling = group.runId in state.cancellingWorkflowRunIds,
                                         onClick = {
@@ -641,7 +666,7 @@ fun FlashScreen(
                                     )
                                 }
                             }
-                            workflowGroups.isNotEmpty() -> {
+                            allWorkflowGroups.isNotEmpty() -> {
                                 item {
                                     ExpressiveEmptyState(
                                         title = stringResource(R.string.flash_filter_empty),
@@ -790,10 +815,31 @@ fun FlashScreen(
                 arguments = listOf(navArgument(FLASH_ARG_RUN_ID) { type = NavType.LongType })
             ) { entry ->
                 val routeRunId = entry.arguments?.getLong(FLASH_ARG_RUN_ID) ?: return@composable
-                val group = workflowGroups.firstOrNull { it.runId == routeRunId }
+                val group = allWorkflowGroups.firstOrNull { it.runId == routeRunId }
                 LaunchedEffect(routeRunId) {
                     selectedRunId = routeRunId
                     selectedPrebuiltReleaseId = null
+                }
+                val activeRun = recentRunById[routeRunId]?.takeIf { it.isActiveFlashRun() }
+                if (activeRun != null && (group == null || group.remote.isEmpty())) {
+                    FlashDetailBackSurface(
+                        predictiveBackEnabled = state.predictiveBackEnabled,
+                        outerPadding = outerPadding,
+                        backgroundUri = state.customBackgroundUri,
+                        backgroundImageEnabled = state.backgroundImageEnabled,
+                        onBack = ::returnToWorkflowList,
+                        onVisibleChange = onDetailPageVisibleChange,
+                        backgroundContent = { FlashListContent() }
+                    ) {
+                        BuildingWorkflowDetail(
+                            run = activeRun,
+                            progress = if (state.currentRun?.id == routeRunId) state.buildProgress else state.buildProgressByRunId[routeRunId],
+                            cancelling = routeRunId in state.cancellingWorkflowRunIds,
+                            onBack = ::returnToWorkflowList,
+                            onCancel = { vm.cancelWorkflowRun(routeRunId) }
+                        )
+                    }
+                    return@composable
                 }
                 FlashDetailBackSurface(
                     predictiveBackEnabled = state.predictiveBackEnabled,
@@ -1933,6 +1979,7 @@ private fun prebuiltArtifactType(asset: PrebuiltGkiAsset): ArtifactType {
 @Composable
 private fun WorkflowRunCard(
     group: WorkflowArtifactGroup,
+    summary: BuildParameterSummary?,
     active: Boolean,
     cancelling: Boolean,
     onClick: () -> Unit,
@@ -1946,6 +1993,12 @@ private fun WorkflowRunCard(
         group.remote.any { DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) == category } ||
             group.local.any { it.category == category }
     }
+    val kernelKind = group.kernelKind(summary)
+    val susfsOn = run {
+        val v = summary?.susfsEnabled.orEmpty().lowercase().trim()
+        v.isNotBlank() && v !in setOf("false", "0", "no", "disabled", "off", "未启用", "未開啟", "未开启")
+    }
+    val dateLabel = group.runCreatedAt.take(10)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -2008,12 +2061,139 @@ private fun WorkflowRunCard(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                if (active) {
+                    ExpressiveStatusChip(
+                        label = stringResource(R.string.flash_chip_building),
+                        icon = Icons.Default.RunCircle,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+                ExpressiveStatusChip(
+                    label = stringResource(R.string.flash_chip_kernel_kind, stringResource(kernelKind.shortLabelRes())),
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                if (dateLabel.isNotBlank()) {
+                    ExpressiveStatusChip(label = dateLabel, color = MaterialTheme.colorScheme.primary)
+                }
+                if (susfsOn) {
+                    ExpressiveStatusChip(label = stringResource(R.string.flash_chip_susfs), color = MaterialTheme.colorScheme.primary)
+                }
                 ExpressiveStatusChip(label = stringResource(R.string.flash_source_artifacts_count, sourceCount), color = MaterialTheme.colorScheme.primary)
                 ExpressiveStatusChip(label = stringResource(R.string.flash_downloaded_count, downloadedCount), color = MaterialTheme.colorScheme.secondary)
                 categories.forEach {
                     ExpressiveStatusChip(label = stringResource(it.labelRes()), color = MaterialTheme.colorScheme.surfaceTint)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun BuildingWorkflowDetail(
+    run: WorkflowRun,
+    progress: BuildProgress?,
+    cancelling: Boolean,
+    onBack: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = AbkScreenHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.flash_back))
+            }
+            Text(
+                text = stringResource(R.string.flash_building_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        ExpressiveSectionCard(
+            title = stringResource(
+                R.string.flash_workflow_label,
+                if (run.runNumber > 0) "#${run.runNumber}" else "#${run.id}"
+            ),
+            subtitle = run.displayTitle ?: run.name.orEmpty(),
+            icon = Icons.Default.RunCircle
+        ) {
+            Text(
+                text = stringResource(R.string.flash_building_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = true),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                LoadingIndicator(Modifier.size(96.dp))
+                if (progress != null && progress.totalSteps > 0) {
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = (progress.percent / 100f).coerceIn(0f, 1f),
+                        label = "building-detail"
+                    )
+                    LinearProgressIndicator(
+                        progress = { animatedProgress },
+                        modifier = Modifier.fillMaxWidth(0.7f).height(12.dp)
+                    )
+                    Text(
+                        text = "${progress.percent}% · ${progress.currentStep}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.flash_building_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        Button(
+            onClick = onCancel,
+            enabled = !cancelling,
+            shape = RoundedCornerShape(28.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .padding(bottom = 16.dp)
+        ) {
+            if (cancelling) {
+                LoadingIndicator(Modifier.size(20.dp))
+            } else {
+                Icon(Icons.Default.Cancel, null, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                stringResource(R.string.flash_cancel_build),
+                style = MaterialTheme.typography.titleMedium
+            )
         }
     }
 }
@@ -2393,7 +2573,8 @@ private fun FlashTerminalDialog(
 private fun buildWorkflowGroups(
     remoteArtifacts: List<BuildArtifact>,
     downloadedArtifacts: List<DownloadedArtifact>,
-    unlinkedWorkflowTitle: String
+    unlinkedWorkflowTitle: String,
+    runs: Map<Long, WorkflowRun> = emptyMap()
 ): List<WorkflowArtifactGroup> {
     val runIds = (remoteArtifacts.map { it.runId } + downloadedArtifacts.map { it.runId }).distinct()
     return runIds.map { runId ->
@@ -2401,12 +2582,16 @@ private fun buildWorkflowGroups(
         val local = downloadedArtifacts.filter { it.runId == runId }
         val firstRemote = remote.firstOrNull()
         val firstLocal = local.firstOrNull()
+        val runCreatedAt = runs[runId]?.createdAt
+            ?: firstRemote?.runCreatedAt
+            ?: ""
         WorkflowArtifactGroup(
             runId = runId,
             runTitle = firstRemote?.runTitle?.ifBlank { null }
                 ?: firstLocal?.runTitle?.ifBlank { null }
                 ?: unlinkedWorkflowTitle,
             runNumber = firstRemote?.runNumber ?: firstLocal?.runNumber ?: 0,
+            runCreatedAt = runCreatedAt,
             remote = remote,
             local = local
         )
@@ -2420,6 +2605,7 @@ private data class WorkflowArtifactGroup(
     val runId: Long,
     val runTitle: String,
     val runNumber: Int,
+    val runCreatedAt: String,
     val remote: List<BuildArtifact>,
     val local: List<DownloadedArtifact>
 )
@@ -2746,6 +2932,14 @@ private fun FlashFilterKernelKind.labelRes() = when (this) {
     FlashFilterKernelKind.SukiSu -> R.string.flash_filter_kernel_sukisu
     FlashFilterKernelKind.Official -> R.string.flash_filter_kernel_official
     FlashFilterKernelKind.None -> R.string.flash_filter_kernel_none
+}
+
+@StringRes
+private fun FlashFilterKernelKind.shortLabelRes() = when (this) {
+    FlashFilterKernelKind.ResuKisu -> R.string.flash_kernel_resukisu
+    FlashFilterKernelKind.SukiSu -> R.string.flash_kernel_sukisu
+    FlashFilterKernelKind.Official -> R.string.flash_kernel_official
+    FlashFilterKernelKind.None -> R.string.flash_kernel_none
 }
 
 @StringRes
