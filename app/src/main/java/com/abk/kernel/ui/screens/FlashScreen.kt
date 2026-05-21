@@ -39,7 +39,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -84,8 +83,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -128,6 +125,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.delay
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -243,8 +241,15 @@ fun FlashScreen(
     val filteredGroups = remember(allWorkflowGroups, filter, state.buildParameterSummaries, recentRunById) {
         allWorkflowGroups.filter { it.matchesFilter(filter, state.buildParameterSummaries, recentRunById) }
     }
-    LaunchedEffect(allWorkflowGroups) {
-        allWorkflowGroups.forEach { vm.loadBuildParameterSummary(it.runId) }
+    // Stagger summary loads so the first frame of the list isn't blocked by N
+    // simultaneous GitHub API calls (caused both UI jank and "Read timed out"
+    // errors when the workflow list was long). VM dedupes already-loaded ids.
+    LaunchedEffect(allWorkflowGroups.map { it.runId }) {
+        delay(200)
+        allWorkflowGroups.forEach { group ->
+            vm.loadBuildParameterSummary(group.runId)
+            delay(150)
+        }
     }
     val selectedGroup = selectedRunId?.let { id -> allWorkflowGroups.firstOrNull { it.runId == id } }
     val selectedPrebuiltRelease = selectedPrebuiltReleaseId?.let { id ->
@@ -2018,7 +2023,18 @@ private fun WorkflowRunCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Default.FolderSpecial, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                if (active) {
+                    LoadingIndicator(
+                        modifier = Modifier.size(22.dp)
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.FolderSpecial,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = if (group.runId == PREBUILT_GKI_RUN_ID) {
@@ -2064,13 +2080,14 @@ private fun WorkflowRunCard(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                if (active) {
-                    BuildingStatusChip()
+                // Kernel kind chip only renders once the run summary has been loaded —
+                // otherwise it would always say "Ядро: None" for in-progress builds.
+                if (summary != null) {
+                    ExpressiveStatusChip(
+                        label = stringResource(R.string.flash_chip_kernel_kind, stringResource(kernelKind.shortLabelRes())),
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
                 }
-                ExpressiveStatusChip(
-                    label = stringResource(R.string.flash_chip_kernel_kind, stringResource(kernelKind.shortLabelRes())),
-                    color = MaterialTheme.colorScheme.tertiary
-                )
                 if (dateLabel.isNotBlank()) {
                     ExpressiveStatusChip(label = dateLabel, color = MaterialTheme.colorScheme.primary)
                 }
@@ -2134,7 +2151,16 @@ private fun BuildingWorkflowDetail(
             }
         }
 
-        artifactCategoryOrder.forEach { category ->
+        // Hide irrelevant categories: a manager-only build doesn't produce kernel artifacts
+        // or modules, so only show "Manager artifacts" for it. Kernel / hybrid builds keep
+        // all three sections.
+        val isPureManager = run.looksLikeManagerByName() && !run.looksLikeKernelByName()
+        val visibleCategories = if (isPureManager) {
+            listOf(ArtifactCategory.MANAGER)
+        } else {
+            artifactCategoryOrder
+        }
+        visibleCategories.forEach { category ->
             item("category-build-${category.name}") {
                 CategoryHeader(category)
             }
@@ -2921,33 +2947,6 @@ private fun WorkflowRun?.workflowState(): FlashFilterWorkflowState? = when {
     this == null -> null
     this.isActiveFlashRun() -> FlashFilterWorkflowState.Running
     else -> FlashFilterWorkflowState.Finished
-}
-
-@Composable
-private fun BuildingStatusChip() {
-    val color = MaterialTheme.colorScheme.secondary
-    AssistChip(
-        onClick = {},
-        label = {
-            Text(
-                text = stringResource(R.string.flash_chip_building),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
-        modifier = Modifier.wrapContentHeight(),
-        enabled = false,
-        leadingIcon = {
-            LoadingIndicator(modifier = Modifier.size(16.dp))
-        },
-        colors = AssistChipDefaults.assistChipColors(
-            disabledContainerColor = uiSurfaceColor(color.copy(alpha = 0.14f)),
-            disabledLabelColor = color,
-            disabledLeadingIconContentColor = color
-        ),
-        elevation = null,
-        border = null
-    )
 }
 
 private fun WorkflowRun?.looksLikeManagerByName(): Boolean {
