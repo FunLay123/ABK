@@ -596,8 +596,18 @@ enum class BuildStatus {
  */
 fun WorkflowRun.isKernelBuild(): Boolean {
     val lower = "${name.orEmpty()} ${displayTitle.orEmpty()}".lowercase()
-    if ("manager" in lower || "ksu manager" in lower || "sukisu manager" in lower) return false
-    if ("kernel" in lower) return true
-    // Historically only kernel was built; default to true to preserve old behavior.
-    return true
+    // Negative signals: app / manager / certificate / utility workflows.
+    if ("abk app" in lower || "abk-app" in lower ||
+        "build app" in lower || "build-app" in lower ||
+        "debug apk" in lower ||
+        "manager" in lower || "ksu manager" in lower || "sukisu manager" in lower ||
+        "getmanager" in lower || "get manager" in lower ||
+        "管理器" in lower ||
+        "certificate" in lower || "证书" in lower ||
+        "emergency" in lower || "auto trigger" in lower
+    ) return false
+    // Positive signals: kernel build.
+    if ("kernel" in lower || "内核" in lower) return true
+    // Unknown — be conservative and exclude it from the kernel-only tile.
+    return false
 }

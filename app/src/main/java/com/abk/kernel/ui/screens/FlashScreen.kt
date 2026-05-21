@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -83,6 +84,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -2062,11 +2065,7 @@ private fun WorkflowRunCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 if (active) {
-                    ExpressiveStatusChip(
-                        label = stringResource(R.string.flash_chip_building),
-                        icon = Icons.Default.RunCircle,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
+                    BuildingStatusChip()
                 }
                 ExpressiveStatusChip(
                     label = stringResource(R.string.flash_chip_kernel_kind, stringResource(kernelKind.shortLabelRes())),
@@ -2096,104 +2095,133 @@ private fun BuildingWorkflowDetail(
     onBack: () -> Unit,
     onCancel: () -> Unit
 ) {
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
             .padding(horizontal = AbkScreenHorizontalPadding),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 32.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.flash_back))
-            }
-            Text(
-                text = stringResource(R.string.flash_building_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        ExpressiveSectionCard(
-            title = stringResource(
-                R.string.flash_workflow_label,
-                if (run.runNumber > 0) "#${run.runNumber}" else "#${run.id}"
-            ),
-            subtitle = run.displayTitle ?: run.name.orEmpty(),
-            icon = Icons.Default.RunCircle
-        ) {
-            Text(
-                text = stringResource(R.string.flash_building_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f, fill = true),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+        item {
+            // Header mirrors WorkflowDetailHeader visually (same ExpressiveSectionCard +
+            // back-button row), but without artifact-counts / parameters / delete actions.
+            ExpressiveSectionCard(
+                title = stringResource(
+                    R.string.flash_workflow_label,
+                    if (run.runNumber > 0) "#${run.runNumber}" else "#${run.id}"
+                ),
+                subtitle = run.displayTitle ?: run.name.orEmpty(),
+                icon = Icons.Default.FolderSpecial
             ) {
-                LoadingIndicator(Modifier.size(96.dp))
-                if (progress != null && progress.totalSteps > 0) {
-                    val animatedProgress by animateFloatAsState(
-                        targetValue = (progress.percent / 100f).coerceIn(0f, 1f),
-                        label = "building-detail"
-                    )
-                    LinearProgressIndicator(
-                        progress = { animatedProgress },
-                        modifier = Modifier.fillMaxWidth(0.7f).height(12.dp)
-                    )
-                    Text(
-                        text = "${progress.percent}% · ${progress.currentStep}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center
-                    )
-                } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = stringResource(R.string.flash_back)
+                        )
+                    }
                     Text(
                         text = stringResource(R.string.flash_building_subtitle),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
         }
 
-        Button(
-            onClick = onCancel,
-            enabled = !cancelling,
-            shape = RoundedCornerShape(28.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer
-            ),
+        artifactCategoryOrder.forEach { category ->
+            item("category-build-${category.name}") {
+                CategoryHeader(category)
+            }
+            item("progress-${category.name}") {
+                CategoryProgressCard(progress = progress)
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onCancel,
+                enabled = !cancelling,
+                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+            ) {
+                if (cancelling) {
+                    LoadingIndicator(Modifier.size(20.dp))
+                } else {
+                    Icon(Icons.Default.Cancel, null, modifier = Modifier.size(20.dp))
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.flash_cancel_build),
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryProgressCard(progress: BuildProgress?) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer)
+        )
+    ) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
-                .padding(bottom = 16.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (cancelling) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 LoadingIndicator(Modifier.size(20.dp))
-            } else {
-                Icon(Icons.Default.Cancel, null, modifier = Modifier.size(20.dp))
+                Text(
+                    text = if (progress != null && progress.totalSteps > 0) {
+                        "${progress.percent}% · ${progress.currentStep}"
+                    } else {
+                        stringResource(R.string.flash_building_subtitle)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
             }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                stringResource(R.string.flash_cancel_build),
-                style = MaterialTheme.typography.titleMedium
-            )
+            if (progress != null && progress.totalSteps > 0) {
+                val animatedProgress by animateFloatAsState(
+                    targetValue = (progress.percent / 100f).coerceIn(0f, 1f),
+                    label = "category-progress"
+                )
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                )
+            } else {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                )
+            }
         }
     }
 }
@@ -2828,7 +2856,6 @@ private data class FlashFilter(
     val kernelKinds: Set<FlashFilterKernelKind> = emptySet(),
     val managerEnabled: Boolean = true,
     val managerKinds: Set<FlashFilterManagerKind> = setOf(FlashFilterManagerKind.Release),
-    val workflowEnabled: Boolean = true,
     val workflowStates: Set<FlashFilterWorkflowState> = emptySet(),
 )
 
@@ -2839,7 +2866,6 @@ private val FlashFilterSaver = androidx.compose.runtime.saveable.Saver<FlashFilt
             "kk" to f.kernelKinds.joinToString(",") { it.name },
             "me" to f.managerEnabled.toString(),
             "mk" to f.managerKinds.joinToString(",") { it.name },
-            "we" to f.workflowEnabled.toString(),
             "ws" to f.workflowStates.joinToString(",") { it.name }
         )
     },
@@ -2853,7 +2879,6 @@ private val FlashFilterSaver = androidx.compose.runtime.saveable.Saver<FlashFilt
             managerKinds = m["mk"]?.takeIf { it.isNotBlank() }?.split(",")
                 ?.mapNotNull { runCatching { FlashFilterManagerKind.valueOf(it) }.getOrNull() }
                 ?.toSet() ?: setOf(FlashFilterManagerKind.Release),
-            workflowEnabled = m["we"]?.toBooleanStrictOrNull() ?: true,
             workflowStates = m["ws"]?.takeIf { it.isNotBlank() }?.split(",")
                 ?.mapNotNull { runCatching { FlashFilterWorkflowState.valueOf(it) }.getOrNull() }
                 ?.toSet() ?: emptySet(),
@@ -2898,6 +2923,52 @@ private fun WorkflowRun?.workflowState(): FlashFilterWorkflowState? = when {
     else -> FlashFilterWorkflowState.Finished
 }
 
+@Composable
+private fun BuildingStatusChip() {
+    val color = MaterialTheme.colorScheme.secondary
+    AssistChip(
+        onClick = {},
+        label = {
+            Text(
+                text = stringResource(R.string.flash_chip_building),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        modifier = Modifier.wrapContentHeight(),
+        enabled = false,
+        leadingIcon = {
+            LoadingIndicator(modifier = Modifier.size(16.dp))
+        },
+        colors = AssistChipDefaults.assistChipColors(
+            disabledContainerColor = uiSurfaceColor(color.copy(alpha = 0.14f)),
+            disabledLabelColor = color,
+            disabledLeadingIconContentColor = color
+        ),
+        elevation = null,
+        border = null
+    )
+}
+
+private fun WorkflowRun?.looksLikeManagerByName(): Boolean {
+    if (this == null) return false
+    val n = (name ?: "").lowercase() + " " + (displayTitle ?: "").lowercase()
+    return "abk app" in n || "abk-app" in n || "build app" in n ||
+        "manager" in n || "管理器" in n || "getmanager" in n
+}
+
+private fun WorkflowRun?.looksLikeKernelByName(): Boolean {
+    if (this == null) return false
+    val n = (name ?: "").lowercase() + " " + (displayTitle ?: "").lowercase()
+    return "kernel" in n || "内核" in n
+}
+
+private fun WorkflowArtifactGroup.isKernelLike(run: WorkflowRun?): Boolean =
+    hasKernelArtifact() || (remote.isEmpty() && run.looksLikeKernelByName())
+
+private fun WorkflowArtifactGroup.isManagerLike(run: WorkflowRun?): Boolean =
+    hasManagerArtifact() || (remote.isEmpty() && run.looksLikeManagerByName())
+
 private fun WorkflowArtifactGroup.matchesFilter(
     filter: FlashFilter,
     summaries: Map<Long, BuildParameterSummary>,
@@ -2905,25 +2976,29 @@ private fun WorkflowArtifactGroup.matchesFilter(
 ): Boolean {
     val summary = summaries[runId]
     val run = runs[runId]
-
-    val isKernel = hasKernelArtifact()
-    val isManager = hasManagerArtifact()
     val state = run.workflowState()
 
-    if (isKernel && !filter.kernelEnabled) return false
-    if (isManager && !filter.managerEnabled) return false
-    if (state != null && !filter.workflowEnabled) return false
+    // Running/Finished subfilter (no top-level Workflow toggle anymore).
+    if (filter.workflowStates.isNotEmpty()) {
+        if (state == null || state !in filter.workflowStates) return false
+    }
 
-    if (isKernel && filter.kernelKinds.isNotEmpty()) {
-        if (kernelKind(summary) !in filter.kernelKinds) return false
-    }
-    if (isManager && filter.managerKinds.isNotEmpty()) {
-        if (managerKind(summary) !in filter.managerKinds) return false
-    }
-    if (state != null && filter.workflowStates.isNotEmpty()) {
-        if (state !in filter.workflowStates) return false
-    }
-    return true
+    val isKernel = isKernelLike(run)
+    val isManager = isManagerLike(run)
+
+    // Workflow that doesn't look like kernel or manager — keep visible.
+    if (!isKernel && !isManager) return true
+
+    // OR-logic: a hybrid (kernel + bundled manager artifact) stays visible if EITHER
+    // its kernel side OR its manager side passes the filter. So unticking "Менеджер"
+    // alone keeps kernel workflows even when they happen to bundle a KSU manager APK.
+    val passKernel = isKernel &&
+        filter.kernelEnabled &&
+        (filter.kernelKinds.isEmpty() || kernelKind(summary) in filter.kernelKinds)
+    val passManager = isManager &&
+        filter.managerEnabled &&
+        (filter.managerKinds.isEmpty() || managerKind(summary) in filter.managerKinds)
+    return passKernel || passManager
 }
 
 @StringRes
@@ -3018,16 +3093,11 @@ private fun FlashFilterButton(
                 )
             }
             HorizontalDivider()
-            FilterCheckRow(
-                label = stringResource(R.string.flash_filter_workflow),
-                checked = filter.workflowEnabled,
-                onCheckedChange = { onFilterChange(filter.copy(workflowEnabled = it)) }
-            )
+            // No top-level "Workflow" toggle — only Running/Finished sub-filters.
             FlashFilterWorkflowState.entries.forEach { st ->
                 FilterCheckRow(
                     label = stringResource(st.labelRes()),
                     checked = st in filter.workflowStates,
-                    indent = true,
                     onCheckedChange = { add ->
                         onFilterChange(
                             filter.copy(
