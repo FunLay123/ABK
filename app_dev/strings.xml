@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">AnyBase Kernel Dev</string>
-    <string name="app_full_name">AnyBase Kernel Dev</string>
+    <string name="app_name">AnyBase Kernel</string>
+    <string name="app_full_name">AnyBase Kernel</string>
 
     <!-- Bottom nav -->
     <string name="nav_status">当前状态</string>
@@ -322,6 +322,30 @@
     <string name="flash_delete_workflow_msg">将删除此工作流在 ABK 中缓存的产物记录，并删除本地已下载文件。\n\n工作流 %1$s</string>
     <string name="flash_delete_remote_workflow">同时删除远程 GitHub Actions 工作流记录</string>
     <string name="flash_refresh_artifacts">联网刷新构建产物</string>
+    <string name="flash_filter_title">筛选</string>
+    <string name="flash_chip_building">正在构建</string>
+    <string name="flash_chip_kernel_kind">内核: %1$s</string>
+    <string name="flash_chip_susfs">SUSFS</string>
+    <string name="flash_chip_kernel_unknown">?</string>
+    <string name="flash_kernel_resukisu">ReSukiSU</string>
+    <string name="flash_kernel_sukisu">SukiSU</string>
+    <string name="flash_kernel_official">Official</string>
+    <string name="flash_kernel_none">None</string>
+    <string name="flash_cancel_build">取消构建</string>
+    <string name="flash_building_title">正在构建</string>
+    <string name="flash_building_subtitle">工作流正在运行，完成后会出现产物。</string>
+    <string name="flash_filter_kernel">内核</string>
+    <string name="flash_filter_kernel_resukisu">ReSukiSU</string>
+    <string name="flash_filter_kernel_sukisu">SukiSU</string>
+    <string name="flash_filter_kernel_official">Official KernelSU</string>
+    <string name="flash_filter_kernel_none">无 KSU</string>
+    <string name="flash_filter_manager">管理器</string>
+    <string name="flash_filter_manager_release">Release</string>
+    <string name="flash_filter_manager_dev">Dev</string>
+    <string name="flash_filter_workflow">Workflow</string>
+    <string name="flash_filter_workflow_running">正在运行</string>
+    <string name="flash_filter_workflow_finished">已完成</string>
+    <string name="flash_filter_empty">当前筛选条件下没有匹配项。请重置筛选条件。</string>
     <string name="flash_empty_flash_title">暂无可刷写产物</string>
     <string name="flash_empty_files_title">暂无可查看文件</string>
     <string name="flash_empty_flash_desc">构建成功后，ABK 会联网同步并按工作流整理产物。</string>
