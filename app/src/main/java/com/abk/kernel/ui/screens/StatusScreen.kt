@@ -147,12 +147,12 @@ fun StatusScreen(
                 icon = Icons.Default.RunCircle,
                 containerColor = MaterialTheme.colorScheme.surfaceVariant
             ) {
-                when (state.buildStatus) {
+                when (state.kernelBuildStatus) {
                     BuildStatus.IDLE -> StatusRow(Icons.Default.HourglassEmpty, stringResource(R.string.status_no_running_build), false)
                     BuildStatus.QUEUED -> StatusRow(
                         Icons.Default.Queue,
-                        if (state.activeBuildRuns.size > 1) {
-                            stringResource(R.string.status_parallel_build_waiting_runner, state.activeBuildRuns.size)
+                        if (state.kernelActiveBuildRuns.size > 1) {
+                            stringResource(R.string.status_parallel_build_waiting_runner, state.kernelActiveBuildRuns.size)
                         } else {
                             stringResource(R.string.status_build_waiting_runner)
                         },
@@ -167,7 +167,10 @@ fun StatusScreen(
                     BuildStatus.FAILURE -> StatusRow(Icons.Default.Error, stringResource(R.string.status_recent_build_failed), true)
                     BuildStatus.CANCELLED -> StatusRow(Icons.Default.Cancel, stringResource(R.string.status_build_cancelled), true)
                 }
-                if (state.buildProgress.totalSteps > 0) {
+                if (state.kernelCurrentRun != null &&
+                    state.kernelCurrentRun.id == state.currentRun?.id &&
+                    state.buildProgress.totalSteps > 0
+                ) {
                     Spacer(Modifier.height(8.dp))
                     val animatedProgress by animateFloatAsState(
                         targetValue = (state.buildProgress.percent / 100f).coerceIn(0f, 1f),
@@ -184,8 +187,8 @@ fun StatusScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                val showSingleRunAction = state.activeBuildRuns.size <= 1
-                state.currentRun?.takeIf { showSingleRunAction }?.let { run ->
+                val showSingleRunAction = state.kernelActiveBuildRuns.size <= 1
+                state.kernelCurrentRun?.takeIf { showSingleRunAction }?.let { run ->
                     Spacer(Modifier.height(4.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -229,9 +232,9 @@ fun StatusScreen(
                         }
                     }
                 }
-                if (state.activeBuildRuns.size > 1) {
+                if (state.kernelActiveBuildRuns.size > 1) {
                     Text(
-                        stringResource(R.string.status_parallel_workflows_desc, state.activeBuildRuns.size),
+                        stringResource(R.string.status_parallel_workflows_desc, state.kernelActiveBuildRuns.size),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

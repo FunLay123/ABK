@@ -82,6 +82,12 @@ data class MainUiState(
     val recentRuns: List<WorkflowRun> = emptyList(),
     val buildProgress: BuildProgress = BuildProgress(),
     val activeBuildRuns: List<WorkflowRun> = emptyList(),
+    // Kernel-only mirrors of buildStatus/currentRun/activeBuildRuns. Used by the
+    // Status screen "Last build" tile so it reflects only kernel-build activity
+    // (filtering out manager builds such as KSU Manager / SukiSU Manager).
+    val kernelBuildStatus: BuildStatus = BuildStatus.IDLE,
+    val kernelCurrentRun: WorkflowRun? = null,
+    val kernelActiveBuildRuns: List<WorkflowRun> = emptyList(),
     val buildProgressByRunId: Map<Long, BuildProgress> = emptyMap(),
     val buildConfig: KernelBuildConfig = KernelBuildConfig(),
     val buildPlans: List<BuildPlan> = emptyList(),
@@ -1440,7 +1446,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         buildStatus = BuildStatus.QUEUED,
-                        buildProgress = BuildProgress(percent = 0, currentStep = text(R.string.build_queue_dispatching))
+                        buildProgress = BuildProgress(percent = 0, currentStep = text(R.string.build_queue_dispatching)),
+                        kernelBuildStatus = BuildStatus.QUEUED
                     )
                 }
                 val previousRunId = when (val prior = github.listRecentRuns(username, repoName, 1, wfId)) {
@@ -1452,7 +1459,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _uiState.update {
                             it.copy(
                                 buildStatus = BuildStatus.QUEUED,
-                                buildProgress = BuildProgress(percent = 0, currentStep = text(R.string.build_queued))
+                                buildProgress = BuildProgress(percent = 0, currentStep = text(R.string.build_queued)),
+                                kernelBuildStatus = BuildStatus.QUEUED
                             )
                         }
                         delay(5000)
@@ -1466,12 +1474,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 workflowActionsUrl(username, repoName, workflowFile)
                             )
                         } else {
-                            _uiState.update { it.copy(error = r.message, buildStatus = BuildStatus.FAILURE) }
+                            _uiState.update {
+                                it.copy(
+                                    error = r.message,
+                                    buildStatus = BuildStatus.FAILURE,
+                                    kernelBuildStatus = BuildStatus.FAILURE
+                                )
+                            }
                         }
                     }
                     Result.Loading -> {
                         markBuildQueueItemFailed(next.id, text(R.string.vm_build_dispatch_no_result))
-                        _uiState.update { it.copy(buildStatus = BuildStatus.FAILURE) }
+                        _uiState.update {
+                            it.copy(
+                                buildStatus = BuildStatus.FAILURE,
+                                kernelBuildStatus = BuildStatus.FAILURE
+                            )
+                        }
                     }
                 }
             } finally {
@@ -1536,7 +1555,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update {
             it.copy(
                 error = text(R.string.vm_build_run_not_found),
-                buildStatus = BuildStatus.FAILURE
+                buildStatus = BuildStatus.FAILURE,
+                kernelBuildStatus = BuildStatus.FAILURE
             )
         }
         queueItemId?.let { markBuildQueueItemFailed(it, text(R.string.vm_build_run_not_found_short)) }
@@ -4538,13 +4558,22 @@ private fun MainUiState.withBuildRunDisplay(
         fallbackStatus = status,
         fallbackProgress = progress
     )
+    val kernelActive = updatedRuns.filter { it.isKernelBuild() }
+    val kernelDisplay = kernelBuildDisplaySnapshot(
+        kernelActiveRuns = kernelActive,
+        fallbackRun = if (run.isKernelBuild()) run else kernelCurrentRun,
+        fallbackStatus = if (run.isKernelBuild()) status else kernelBuildStatus
+    )
     return copy(
         buildStatus = display.status,
         currentRun = display.currentRun,
         buildProgress = display.progress,
         activeBuildRuns = updatedRuns,
         buildProgressByRunId = updatedProgressByRunId,
-        cancellingWorkflowRunIds = cancellingWorkflowRunIds
+        cancellingWorkflowRunIds = cancellingWorkflowRunIds,
+        kernelBuildStatus = kernelDisplay.status,
+        kernelCurrentRun = kernelDisplay.currentRun,
+        kernelActiveBuildRuns = kernelActive
     )
 }
 
@@ -4563,12 +4592,52 @@ private fun MainUiState.withoutActiveBuildRun(
         fallbackStatus = fallbackStatus,
         fallbackProgress = fallbackProgress
     )
+    val kernelActive = updatedRuns.filter { it.isKernelBuild() }
+    val kernelFallbackRun = (fallbackRun?.takeIf { it.isKernelBuild() && it.id != runId })
+        ?: kernelCurrentRun?.takeUnless { it.id == runId }
+    val kernelFallbackStatus = if (kernelCurrentRun?.id == runId) fallbackStatus else kernelBuildStatus
+    val kernelDisplay = kernelBuildDisplaySnapshot(
+        kernelActiveRuns = kernelActive,
+        fallbackRun = kernelFallbackRun,
+        fallbackStatus = kernelFallbackStatus
+    )
     return copy(
         buildStatus = display.status,
         currentRun = display.currentRun,
         buildProgress = display.progress,
         activeBuildRuns = updatedRuns,
-        buildProgressByRunId = updatedProgressByRunId
+        buildProgressByRunId = updatedProgressByRunId,
+        kernelBuildStatus = kernelDisplay.status,
+        kernelCurrentRun = kernelDisplay.currentRun,
+        kernelActiveBuildRuns = kernelActive
+    )
+}
+
+private data class KernelBuildDisplaySnapshot(
+    val status: BuildStatus,
+    val currentRun: WorkflowRun?
+)
+
+private fun kernelBuildDisplaySnapshot(
+    kernelActiveRuns: List<WorkflowRun>,
+    fallbackRun: WorkflowRun?,
+    fallbackStatus: BuildStatus
+): KernelBuildDisplaySnapshot {
+    val sortedRuns = kernelActiveRuns
+        .filter { it.isActiveBuildRun() }
+        .distinctBy { it.id }
+        .sortedByDescending { it.id }
+    if (sortedRuns.isEmpty()) {
+        return KernelBuildDisplaySnapshot(fallbackStatus, fallbackRun)
+    }
+    val status = if (sortedRuns.any { it.status == "in_progress" }) {
+        BuildStatus.IN_PROGRESS
+    } else {
+        BuildStatus.QUEUED
+    }
+    return KernelBuildDisplaySnapshot(
+        status = status,
+        currentRun = sortedRuns.firstOrNull()
     )
 }
 

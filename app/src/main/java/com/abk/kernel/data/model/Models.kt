@@ -586,3 +586,18 @@ fun ArtifactType.toArtifactCategory(): ArtifactCategory = when (this) {
 enum class BuildStatus {
     IDLE, QUEUED, IN_PROGRESS, SUCCESS, FAILURE, CANCELLED
 }
+
+/**
+ * Heuristic check whether this workflow run is a kernel build (as opposed to a
+ * manager build such as KSU Manager or SukiSU Manager).
+ *
+ * Used by the Status screen "Last build" tile so it reflects only kernel-build
+ * activity even when other workflows (e.g. manager builds) are running.
+ */
+fun WorkflowRun.isKernelBuild(): Boolean {
+    val lower = "${name.orEmpty()} ${displayTitle.orEmpty()}".lowercase()
+    if ("manager" in lower || "ksu manager" in lower || "sukisu manager" in lower) return false
+    if ("kernel" in lower) return true
+    // Historically only kernel was built; default to true to preserve old behavior.
+    return true
+}
