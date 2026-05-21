@@ -622,7 +622,7 @@ private fun SettingsMainContent(
                 val forkUrl = state.forkRepo?.let { repo ->
                     repo.htmlUrl.takeIf { it.isNotBlank() } ?: "https://github.com/${repo.fullName}"
                 }
-                val openCtx = context
+                val openCtx = LocalContext.current
                 val onForkClick: (() -> Unit)? = if (forkUrl != null) {
                     { openUrl(openCtx, forkUrl) }
                 } else null
