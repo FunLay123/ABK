@@ -451,7 +451,9 @@
     <string name="status_root">Root status</string>
     <string name="status_login">Login status</string>
     <string name="status_fork">Fork status</string>
-    <string name="status_build">Recent build</string>
+    <string name="status_build">Recent kernel build</string>
+    <string name="status_manager_build">Recent manager build</string>
+    <string name="status_manager_progress_sync">Manager app build (KSU Manager / Build ABK App)</string>
     <string name="status_not_login">Not signed in</string>
     <string name="status_no_fork">No fork</string>
     <string name="status_no_build">No build records</string>

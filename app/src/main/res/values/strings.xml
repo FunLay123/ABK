@@ -451,7 +451,9 @@
     <string name="status_root">Root 状态</string>
     <string name="status_login">登录状态</string>
     <string name="status_fork">Fork 状态</string>
-    <string name="status_build">最近构建</string>
+    <string name="status_build">最近内核构建</string>
+    <string name="status_manager_build">最近管理器构建</string>
+    <string name="status_manager_progress_sync">管理器应用构建 (KSU Manager / Build ABK App)</string>
     <string name="status_not_login">未登录</string>
     <string name="status_no_fork">未 Fork</string>
     <string name="status_no_build">暂无构建记录</string>

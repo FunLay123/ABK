@@ -88,6 +88,12 @@ data class MainUiState(
     val kernelBuildStatus: BuildStatus = BuildStatus.IDLE,
     val kernelCurrentRun: WorkflowRun? = null,
     val kernelActiveBuildRuns: List<WorkflowRun> = emptyList(),
+    // Manager-only build mirror, symmetric to the kernel one above. Lets the
+    // Status screen surface a Manager-App build (Build ABK App / KSU Manager)
+    // independently of any kernel work.
+    val managerBuildStatus: BuildStatus = BuildStatus.IDLE,
+    val managerCurrentRun: WorkflowRun? = null,
+    val managerActiveBuildRuns: List<WorkflowRun> = emptyList(),
     val buildProgressByRunId: Map<Long, BuildProgress> = emptyMap(),
     val buildConfig: KernelBuildConfig = KernelBuildConfig(),
     val buildPlans: List<BuildPlan> = emptyList(),
@@ -4646,6 +4652,12 @@ private fun MainUiState.withBuildRunDisplay(
         fallbackRun = if (run.isKernelBuild()) run else kernelCurrentRun,
         fallbackStatus = if (run.isKernelBuild()) status else kernelBuildStatus
     )
+    val managerActive = updatedRuns.filter { it.isManagerBuild() }
+    val managerDisplay = kernelBuildDisplaySnapshot(
+        kernelActiveRuns = managerActive,
+        fallbackRun = if (run.isManagerBuild()) run else managerCurrentRun,
+        fallbackStatus = if (run.isManagerBuild()) status else managerBuildStatus
+    )
     return copy(
         buildStatus = display.status,
         currentRun = display.currentRun,
@@ -4655,7 +4667,10 @@ private fun MainUiState.withBuildRunDisplay(
         cancellingWorkflowRunIds = cancellingWorkflowRunIds,
         kernelBuildStatus = kernelDisplay.status,
         kernelCurrentRun = kernelDisplay.currentRun,
-        kernelActiveBuildRuns = kernelActive
+        kernelActiveBuildRuns = kernelActive,
+        managerBuildStatus = managerDisplay.status,
+        managerCurrentRun = managerDisplay.currentRun,
+        managerActiveBuildRuns = managerActive
     )
 }
 
@@ -4683,6 +4698,15 @@ private fun MainUiState.withoutActiveBuildRun(
         fallbackRun = kernelFallbackRun,
         fallbackStatus = kernelFallbackStatus
     )
+    val managerActive = updatedRuns.filter { it.isManagerBuild() }
+    val managerFallbackRun = (fallbackRun?.takeIf { it.isManagerBuild() && it.id != runId })
+        ?: managerCurrentRun?.takeUnless { it.id == runId }
+    val managerFallbackStatus = if (managerCurrentRun?.id == runId) fallbackStatus else managerBuildStatus
+    val managerDisplay = kernelBuildDisplaySnapshot(
+        kernelActiveRuns = managerActive,
+        fallbackRun = managerFallbackRun,
+        fallbackStatus = managerFallbackStatus
+    )
     return copy(
         buildStatus = display.status,
         currentRun = display.currentRun,
@@ -4691,7 +4715,10 @@ private fun MainUiState.withoutActiveBuildRun(
         buildProgressByRunId = updatedProgressByRunId,
         kernelBuildStatus = kernelDisplay.status,
         kernelCurrentRun = kernelDisplay.currentRun,
-        kernelActiveBuildRuns = kernelActive
+        kernelActiveBuildRuns = kernelActive,
+        managerBuildStatus = managerDisplay.status,
+        managerCurrentRun = managerDisplay.currentRun,
+        managerActiveBuildRuns = managerActive
     )
 }
 

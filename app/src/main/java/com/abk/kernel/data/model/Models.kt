@@ -611,3 +611,24 @@ fun WorkflowRun.isKernelBuild(): Boolean {
     // Unknown — be conservative and exclude it from the kernel-only tile.
     return false
 }
+
+/**
+ * Heuristic check whether this workflow run is a manager-app build (KSU
+ * Manager / SukiSU Manager / Build ABK App). Symmetric to [isKernelBuild];
+ * a single run is either kernel-like or manager-like, never both — kernel
+ * runs that bundle a manager APK are still classified as kernel.
+ */
+fun WorkflowRun.isManagerBuild(): Boolean {
+    val lower = "${name.orEmpty()} ${displayTitle.orEmpty()}".lowercase()
+    // Kernel workflows often bundle a manager APK but are not manager-primary.
+    if ("kernel" in lower || "内核" in lower) return false
+    if ("certificate" in lower || "证书" in lower ||
+        "emergency" in lower || "auto trigger" in lower
+    ) return false
+    return "abk app" in lower || "abk-app" in lower ||
+        "build app" in lower || "build-app" in lower ||
+        "debug apk" in lower ||
+        "manager" in lower || "ksu manager" in lower || "sukisu manager" in lower ||
+        "getmanager" in lower || "get manager" in lower ||
+        "管理器" in lower
+}
