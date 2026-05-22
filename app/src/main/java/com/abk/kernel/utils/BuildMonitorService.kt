@@ -122,7 +122,16 @@ class BuildMonitorService : Service() {
                                 }
                                 break
                             }
-                            "queued", "waiting", "in_progress", "requested", "pending" -> {
+                            // Pre-start states change in seconds: poll fast so
+                            // the UI sees "queued → in_progress" promptly and
+                            // the runner-pickup spinner stops being a lie.
+                            "queued", "waiting", "requested", "pending" -> {
+                                delay(10_000)
+                            }
+                            // Long-running compile steps: slow polling is fine
+                            // and keeps us well under the GitHub rate limit
+                            // (~120 req/h per monitor at 30s × 2 endpoints).
+                            "in_progress" -> {
                                 delay(30_000)
                             }
                             else -> {
