@@ -3063,16 +3063,17 @@ private fun WorkflowArtifactGroup.matchesFilter(
         if (state == null || state !in filter.workflowStates) return false
     }
 
-    // Leniency: when the kernel/manager *kind* can't be determined yet (summary
-    // hasn't loaded or there's no name signal), don't hide the workflow — better
-    // to over-show than to blank the screen until N stagger-loaded API calls
-    // finish. Once the kind is known, the strict filter applies.
+    // When kernel/manager kind can't be determined from name or artifacts yet
+    // (in-progress run with no artifacts, or trimmed-from-recent-runs), treat
+    // it as kernel-like — this app is primarily a kernel builder and an
+    // Unknown workflow leaking through "Manager: Release/Dev" is more
+    // surprising than under-showing one mystery workflow.
+    val dispatchedKKind = kernelKind(summary, dispatchedVariant)
     return when (primaryKind(run)) {
         WorkflowPrimary.Kernel -> {
             if (!filter.kernelEnabled) return false
             if (filter.kernelKinds.isEmpty()) return true
-            val kKind = kernelKind(summary, dispatchedVariant)
-            kKind == null || kKind in filter.kernelKinds
+            dispatchedKKind == null || dispatchedKKind in filter.kernelKinds
         }
         WorkflowPrimary.Manager -> {
             if (!filter.managerEnabled) return false
@@ -3080,7 +3081,14 @@ private fun WorkflowArtifactGroup.matchesFilter(
             val mKind = managerKind(summary, run)
             mKind == null || mKind in filter.managerKinds
         }
-        WorkflowPrimary.Unknown -> true
+        WorkflowPrimary.Unknown -> {
+            // Gate Unknown under the kernel filter so toggling Kernel off
+            // doesn't leave it visible. If the kernel kind chip resolved to
+            // something (via dispatched variant), respect kernelKinds too.
+            if (!filter.kernelEnabled) return false
+            if (filter.kernelKinds.isEmpty()) return true
+            dispatchedKKind == null || dispatchedKKind in filter.kernelKinds
+        }
     }
 }
 
