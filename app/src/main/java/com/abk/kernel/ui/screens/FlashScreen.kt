@@ -239,17 +239,17 @@ fun FlashScreen(
     }
     var filter by rememberSaveable(stateSaver = FlashFilterSaver) { mutableStateOf(FlashFilter()) }
     var filterMenuExpanded by remember { mutableStateOf(false) }
-    val dispatchedVariantByRunId = remember(state.buildQueue) {
+    val dispatchedConfigByRunId = remember(state.buildQueue) {
         state.buildQueue
             .filter { it.runId > 0L }
-            .associate { it.runId to it.config.kernelsuVariant }
+            .associate { it.runId to it.config }
     }
     // While a build is mid-dispatch (queue item exists but runId hasn't been
-    // assigned yet via findAndMonitorLatestRun) we can't key the variant by
-    // runId, but we still want the kernel chip to reflect the dispatched
-    // variant. Use the most recent DISPATCHING/RUNNING queue item as a hint
-    // for active workflow runs whose runId isn't in the map yet.
-    val pendingDispatchedVariant = remember(state.buildQueue) {
+    // assigned yet via findAndMonitorLatestRun) we can't key by runId, but we
+    // still want the kernel / SUSFS chips to reflect the dispatched config.
+    // Use the most recent DISPATCHING/RUNNING queue item as a fallback for
+    // active runs whose runId isn't in the map yet.
+    val pendingDispatchedConfig = remember(state.buildQueue) {
         state.buildQueue
             .firstOrNull {
                 it.status in setOf(
@@ -257,7 +257,10 @@ fun FlashScreen(
                     BuildQueueItemStatus.RUNNING
                 )
             }
-            ?.config?.kernelsuVariant
+            ?.config
+    }
+    val dispatchedVariantByRunId = remember(dispatchedConfigByRunId) {
+        dispatchedConfigByRunId.mapValues { it.value.kernelsuVariant }
     }
     val filteredGroups = remember(allWorkflowGroups, filter, state.buildParameterSummaries, recentRunById, dispatchedVariantByRunId) {
         allWorkflowGroups.filter {
@@ -679,14 +682,13 @@ fun FlashScreen(
                                 items(filteredGroups, key = { "workflow-${it.runId}" }) { group ->
                                     val run = recentRunById[group.runId]
                                     val active = run?.isActiveFlashRun() == true
-                                    val dispatchedVariant = state.buildQueue
-                                        .firstOrNull { it.runId == group.runId }
-                                        ?.config?.kernelsuVariant
-                                        ?: if (active) pendingDispatchedVariant else null
+                                    val dispatchedConfig = dispatchedConfigByRunId[group.runId]
+                                        ?: if (active) pendingDispatchedConfig else null
                                     WorkflowRunCard(
                                         group = group,
                                         summary = state.buildParameterSummaries[group.runId],
-                                        dispatchedKernelVariant = dispatchedVariant,
+                                        dispatchedKernelVariant = dispatchedConfig?.kernelsuVariant,
+                                        dispatchedSusfsEnabled = dispatchedConfig?.let { !it.cancelSusfs },
                                         active = active,
                                         cancelling = group.runId in state.cancellingWorkflowRunIds,
                                         onClick = {
@@ -2022,6 +2024,7 @@ private fun WorkflowRunCard(
     group: WorkflowArtifactGroup,
     summary: BuildParameterSummary?,
     dispatchedKernelVariant: String?,
+    dispatchedSusfsEnabled: Boolean?,
     active: Boolean,
     cancelling: Boolean,
     onClick: () -> Unit,
@@ -2038,7 +2041,14 @@ private fun WorkflowRunCard(
     val kernelKind = group.kernelKind(summary, dispatchedKernelVariant)
     val susfsOn = run {
         val v = summary?.susfsEnabled.orEmpty().lowercase().trim()
-        v.isNotBlank() && v !in setOf("false", "0", "no", "disabled", "off", "未启用", "未開啟", "未开启")
+        if (v.isNotBlank()) {
+            v !in setOf("false", "0", "no", "disabled", "off", "未启用", "未開啟", "未开启")
+        } else {
+            // Summary not loaded yet — fall back to the dispatched config so
+            // the SUSFS chip shows during an active build, just like the
+            // kernel-kind chip does.
+            dispatchedSusfsEnabled == true
+        }
     }
     val dateLabel = group.runCreatedAt.take(10)
     Card(
