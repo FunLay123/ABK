@@ -63,6 +63,7 @@ import com.abk.kernel.data.model.KSU_VARIANT_RESUKISU
 import com.abk.kernel.data.model.KSU_VARIANT_SUKISU
 import com.abk.kernel.data.model.ModuleCatalogItem
 import com.abk.kernel.data.model.ModuleCatalogRepository
+import com.abk.kernel.data.model.WorkflowRun
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
@@ -731,6 +732,15 @@ fun BuildScreen(
                 enter = fadeIn() + slideInVertically { -it / 3 } + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
+                // Build per-run chip text from the dispatched queue config so
+                // the progress card can show a row of compact tiles (top =
+                // running, bottom = queued) instead of a wall of step rows.
+                val runningChips = remember(state.activeBuildRuns, state.buildQueue) {
+                    buildRunChipsForStatus(state.activeBuildRuns, state.buildQueue, running = true)
+                }
+                val queuedChips = remember(state.activeBuildRuns, state.buildQueue) {
+                    buildRunChipsForStatus(state.activeBuildRuns, state.buildQueue, running = false)
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     BuildStatusBanner(
                         status = state.buildStatus,
@@ -740,7 +750,11 @@ fun BuildScreen(
                         cancelling = state.currentRun?.id in state.cancellingWorkflowRunIds,
                         onCancel = { runId -> vm.cancelWorkflowRun(runId) }
                     )
-                    BuildProgressCard(state.buildProgress)
+                    BuildProgressCard(
+                        progress = state.buildProgress,
+                        runningChips = runningChips,
+                        queuedChips = queuedChips
+                    )
                 }
             }
 
@@ -2330,8 +2344,13 @@ private fun BuildStatusBanner(
             Column(Modifier.weight(1f)) {
                 Text(text, color = color, style = MaterialTheme.typography.bodyMedium)
                 if (progress.totalSteps > 0) {
+                    // Drop the "·" separator the user explicitly asked to remove —
+                    // percent on the left, then the compact chip format text
+                    // (already comma-joined for multi-run). maxLines=1 so the
+                    // banner stays at a fixed height; full chip layout lives
+                    // in BuildProgressCard below.
                     Text(
-                        "${progress.percent}% · ${progress.currentStep}",
+                        "${progress.percent}% ${progress.currentStep}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1
@@ -2364,7 +2383,11 @@ private fun BuildStatusBanner(
 }
 
 @Composable
-private fun BuildProgressCard(progress: BuildProgress) {
+private fun BuildProgressCard(
+    progress: BuildProgress,
+    runningChips: List<BuildRunChip> = emptyList(),
+    queuedChips: List<BuildRunChip> = emptyList()
+) {
     val animatedProgress by animateFloatAsState(
         targetValue = (progress.percent / 100f).coerceIn(0f, 1f),
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
@@ -2385,49 +2408,121 @@ private fun BuildProgressCard(progress: BuildProgress) {
                 progress = { animatedProgress },
                 modifier = Modifier.fillMaxWidth()
             )
-            Text(
-                progress.currentStep,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                maxLines = 2
-            )
-            AnimatedVisibility(
-                visible = progress.steps.isNotEmpty(),
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    progress.steps.take(8).forEach { step ->
-                        BuildStepRow(step)
-                    }
-                    if (progress.steps.size > 8) {
-                        Text(
-                            stringResource(R.string.build_more_steps, progress.steps.size - 8),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
+            // Top row = currently running runs, bottom row = queued runs.
+            // Each chip is one workflow rendered in the compact
+            // "#65 SukiSU SUSFS 6.6.89-android15-2025-06" format. Rows scroll
+            // horizontally so an arbitrary number of parallel builds fit
+            // without wrapping the page.
+            if (runningChips.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    runningChips.forEach { chip -> BuildRunChipView(chip) }
                 }
+            }
+            if (queuedChips.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    queuedChips.forEach { chip -> BuildRunChipView(chip) }
+                }
+            }
+            if (runningChips.isEmpty() && queuedChips.isEmpty() && progress.currentStep.isNotBlank()) {
+                Text(
+                    progress.currentStep,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    maxLines = 2
+                )
             }
         }
     }
 }
 
-@Composable
-private fun BuildStepRow(step: BuildStepProgress) {
-    val (icon, color, label) = when {
-        step.status == "completed" && step.conclusion in listOf("failure", "cancelled", "timed_out") ->
-            Triple(Icons.Default.Error, MaterialTheme.colorScheme.error, stringResource(R.string.status_failure))
-        step.status == "completed" ->
-            Triple(Icons.Default.CheckCircle, MaterialTheme.colorScheme.primary, stringResource(R.string.build_step_done))
-        step.status == "in_progress" ->
-            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, stringResource(R.string.status_in_progress))
-        else -> Triple(Icons.Default.RadioButtonUnchecked, MaterialTheme.colorScheme.outline, stringResource(R.string.build_step_waiting))
+private data class BuildRunChip(
+    val runId: Long,
+    val text: String,
+    val running: Boolean
+)
+
+/**
+ * Compact "#65 SukiSU SUSFS 6.6.89-android15-2025-06" chips for the Build
+ * tab progress card. Mirrors the descriptor logic that the merged-progress
+ * text uses, but renders separate UI tiles rather than concatenated text.
+ * Manager-only runs become "Manager" / "Manager Dev" chips.
+ */
+private fun buildRunChipsForStatus(
+    activeRuns: List<WorkflowRun>,
+    queue: List<BuildQueueItem>,
+    running: Boolean
+): List<BuildRunChip> {
+    val queueByRunId = queue.filter { it.runId > 0L }.associateBy { it.runId }
+    return activeRuns
+        .asSequence()
+        .filter { run ->
+            val isRunning = run.status == "in_progress"
+            isRunning == running
+        }
+        .map { run ->
+            val label = buildRunChipLabel(run, queueByRunId[run.id])
+            BuildRunChip(runId = run.id, text = label, running = running)
+        }
+        .toList()
+}
+
+private fun buildRunChipLabel(run: WorkflowRun, item: BuildQueueItem?): String {
+    val runLabel = if (run.runNumber > 0) "#${run.runNumber}" else "#${run.id}"
+    val combined = ((run.name ?: "") + " " + (run.displayTitle ?: "")).lowercase()
+    val isManagerLike = listOf("abk app", "abk-app", "build app", "manager", "管理器", "getmanager")
+        .any { it in combined }
+    val isKernelLike = "kernel" in combined || "内核" in combined
+    if (isManagerLike && !isKernelLike) {
+        val isDev = "dev" in combined
+        return if (isDev) "Manager Dev" else "Manager"
     }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
-        Text(step.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
-        Text(label, color = color, style = MaterialTheme.typography.labelSmall)
+    val cfg = item?.config
+    val variant = cfg?.kernelsuVariant?.takeIf { it != KSU_VARIANT_NONE }.orEmpty()
+    val susfs = cfg != null && !cfg.cancelSusfs && cfg.kernelsuVariant != KSU_VARIANT_NONE
+    val kernelLabel = if (cfg != null) {
+        "${cfg.kernelVersion}.${cfg.subLevel}-${cfg.androidVersion}-${cfg.osPatchLevel}"
+    } else ""
+    return buildString {
+        append(runLabel)
+        if (variant.isNotBlank()) append(' ').append(variant)
+        if (susfs) append(" SUSFS")
+        if (kernelLabel.isNotBlank()) append(' ').append(kernelLabel)
+    }
+}
+
+@Composable
+private fun BuildRunChipView(chip: BuildRunChip) {
+    val containerColor = if (chip.running) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    val contentColor = if (chip.running) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = containerColor,
+        contentColor = contentColor
+    ) {
+        Text(
+            text = chip.text,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            maxLines = 1
+        )
     }
 }
 

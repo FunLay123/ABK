@@ -200,15 +200,11 @@ object BuildProgressUtils {
                 }
             }
         }
-        return if (entries.size <= 1) {
-            entries.firstOrNull().orEmpty()
-        } else {
-            buildString {
-                append(entries.size)
-                append(" Workflows · ")
-                append(entries.joinToString(" · "))
-            }
-        }
+        // No "N Workflows · " prefix and no middle-dot separators — the
+        // banner is more readable when chips are simply comma-separated, and
+        // the workflow count is already visible above via the chip rows in
+        // the progress card.
+        return entries.joinToString(", ")
     }
 
     private fun runDisplayLabel(run: WorkflowRun): String =
