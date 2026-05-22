@@ -139,6 +139,7 @@ import com.abk.kernel.data.model.ArtifactType
 import com.abk.kernel.data.model.BuildArtifact
 import com.abk.kernel.data.model.BuildParameterSummary
 import com.abk.kernel.data.model.BuildProgress
+import com.abk.kernel.data.model.BuildQueueItemStatus
 import com.abk.kernel.data.model.BuildStatus
 import com.abk.kernel.data.model.DownloadedArtifact
 import com.abk.kernel.data.model.KernelBuildConfig
