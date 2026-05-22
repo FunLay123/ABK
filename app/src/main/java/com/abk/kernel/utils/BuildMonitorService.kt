@@ -9,6 +9,8 @@ import androidx.core.content.ContextCompat
 import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.WorkflowJob
 import com.abk.kernel.data.model.WorkflowRun
+import com.abk.kernel.data.model.isKernelBuild
+import com.abk.kernel.data.model.isManagerBuild
 import com.abk.kernel.data.repository.GitHubRepository
 import com.abk.kernel.data.repository.PreferencesRepository
 import com.abk.kernel.data.repository.Result
@@ -107,7 +109,8 @@ class BuildMonitorService : Service() {
                             NotificationUtils.notifyBuildRunning(
                                 applicationContext,
                                 merged?.percent ?: progress.percent,
-                                merged?.currentStep ?: progress.currentStep
+                                merged?.currentStep ?: progress.currentStep,
+                                kind = mergedActiveKind()
                             )
                         }
                         when (run.status) {
@@ -170,6 +173,23 @@ class BuildMonitorService : Service() {
     private fun mergedActiveProgress(): BuildProgress? = synchronized(monitorLock) {
         val activeRuns = runSnapshots.values.filter { it.status in ACTIVE_MONITOR_STATUSES }
         if (activeRuns.isEmpty()) null else BuildProgressUtils.merge(activeRuns, progressSnapshots)
+    }
+
+    /**
+     * Classify currently-monitored active runs so the notification can pick
+     * the right title and decide whether to attach the HyperOS island.
+     */
+    private fun mergedActiveKind(): NotificationUtils.BuildKind = synchronized(monitorLock) {
+        val activeRuns = runSnapshots.values.filter { it.status in ACTIVE_MONITOR_STATUSES }
+        val kernels = activeRuns.count { it.isKernelBuild() }
+        val managers = activeRuns.count { it.isManagerBuild() }
+        when {
+            kernels >= 1 && managers >= 1 -> NotificationUtils.BuildKind.Mixed
+            kernels > 1 -> NotificationUtils.BuildKind.MultipleKernels
+            kernels == 1 -> NotificationUtils.BuildKind.Kernel
+            managers >= 1 -> NotificationUtils.BuildKind.ManagerOnly
+            else -> NotificationUtils.BuildKind.Unknown
+        }
     }
 
     private fun finishMonitoring(runId: Long, success: Boolean? = null): MonitorFinish {

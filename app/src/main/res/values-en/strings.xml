@@ -987,6 +987,8 @@
     <string name="notif_channel_download">File download</string>
     <string name="notif_channel_download_desc">Build artifact download progress</string>
     <string name="notif_build_running">Building kernel…</string>
+    <string name="notif_build_kernels_running">Building kernels…</string>
+    <string name="notif_build_artifacts_running">Building artifacts…</string>
     <string name="notif_build_done">Kernel build complete.</string>
     <string name="notif_build_failed">Kernel build failed</string>
     <string name="notif_downloading">Downloading build artifact…</string>

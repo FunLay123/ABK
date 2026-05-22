@@ -969,6 +969,8 @@
     <string name="notif_channel_download">Загрузка файлов</string>
     <string name="notif_channel_download_desc">Прогресс загрузки артефактов сборки</string>
     <string name="notif_build_running">Идёт сборка ядра…</string>
+    <string name="notif_build_kernels_running">Идёт сборка ядер…</string>
+    <string name="notif_build_artifacts_running">Идёт сборка артефактов…</string>
     <string name="notif_build_done">Сборка ядра завершена!</string>
     <string name="notif_build_failed">Сборка ядра не удалась</string>
     <string name="notif_downloading">Загрузка артефактов сборки…</string>

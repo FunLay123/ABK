@@ -22,6 +22,16 @@ import org.json.JSONObject
 
 object NotificationUtils {
 
+    /**
+     * What is currently building, used to pick the right notification title
+     * and to decide whether the HyperOS dynamic island should be attached.
+     *
+     * Manager-only builds intentionally skip the island — the island is
+     * meant for the lengthier kernel work; a quick manager APK build doesn't
+     * warrant grabbing the foreground hardware status bar.
+     */
+    enum class BuildKind { Kernel, MultipleKernels, ManagerOnly, Mixed, Unknown }
+
     const val CHANNEL_BUILD = "build_status"
     const val CHANNEL_DOWNLOAD = "download_status"
     const val NOTIF_ID_BUILD = 1001
@@ -68,11 +78,12 @@ object NotificationUtils {
     fun notifyBuildRunning(
         context: Context,
         progress: Int? = null,
-        currentStep: String? = null
+        currentStep: String? = null,
+        kind: BuildKind = BuildKind.Unknown
     ) {
         val normalizedProgress = progress?.coerceIn(0, 100)
         val normalizedStep = currentStep.orEmpty().trim()
-        val signature = buildRunningNotificationSignature(normalizedProgress, normalizedStep)
+        val signature = buildRunningNotificationSignature(normalizedProgress, normalizedStep, kind)
         if (signature == lastBuildNotificationSignature) return
         post(
             context,
@@ -81,6 +92,7 @@ object NotificationUtils {
                 context = context,
                 progress = normalizedProgress,
                 currentStep = normalizedStep,
+                kind = kind,
                 rememberAsShown = true
             )
         )
@@ -90,16 +102,26 @@ object NotificationUtils {
         context: Context,
         progress: Int? = null,
         currentStep: String? = null,
+        kind: BuildKind = BuildKind.Unknown,
         rememberAsShown: Boolean = false
     ): android.app.Notification {
         val normalizedProgress = progress?.coerceIn(0, 100)
         val normalizedStep = currentStep.orEmpty().trim()
         if (rememberAsShown) {
-            lastBuildNotificationSignature = buildRunningNotificationSignature(normalizedProgress, normalizedStep)
+            lastBuildNotificationSignature = buildRunningNotificationSignature(normalizedProgress, normalizedStep, kind)
             lastBuildProgressPercent = normalizedProgress ?: 0
         }
         val intent = Intent(context, MainActivity::class.java)
         val pi = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+        val title = context.getString(
+            when (kind) {
+                BuildKind.MultipleKernels -> R.string.notif_build_kernels_running
+                BuildKind.Mixed -> R.string.notif_build_artifacts_running
+                // Kernel / ManagerOnly / Unknown: keep the original single-kernel
+                // string. Manager-only just doesn't get the island attachment.
+                else -> R.string.notif_build_running
+            }
+        )
         val text = when {
             normalizedProgress != null && normalizedStep.isNotBlank() -> "$normalizedProgress% · $normalizedStep"
             normalizedStep.isNotBlank() -> normalizedStep
@@ -107,7 +129,7 @@ object NotificationUtils {
         }
         val builder = NotificationCompat.Builder(context, CHANNEL_BUILD)
             .setSmallIcon(android.R.drawable.ic_popup_sync)
-            .setContentTitle(context.getString(R.string.notif_build_running))
+            .setContentTitle(title)
             .setContentText(text)
             .setOngoing(true)
             .setContentIntent(pi)
@@ -118,15 +140,20 @@ object NotificationUtils {
             builder.setProgress(100, 0, true)
         }
         return builder.build().apply {
-            attachMiuiBuildIsland(
-                context = context,
-                content = BuildIslandContent(
-                    title = context.getString(R.string.notif_build_running),
-                    content = text,
-                    progress = normalizedProgress ?: 0,
-                    color = COLOR_BUILD_RUNNING
+            // Manager-only builds skip the HyperOS island. A 30-second APK
+            // build doesn't warrant grabbing the status-bar focus area; the
+            // ongoing notification still shows in the shade.
+            if (kind != BuildKind.ManagerOnly) {
+                attachMiuiBuildIsland(
+                    context = context,
+                    content = BuildIslandContent(
+                        title = title,
+                        content = text,
+                        progress = normalizedProgress ?: 0,
+                        color = COLOR_BUILD_RUNNING
+                    )
                 )
-            )
+            }
         }
     }
 
@@ -350,8 +377,8 @@ object NotificationUtils {
         return cleaned.take((maxLength - 3).coerceAtLeast(1)).trimEnd() + "..."
     }
 
-    private fun buildRunningNotificationSignature(progress: Int?, currentStep: String): String {
-        return "running|${progress ?: "indef"}|$currentStep"
+    private fun buildRunningNotificationSignature(progress: Int?, currentStep: String, kind: BuildKind): String {
+        return "running|${kind.name}|${progress ?: "indef"}|$currentStep"
     }
 
     private data class BuildIslandContent(
