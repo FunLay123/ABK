@@ -2112,7 +2112,14 @@ private fun WorkflowRunCard(
                 if (active) {
                     IconButton(onClick = onCancel, enabled = !cancelling) {
                         if (cancelling) {
-                            LoadingIndicator(Modifier.size(20.dp))
+                            // Red while waiting for GitHub to acknowledge the
+                            // cancel — keeps the icon's destructive intent
+                            // visible during the limbo period before the run
+                            // status flips to "completed".
+                            LoadingIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = MaterialTheme.colorScheme.error
+                            )
                         } else {
                             Icon(
                                 Icons.Default.Cancel,

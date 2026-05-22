@@ -322,7 +322,10 @@ fun StatusScreen(
                                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                                 ) {
                                     if (run.id in state.cancellingWorkflowRunIds) {
-                                        LoadingIndicator(Modifier.size(16.dp))
+                                        LoadingIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            color = MaterialTheme.colorScheme.error
+                                        )
                                     } else {
                                         Icon(Icons.Default.Cancel, null, modifier = Modifier.size(16.dp))
                                     }
@@ -610,7 +613,10 @@ private fun RunListItem(
         if (run.isActiveStatusRun()) {
             IconButton(onClick = onCancel, enabled = !cancelling) {
                 if (cancelling) {
-                    LoadingIndicator(Modifier.size(18.dp))
+                    LoadingIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = MaterialTheme.colorScheme.error
+                    )
                 } else {
                     Icon(
                         Icons.Default.Cancel,
