@@ -238,8 +238,30 @@ fun FlashScreen(
     }
     var filter by rememberSaveable(stateSaver = FlashFilterSaver) { mutableStateOf(FlashFilter()) }
     var filterMenuExpanded by remember { mutableStateOf(false) }
-    val filteredGroups = remember(allWorkflowGroups, filter, state.buildParameterSummaries, recentRunById) {
-        allWorkflowGroups.filter { it.matchesFilter(filter, state.buildParameterSummaries, recentRunById) }
+    val dispatchedVariantByRunId = remember(state.buildQueue) {
+        state.buildQueue
+            .filter { it.runId > 0L }
+            .associate { it.runId to it.config.kernelsuVariant }
+    }
+    // While a build is mid-dispatch (queue item exists but runId hasn't been
+    // assigned yet via findAndMonitorLatestRun) we can't key the variant by
+    // runId, but we still want the kernel chip to reflect the dispatched
+    // variant. Use the most recent DISPATCHING/RUNNING queue item as a hint
+    // for active workflow runs whose runId isn't in the map yet.
+    val pendingDispatchedVariant = remember(state.buildQueue) {
+        state.buildQueue
+            .firstOrNull {
+                it.status in setOf(
+                    BuildQueueItemStatus.DISPATCHING,
+                    BuildQueueItemStatus.RUNNING
+                )
+            }
+            ?.config?.kernelsuVariant
+    }
+    val filteredGroups = remember(allWorkflowGroups, filter, state.buildParameterSummaries, recentRunById, dispatchedVariantByRunId) {
+        allWorkflowGroups.filter {
+            it.matchesFilter(filter, state.buildParameterSummaries, recentRunById, dispatchedVariantByRunId)
+        }
     }
     // Stagger summary loads so the first frame of the list isn't blocked by N
     // simultaneous GitHub API calls (caused both UI jank and "Read timed out"
@@ -655,10 +677,16 @@ fun FlashScreen(
                             filteredGroups.isNotEmpty() -> {
                                 items(filteredGroups, key = { "workflow-${it.runId}" }) { group ->
                                     val run = recentRunById[group.runId]
+                                    val active = run?.isActiveFlashRun() == true
+                                    val dispatchedVariant = state.buildQueue
+                                        .firstOrNull { it.runId == group.runId }
+                                        ?.config?.kernelsuVariant
+                                        ?: if (active) pendingDispatchedVariant else null
                                     WorkflowRunCard(
                                         group = group,
                                         summary = state.buildParameterSummaries[group.runId],
-                                        active = run?.isActiveFlashRun() == true,
+                                        dispatchedKernelVariant = dispatchedVariant,
+                                        active = active,
                                         cancelling = group.runId in state.cancellingWorkflowRunIds,
                                         onClick = {
                                             selectedRunId = group.runId
@@ -1209,22 +1237,26 @@ private fun FlashHero(
                 icon = Icons.Default.Inventory2,
                 color = MaterialTheme.colorScheme.secondary
             )
-            ExpressiveStatusChip(
-                label = when (buildStatus) {
-                    BuildStatus.SUCCESS -> stringResource(R.string.build_success_bang)
-                    BuildStatus.IN_PROGRESS -> stringResource(R.string.build_running_ellipsis)
-                    BuildStatus.QUEUED -> stringResource(R.string.build_queued)
-                    BuildStatus.FAILURE -> stringResource(R.string.build_failed)
-                    BuildStatus.CANCELLED -> stringResource(R.string.build_cancelled)
-                    BuildStatus.IDLE -> stringResource(R.string.flash_build_waiting)
-                },
-                icon = Icons.Default.RunCircle,
-                color = when (buildStatus) {
-                    BuildStatus.SUCCESS -> MaterialTheme.colorScheme.primary
-                    BuildStatus.FAILURE -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.outline
-                }
-            )
+            // Active builds are already signalled by the spinning indicator on
+            // the workflow run card. Only show the build-status chip in the
+            // hero for terminal/idle states.
+            if (buildStatus !in setOf(BuildStatus.IN_PROGRESS, BuildStatus.QUEUED)) {
+                ExpressiveStatusChip(
+                    label = when (buildStatus) {
+                        BuildStatus.SUCCESS -> stringResource(R.string.build_success_bang)
+                        BuildStatus.FAILURE -> stringResource(R.string.build_failed)
+                        BuildStatus.CANCELLED -> stringResource(R.string.build_cancelled)
+                        BuildStatus.IDLE -> stringResource(R.string.flash_build_waiting)
+                        else -> stringResource(R.string.flash_build_waiting)
+                    },
+                    icon = Icons.Default.RunCircle,
+                    color = when (buildStatus) {
+                        BuildStatus.SUCCESS -> MaterialTheme.colorScheme.primary
+                        BuildStatus.FAILURE -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.outline
+                    }
+                )
+            }
         }
     )
 }
@@ -1988,6 +2020,7 @@ private fun prebuiltArtifactType(asset: PrebuiltGkiAsset): ArtifactType {
 private fun WorkflowRunCard(
     group: WorkflowArtifactGroup,
     summary: BuildParameterSummary?,
+    dispatchedKernelVariant: String?,
     active: Boolean,
     cancelling: Boolean,
     onClick: () -> Unit,
@@ -2001,7 +2034,7 @@ private fun WorkflowRunCard(
         group.remote.any { DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) == category } ||
             group.local.any { it.category == category }
     }
-    val kernelKind = group.kernelKind(summary)
+    val kernelKind = group.kernelKind(summary, dispatchedKernelVariant)
     val susfsOn = run {
         val v = summary?.susfsEnabled.orEmpty().lowercase().trim()
         v.isNotBlank() && v !in setOf("false", "0", "no", "disabled", "off", "未启用", "未開啟", "未开启")
@@ -2056,8 +2089,14 @@ private fun WorkflowRunCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                IconButton(onClick = onShowParameters) {
-                    Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.flash_parameter_details))
+                // Parameter details are parsed from the build log, which doesn't
+                // exist while the build is still running — hide the button until
+                // the run has actually finished so users don't tap into an
+                // empty/loading dialog.
+                if (!active) {
+                    IconButton(onClick = onShowParameters) {
+                        Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.flash_parameter_details))
+                    }
                 }
                 if (active) {
                     IconButton(onClick = onCancel, enabled = !cancelling) {
@@ -2080,11 +2119,11 @@ private fun WorkflowRunCard(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Kernel kind chip only renders once the run summary has been loaded —
-                // otherwise it would always say "Ядро: None" for in-progress builds.
-                if (summary != null) {
+                // Kernel kind chip only renders once we know the variant —
+                // otherwise it would always say "None" for in-progress builds.
+                if (kernelKind != null) {
                     ExpressiveStatusChip(
-                        label = stringResource(R.string.flash_chip_kernel_kind, stringResource(kernelKind.shortLabelRes())),
+                        label = stringResource(kernelKind.shortLabelRes()),
                         color = MaterialTheme.colorScheme.tertiary
                     )
                 }
@@ -2913,9 +2952,12 @@ private val FlashFilterSaver = androidx.compose.runtime.saveable.Saver<FlashFilt
 )
 
 private fun WorkflowArtifactGroup.kernelKind(
-    summary: BuildParameterSummary?
-): FlashFilterKernelKind {
-    val v = summary?.ksuVariant.orEmpty().lowercase()
+    summary: BuildParameterSummary?,
+    fallbackVariant: String? = null
+): FlashFilterKernelKind? {
+    val raw = summary?.ksuVariant.orEmpty().ifBlank { fallbackVariant.orEmpty() }
+    val v = raw.lowercase()
+    if (v.isBlank()) return null
     return when {
         "resuki" in v || "re-suki" in v || "resukisu" in v -> FlashFilterKernelKind.ResuKisu
         "sukisu" in v -> FlashFilterKernelKind.SukiSu
@@ -2935,12 +2977,28 @@ private fun WorkflowArtifactGroup.hasKernelArtifact(): Boolean =
     } || local.any { it.type in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.KERNEL_IMG, ArtifactType.ANYKERNEL3) }
 
 private fun WorkflowArtifactGroup.managerKind(
-    summary: BuildParameterSummary?
-): FlashFilterManagerKind {
+    summary: BuildParameterSummary?,
+    run: WorkflowRun?
+): FlashFilterManagerKind? {
     val branch = summary?.ksuBranch.orEmpty().lowercase()
     val hasDevName = remote.any { it.name.lowercase().contains("dev") } ||
         local.any { it.name.lowercase().contains("dev") }
-    return if ("dev" in branch || hasDevName) FlashFilterManagerKind.Dev else FlashFilterManagerKind.Release
+    val runName = ((run?.name ?: "") + " " + (run?.displayTitle ?: "")).lowercase()
+    val runIsManagerWorkflow = "abk app" in runName || "abk-app" in runName ||
+        "build app" in runName || "build-app" in runName ||
+        "manager" in runName || "管理器" in runName || "getmanager" in runName
+    val devInRunName = runIsManagerWorkflow && "dev" in runName
+    val releaseInRunName = runIsManagerWorkflow && ("release" in runName || "релиз" in runName)
+    // If we have neither a summary nor any manager-specific signal, we genuinely
+    // don't know — return null so callers can choose lenient behaviour rather
+    // than defaulting to Release.
+    if (summary == null && !hasDevName && !devInRunName && !releaseInRunName) return null
+    return when {
+        devInRunName -> FlashFilterManagerKind.Dev
+        releaseInRunName -> FlashFilterManagerKind.Release
+        "dev" in branch || hasDevName -> FlashFilterManagerKind.Dev
+        else -> FlashFilterManagerKind.Release
+    }
 }
 
 private fun WorkflowRun?.workflowState(): FlashFilterWorkflowState? = when {
@@ -2962,42 +3020,57 @@ private fun WorkflowRun?.looksLikeKernelByName(): Boolean {
     return "kernel" in n || "内核" in n
 }
 
-private fun WorkflowArtifactGroup.isKernelLike(run: WorkflowRun?): Boolean =
-    hasKernelArtifact() || (remote.isEmpty() && run.looksLikeKernelByName())
+// Strict primary classification. A workflow belongs to ONE primary kind —
+// either Kernel or Manager — never both. Kernel build workflows often bundle
+// a manager APK as a courtesy, but they are still PRIMARILY kernel and must
+// be governed by the kernel filter, not the manager filter. Without this,
+// kernel workflows leak through the "Manager: Release/Dev" filter because of
+// the bundled APK.
+private enum class WorkflowPrimary { Kernel, Manager, Unknown }
 
-private fun WorkflowArtifactGroup.isManagerLike(run: WorkflowRun?): Boolean =
-    hasManagerArtifact() || (remote.isEmpty() && run.looksLikeManagerByName())
+private fun WorkflowArtifactGroup.primaryKind(run: WorkflowRun?): WorkflowPrimary {
+    if (run.looksLikeKernelByName()) return WorkflowPrimary.Kernel
+    if (run.looksLikeManagerByName()) return WorkflowPrimary.Manager
+    if (hasKernelArtifact()) return WorkflowPrimary.Kernel
+    if (hasManagerArtifact()) return WorkflowPrimary.Manager
+    return WorkflowPrimary.Unknown
+}
 
 private fun WorkflowArtifactGroup.matchesFilter(
     filter: FlashFilter,
     summaries: Map<Long, BuildParameterSummary>,
-    runs: Map<Long, WorkflowRun>
+    runs: Map<Long, WorkflowRun>,
+    dispatchedVariantByRunId: Map<Long, String>
 ): Boolean {
     val summary = summaries[runId]
     val run = runs[runId]
     val state = run.workflowState()
+    val dispatchedVariant = dispatchedVariantByRunId[runId]
 
     // Running/Finished subfilter (no top-level Workflow toggle anymore).
     if (filter.workflowStates.isNotEmpty()) {
         if (state == null || state !in filter.workflowStates) return false
     }
 
-    val isKernel = isKernelLike(run)
-    val isManager = isManagerLike(run)
-
-    // Workflow that doesn't look like kernel or manager — keep visible.
-    if (!isKernel && !isManager) return true
-
-    // OR-logic: a hybrid (kernel + bundled manager artifact) stays visible if EITHER
-    // its kernel side OR its manager side passes the filter. So unticking "Менеджер"
-    // alone keeps kernel workflows even when they happen to bundle a KSU manager APK.
-    val passKernel = isKernel &&
-        filter.kernelEnabled &&
-        (filter.kernelKinds.isEmpty() || kernelKind(summary) in filter.kernelKinds)
-    val passManager = isManager &&
-        filter.managerEnabled &&
-        (filter.managerKinds.isEmpty() || managerKind(summary) in filter.managerKinds)
-    return passKernel || passManager
+    // Leniency: when the kernel/manager *kind* can't be determined yet (summary
+    // hasn't loaded or there's no name signal), don't hide the workflow — better
+    // to over-show than to blank the screen until N stagger-loaded API calls
+    // finish. Once the kind is known, the strict filter applies.
+    return when (primaryKind(run)) {
+        WorkflowPrimary.Kernel -> {
+            if (!filter.kernelEnabled) return false
+            if (filter.kernelKinds.isEmpty()) return true
+            val kKind = kernelKind(summary, dispatchedVariant)
+            kKind == null || kKind in filter.kernelKinds
+        }
+        WorkflowPrimary.Manager -> {
+            if (!filter.managerEnabled) return false
+            if (filter.managerKinds.isEmpty()) return true
+            val mKind = managerKind(summary, run)
+            mKind == null || mKind in filter.managerKinds
+        }
+        WorkflowPrimary.Unknown -> true
+    }
 }
 
 @StringRes
