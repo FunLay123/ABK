@@ -4644,7 +4644,8 @@ private fun MainUiState.withBuildRunDisplay(
         progressByRunId = updatedProgressByRunId,
         fallbackRun = run,
         fallbackStatus = status,
-        fallbackProgress = progress
+        fallbackProgress = progress,
+        descriptors = buildRunDescriptors(updatedRuns)
     )
     val kernelActive = updatedRuns.filter { it.isKernelBuild() }
     val kernelDisplay = kernelBuildDisplaySnapshot(
@@ -4687,7 +4688,8 @@ private fun MainUiState.withoutActiveBuildRun(
         progressByRunId = updatedProgressByRunId,
         fallbackRun = fallbackRun,
         fallbackStatus = fallbackStatus,
-        fallbackProgress = fallbackProgress
+        fallbackProgress = fallbackProgress,
+        descriptors = buildRunDescriptors(updatedRuns)
     )
     val kernelActive = updatedRuns.filter { it.isKernelBuild() }
     val kernelFallbackRun = (fallbackRun?.takeIf { it.isKernelBuild() && it.id != runId })
@@ -4755,7 +4757,8 @@ private fun buildDisplaySnapshot(
     progressByRunId: Map<Long, BuildProgress>,
     fallbackRun: WorkflowRun?,
     fallbackStatus: BuildStatus,
-    fallbackProgress: BuildProgress
+    fallbackProgress: BuildProgress,
+    descriptors: Map<Long, BuildProgressUtils.RunDescriptor> = emptyMap()
 ): BuildDisplaySnapshot {
     val sortedRuns = activeRuns
         .filter { it.isActiveBuildRun() }
@@ -4772,8 +4775,50 @@ private fun buildDisplaySnapshot(
     return BuildDisplaySnapshot(
         status = status,
         currentRun = sortedRuns.firstOrNull(),
-        progress = BuildProgressUtils.merge(sortedRuns, progressByRunId)
+        progress = BuildProgressUtils.merge(sortedRuns, progressByRunId, descriptors)
     )
+}
+
+/**
+ * Build per-run descriptors from the current queue + active runs. Used by
+ * [buildDisplaySnapshot] to produce the compact "#42 SukiSU SUSFS 6.6.89-…"
+ * style merged-progress text instead of the old chatty wall.
+ *
+ * Kernel runs pull their fields from BuildQueueItem.config (the dispatched
+ * intent, never lies). Manager-only runs detected via run name fall back to
+ * a Manager / Manager Dev label based on whether "dev" appears in the run
+ * name.
+ */
+private fun MainUiState.buildRunDescriptors(
+    runs: List<WorkflowRun>
+): Map<Long, BuildProgressUtils.RunDescriptor> {
+    val queueByRunId = buildQueue.filter { it.runId > 0L }.associateBy { it.runId }
+    return runs.mapNotNull { run ->
+        val item = queueByRunId[run.id]
+        when {
+            run.isKernelBuild() && item != null -> {
+                val cfg = item.config
+                val variant = cfg.kernelsuVariant.takeIf { it != KSU_VARIANT_NONE }.orEmpty()
+                val susfs = !cfg.cancelSusfs && cfg.kernelsuVariant != KSU_VARIANT_NONE
+                val kernelLabel = "${cfg.kernelVersion}.${cfg.subLevel}-${cfg.androidVersion}-${cfg.osPatchLevel}"
+                run.id to BuildProgressUtils.RunDescriptor(
+                    isManager = false,
+                    ksuVariant = variant,
+                    susfs = susfs,
+                    kernelLabel = kernelLabel
+                )
+            }
+            run.isManagerBuild() -> {
+                val combined = (run.name.orEmpty() + " " + run.displayTitle.orEmpty()).lowercase()
+                val isDev = "dev" in combined
+                run.id to BuildProgressUtils.RunDescriptor(
+                    isManager = true,
+                    managerIsDev = isDev
+                )
+            }
+            else -> null
+        }
+    }.toMap()
 }
 
 private fun WorkflowRun.isActiveBuildRun(): Boolean =
