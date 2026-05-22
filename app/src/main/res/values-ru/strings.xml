@@ -94,6 +94,11 @@
 
     <!-- Build -->
     <string name="build_title">Сборка ядра</string>
+    <string name="build_target_title">Цель сборки</string>
+    <string name="build_target_desc">Стандартная сборка GKI или сборка под устройство OnePlus/Oplus.</string>
+    <string name="build_target_gki">GKI</string>
+    <string name="build_target_oneplus">OnePlus</string>
+    <string name="build_target_line">Цель сборки: %1$s</string>
     <string name="build_submit">Отправить сборку</string>
     <string name="build_running">Сборка идёт</string>
     <string name="build_success">Сборка успешна</string>
