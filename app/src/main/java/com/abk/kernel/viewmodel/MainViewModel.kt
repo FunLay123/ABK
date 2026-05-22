@@ -1741,11 +1741,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     loadRecentRuns()
                     processBuildQueue()
+                    // Keep cancellingWorkflowRunIds[runId] until the status
+                    // receiver sees "completed" — GitHub takes a few seconds
+                    // to actually wind the workflow down after accepting the
+                    // cancel request, and the spinner should keep turning
+                    // throughout that window.
+                    pollCancellationCompletion(owner, repoName, runId)
                 }
-                is Result.Error -> _uiState.update { it.copy(error = text(R.string.vm_workflow_cancel_failed, result.message)) }
-                Result.Loading -> {}
+                is Result.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            cancellingWorkflowRunIds = it.cancellingWorkflowRunIds - runId,
+                            error = text(R.string.vm_workflow_cancel_failed, result.message)
+                        )
+                    }
+                }
+                Result.Loading -> {
+                    _uiState.update { it.copy(cancellingWorkflowRunIds = it.cancellingWorkflowRunIds - runId) }
+                }
             }
-            _uiState.update { it.copy(cancellingWorkflowRunIds = it.cancellingWorkflowRunIds - runId) }
+        }
+    }
+
+    // Polls the cancelled run every few seconds for ~1 minute so the cancel
+    // spinner clears as soon as GitHub flips the status to "completed",
+    // without waiting for the background BuildMonitorService's slower tick.
+    private suspend fun pollCancellationCompletion(
+        owner: String,
+        repoName: String,
+        runId: Long
+    ) {
+        delay(2_000)
+        repeat(12) {
+            if (runId !in _uiState.value.cancellingWorkflowRunIds) return
+            when (val r = github.getWorkflowRun(owner, repoName, runId)) {
+                is Result.Success -> {
+                    val run = r.data
+                    if (run.status == "completed") {
+                        _uiState.update { state ->
+                            state.copy(
+                                cancellingWorkflowRunIds = state.cancellingWorkflowRunIds - runId,
+                                recentRuns = state.recentRuns.map { existing ->
+                                    if (existing.id == runId) run else existing
+                                }
+                            )
+                        }
+                        return
+                    }
+                }
+                else -> {}
+            }
+            delay(5_000)
         }
     }
 
