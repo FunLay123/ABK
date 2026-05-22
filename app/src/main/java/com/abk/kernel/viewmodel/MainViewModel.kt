@@ -27,10 +27,12 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -1728,7 +1730,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     error = null
                 )
             }
-            when (val result = github.cancelWorkflowRun(owner, repoName, runId)) {
+            when (val result = cancelWorkflowRunWithRetry(owner, repoName, runId)) {
                 is Result.Success -> {
                     syncBuildQueueWithRunId(runId, BuildQueueItemStatus.CANCELLED)
                     monitoredRunIds.remove(runId)
@@ -1767,6 +1769,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    /**
+     * Wraps [GitHubRepository.cancelWorkflowRun] in a retry loop with a
+     * per-attempt timeout. GitHub occasionally drops the cancel POST or
+     * responds slowly (saw "request hangs, user re-taps, eventually
+     * completes" in the field) — auto-retrying keeps the UX honest without
+     * making the user mash the button. 404/409 are treated as success
+     * (already cancelled / never existed). Auth errors abort immediately so
+     * we don't loop on a broken token.
+     */
+    private suspend fun cancelWorkflowRunWithRetry(
+        owner: String,
+        repoName: String,
+        runId: Long,
+        maxAttempts: Int = 4,
+        perAttemptTimeoutMs: Long = 10_000L,
+        backoffMs: Long = 2_500L
+    ): Result<Unit> {
+        var lastError: Result.Error? = null
+        repeat(maxAttempts) { attempt ->
+            val result: Result<Unit>? = try {
+                withTimeout(perAttemptTimeoutMs) {
+                    github.cancelWorkflowRun(owner, repoName, runId)
+                }
+            } catch (_: TimeoutCancellationException) {
+                null
+            }
+            when (result) {
+                is Result.Success -> return result
+                is Result.Error -> {
+                    lastError = result
+                    when (result.code) {
+                        // Already cancelled / already gone — treat as done.
+                        404, 409 -> return Result.Success(Unit)
+                        // Auth / forbidden — retrying won't help, surface now.
+                        401, 403 -> return result
+                    }
+                }
+                Result.Loading, null -> {
+                    // Timeout or pending — fall through to retry.
+                }
+            }
+            if (attempt < maxAttempts - 1) delay(backoffMs)
+        }
+        return lastError ?: Result.Error(text(R.string.vm_workflow_cancel_timeout), code = 0)
     }
 
     // Polls the cancelled run every few seconds for ~1 minute so the cancel

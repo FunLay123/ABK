@@ -897,6 +897,7 @@
     <string name="vm_workflow_waiting_runner">发现运行中的工作流，等待 Runner</string>
     <string name="vm_workflow_cancel_requested">已请求取消工作流</string>
     <string name="vm_workflow_cancel_failed">取消工作流失败: %1$s</string>
+    <string name="vm_workflow_cancel_timeout">取消请求超时，重试次数已用尽</string>
     <string name="vm_prebuilt_gki_label">预编译 GKI</string>
     <string name="vm_prebuilt_gki_release_failed">获取预编译 GKI Release 失败: %1$s</string>
     <string name="vm_prebuilt_gki_assets_failed">获取 %1$s 资产失败: %2$s</string>

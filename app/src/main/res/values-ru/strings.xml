@@ -879,6 +879,7 @@
     <string name="vm_workflow_waiting_runner">Найден выполняющийся workflow, ожидание runner</string>
     <string name="vm_workflow_cancel_requested">Запрошена отмена workflow</string>
     <string name="vm_workflow_cancel_failed">Не удалось отменить workflow: %1$s</string>
+    <string name="vm_workflow_cancel_timeout">Запрос отмены завис, попытки исчерпаны</string>
     <string name="vm_prebuilt_gki_label">Предсобранный GKI</string>
     <string name="vm_prebuilt_gki_release_failed">Не удалось получить Release предсобранного GKI: %1$s</string>
     <string name="vm_prebuilt_gki_assets_failed">Не удалось получить файлы для %1$s: %2$s</string>

@@ -897,6 +897,7 @@
     <string name="vm_workflow_waiting_runner">Found a running workflow, waiting for runner</string>
     <string name="vm_workflow_cancel_requested">Workflow cancellation requested</string>
     <string name="vm_workflow_cancel_failed">Failed to cancel workflow: %1$s</string>
+    <string name="vm_workflow_cancel_timeout">Cancel request hung, retries exhausted</string>
     <string name="vm_prebuilt_gki_label">Prebuilt GKI</string>
     <string name="vm_prebuilt_gki_release_failed">Failed to fetch prebuilt GKI releases: %1$s</string>
     <string name="vm_prebuilt_gki_assets_failed">Failed to fetch assets for %1$s: %2$s</string>
