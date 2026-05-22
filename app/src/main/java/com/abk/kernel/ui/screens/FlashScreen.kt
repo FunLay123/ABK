@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.annotation.StringRes
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -860,26 +861,11 @@ fun FlashScreen(
                     selectedPrebuiltReleaseId = null
                 }
                 val activeRun = recentRunById[routeRunId]?.takeIf { it.isActiveFlashRun() }
-                if (activeRun != null && (group == null || group.remote.isEmpty())) {
-                    FlashDetailBackSurface(
-                        predictiveBackEnabled = state.predictiveBackEnabled,
-                        outerPadding = outerPadding,
-                        backgroundUri = state.customBackgroundUri,
-                        backgroundImageEnabled = state.backgroundImageEnabled,
-                        onBack = ::returnToWorkflowList,
-                        onVisibleChange = onDetailPageVisibleChange,
-                        backgroundContent = { FlashListContent() }
-                    ) {
-                        BuildingWorkflowDetail(
-                            run = activeRun,
-                            progress = if (state.currentRun?.id == routeRunId) state.buildProgress else state.buildProgressByRunId[routeRunId],
-                            cancelling = routeRunId in state.cancellingWorkflowRunIds,
-                            onBack = ::returnToWorkflowList,
-                            onCancel = { vm.cancelWorkflowRun(routeRunId) }
-                        )
-                    }
-                    return@composable
-                }
+                // Single FlashDetailBackSurface with a Crossfade inside — so
+                // when a workflow finishes while the user is staring at the
+                // in-progress detail, the page fades over to the completed
+                // detail instead of jumping abruptly.
+                val showBuilding = activeRun != null && (group == null || group.remote.isEmpty())
                 FlashDetailBackSurface(
                     predictiveBackEnabled = state.predictiveBackEnabled,
                     outerPadding = outerPadding,
@@ -889,6 +875,16 @@ fun FlashScreen(
                     onVisibleChange = onDetailPageVisibleChange,
                     backgroundContent = { FlashListContent() }
                 ) {
+                    Crossfade(targetState = showBuilding, label = "flash-detail-build-state") { isBuilding ->
+                        if (isBuilding && activeRun != null) {
+                            BuildingWorkflowDetail(
+                                run = activeRun,
+                                progress = if (state.currentRun?.id == routeRunId) state.buildProgress else state.buildProgressByRunId[routeRunId],
+                                cancelling = routeRunId in state.cancellingWorkflowRunIds,
+                                onBack = ::returnToWorkflowList,
+                                onCancel = { vm.cancelWorkflowRun(routeRunId) }
+                            )
+                        } else {
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
@@ -971,6 +967,8 @@ fun FlashScreen(
                                     icon = Icons.Default.Inbox
                                 )
                             }
+                        }
+                    }
                         }
                     }
                 }
