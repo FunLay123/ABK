@@ -233,7 +233,13 @@ fun FlashScreen(
                     runNumber = run.runNumber,
                     runCreatedAt = run.createdAt,
                     remote = emptyList(),
-                    local = emptyList()
+                    local = emptyList(),
+                    categories = emptySet(),
+                    cachedHasRemoteManagerArtifact = false,
+                    cachedHasManagerArtifact = false,
+                    cachedHasKernelArtifact = false,
+                    cachedHasRemoteKernelArtifact = false,
+                    cachedHasSusfsModuleArtifact = false
                 )
             }
         (workflowGroups + extraGroups)
@@ -292,10 +298,13 @@ fun FlashScreen(
     val visibleWorkflowGroups = remember(filteredGroups, recentRunById) {
         limitWorkflowGroupsForDisplay(filteredGroups, recentRunById)
     }
-    // Stagger summary loads so the first frame of the list isn't blocked by N
-    // simultaneous GitHub API calls (caused both UI jank and "Read timed out"
-    // errors when the workflow list was long). VM dedupes already-loaded ids.
-    LaunchedEffect(visibleWorkflowGroups.map { it.runId }) {
+    val shouldPrefetchWorkflowSummaries = remember(filter) {
+        filter.kernelEnabled && filter.kernelKinds.isNotEmpty()
+    }
+    // Summary prefetch is only needed when an active filter depends on summary
+    // data. Avoiding eager log fetches keeps the workflow list smooth.
+    LaunchedEffect(visibleWorkflowGroups.map { it.runId }, shouldPrefetchWorkflowSummaries) {
+        if (!shouldPrefetchWorkflowSummaries) return@LaunchedEffect
         delay(200)
         visibleWorkflowGroups.forEach { group ->
             vm.loadBuildParameterSummary(group.runId)
@@ -2110,10 +2119,7 @@ private fun WorkflowRunCard(
 ) {
     val sourceCount = group.remote.size
     val downloadedCount = group.local.size
-    val categories = artifactCategoryOrder.filter { category ->
-        group.remote.any { DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) == category } ||
-            group.local.any { it.category == category }
-    }
+    val categories = artifactCategoryOrder.filter { it in group.categories }
     val kernelKind = group.kernelKind(summary, dispatchedKernelVariant)
     val susfsOn = run {
         val v = summary?.susfsEnabled.orEmpty().lowercase().trim()
@@ -2841,15 +2847,21 @@ private fun buildWorkflowGroups(
     unlinkedWorkflowTitle: String,
     runs: Map<Long, WorkflowRun> = emptyMap()
 ): List<WorkflowArtifactGroup> {
-    val runIds = (remoteArtifacts.map { it.runId } + downloadedArtifacts.map { it.runId }).distinct()
+    val remoteByRunId = remoteArtifacts.groupBy { it.runId }
+    val localByRunId = downloadedArtifacts.groupBy { it.runId }
+    val runIds = (remoteByRunId.keys + localByRunId.keys).distinct()
     return runIds.map { runId ->
-        val remote = remoteArtifacts.filter { it.runId == runId }
-        val local = downloadedArtifacts.filter { it.runId == runId }
+        val remote = remoteByRunId[runId].orEmpty()
+        val local = localByRunId[runId].orEmpty()
         val firstRemote = remote.firstOrNull()
         val firstLocal = local.firstOrNull()
         val runCreatedAt = runs[runId]?.createdAt
             ?: firstRemote?.runCreatedAt
             ?: ""
+        val remoteTypes = remote.map { DownloadUtils.classifyArtifact(it.name) }
+        val remoteCategories = remoteTypes.mapNotNull(DownloadUtils::classifyCategory).toSet()
+        val localCategories = local.map { it.category }.toSet()
+        val categories = (remoteCategories + localCategories)
         WorkflowArtifactGroup(
             runId = runId,
             runTitle = firstRemote?.runTitle?.ifBlank { null }
@@ -2858,7 +2870,19 @@ private fun buildWorkflowGroups(
             runNumber = firstRemote?.runNumber ?: firstLocal?.runNumber ?: 0,
             runCreatedAt = runCreatedAt,
             remote = remote,
-            local = local
+            local = local,
+            categories = categories,
+            cachedHasRemoteManagerArtifact = remoteTypes.any { it == ArtifactType.KSU_MANAGER },
+            cachedHasManagerArtifact = remoteTypes.any { it == ArtifactType.KSU_MANAGER } ||
+                local.any { it.type == ArtifactType.KSU_MANAGER },
+            cachedHasKernelArtifact = remoteTypes.any {
+                it == ArtifactType.KERNEL_PACKAGE || it == ArtifactType.KERNEL_IMG || it == ArtifactType.ANYKERNEL3
+            } || local.any { it.type in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.KERNEL_IMG, ArtifactType.ANYKERNEL3) },
+            cachedHasRemoteKernelArtifact = remoteTypes.any {
+                it == ArtifactType.KERNEL_PACKAGE || it == ArtifactType.KERNEL_IMG || it == ArtifactType.ANYKERNEL3
+            },
+            cachedHasSusfsModuleArtifact = remoteTypes.any { it == ArtifactType.SUSFS_MODULE } ||
+                local.any { it.type == ArtifactType.SUSFS_MODULE }
         )
     }.sortedWith(
         compareByDescending<WorkflowArtifactGroup> { it.runNumber }
@@ -2872,7 +2896,13 @@ private data class WorkflowArtifactGroup(
     val runNumber: Int,
     val runCreatedAt: String,
     val remote: List<BuildArtifact>,
-    val local: List<DownloadedArtifact>
+    val local: List<DownloadedArtifact>,
+    val categories: Set<ArtifactCategory>,
+    val cachedHasRemoteManagerArtifact: Boolean,
+    val cachedHasManagerArtifact: Boolean,
+    val cachedHasKernelArtifact: Boolean,
+    val cachedHasRemoteKernelArtifact: Boolean,
+    val cachedHasSusfsModuleArtifact: Boolean
 )
 
 private fun WorkflowRun.isActiveFlashRun(): Boolean =
@@ -3152,26 +3182,19 @@ private fun WorkflowArtifactGroup.kernelKind(
 }
 
 private fun WorkflowArtifactGroup.hasRemoteManagerArtifact(): Boolean =
-    remote.any { DownloadUtils.classifyArtifact(it.name) == ArtifactType.KSU_MANAGER }
+    cachedHasRemoteManagerArtifact
 
 private fun WorkflowArtifactGroup.hasManagerArtifact(): Boolean =
-    hasRemoteManagerArtifact() || local.any { it.type == ArtifactType.KSU_MANAGER }
+    cachedHasManagerArtifact
 
 private fun WorkflowArtifactGroup.hasKernelArtifact(): Boolean =
-    remote.any {
-        val t = DownloadUtils.classifyArtifact(it.name)
-        t == ArtifactType.KERNEL_PACKAGE || t == ArtifactType.KERNEL_IMG || t == ArtifactType.ANYKERNEL3
-    } || local.any { it.type in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.KERNEL_IMG, ArtifactType.ANYKERNEL3) }
+    cachedHasKernelArtifact
 
 private fun WorkflowArtifactGroup.hasRemoteKernelArtifact(): Boolean =
-    remote.any {
-        val t = DownloadUtils.classifyArtifact(it.name)
-        t == ArtifactType.KERNEL_PACKAGE || t == ArtifactType.KERNEL_IMG || t == ArtifactType.ANYKERNEL3
-    }
+    cachedHasRemoteKernelArtifact
 
 private fun WorkflowArtifactGroup.hasSusfsModuleArtifact(): Boolean =
-    remote.any { DownloadUtils.classifyArtifact(it.name) == ArtifactType.SUSFS_MODULE } ||
-        local.any { it.type == ArtifactType.SUSFS_MODULE }
+    cachedHasSusfsModuleArtifact
 
 private fun WorkflowArtifactGroup.managerKind(
     summary: BuildParameterSummary?,
