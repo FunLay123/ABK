@@ -1621,7 +1621,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         recentRunsRefreshJob = viewModelScope.launch {
             _uiState.update { it.copy(isRefreshingRecentRuns = true) }
             try {
-                when (val r = github.listRecentRuns(username, repoName, perPage = 40)) {
+                when (val r = github.listRecentRuns(username, repoName, perPage = 25)) {
                     is Result.Success -> {
                         _uiState.update { it.copy(recentRuns = r.data) }
                         r.data.forEach { run ->
