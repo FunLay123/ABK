@@ -972,7 +972,15 @@ fun FlashScreen(
                                 )
                             }
 
-                            artifactCategoryOrder.forEach { category ->
+                            val visibleCategories = if (
+                                group.primaryKind(recentRunById[group.runId]) == WorkflowPrimary.Manager
+                            ) {
+                                listOf(ArtifactCategory.MANAGER)
+                            } else {
+                                artifactCategoryOrder
+                            }
+
+                            visibleCategories.forEach { category ->
                                 val remoteInCategory = group.remote.filter {
                                     DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) == category
                                 }
@@ -2654,6 +2662,7 @@ private fun DownloadedOutputRow(
     onDelete: () -> Unit,
     allowRootActions: Boolean
 ) {
+    val installableApk = artifact.isInstallableApk()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(
@@ -2685,13 +2694,24 @@ private fun DownloadedOutputRow(
             }
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = onCopyPath,
-                modifier = Modifier.weight(1f).height(40.dp)
-            ) {
-                Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.flash_copy_path))
+            if (installableApk) {
+                Button(
+                    onClick = onInstall,
+                    modifier = Modifier.weight(1f).height(40.dp)
+                ) {
+                    Icon(Icons.Default.InstallMobile, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.flash_install))
+                }
+            } else {
+                OutlinedButton(
+                    onClick = onCopyPath,
+                    modifier = Modifier.weight(1f).height(40.dp)
+                ) {
+                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.flash_copy_path))
+                }
             }
             if (allowRootActions) {
                 when (artifact.type) {
@@ -2715,14 +2735,6 @@ private fun DownloadedOutputRow(
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(flashButtonLabelRes(artifact.type)))
-                    }
-                    ArtifactType.KSU_MANAGER -> Button(
-                        onClick = onInstall,
-                        modifier = Modifier.weight(1f).height(40.dp)
-                    ) {
-                        Icon(Icons.Default.InstallMobile, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.flash_install))
                     }
                     else -> {}
                 }
@@ -3054,6 +3066,9 @@ private val artifactCategoryOrder = listOf(
     ArtifactCategory.MANAGER,
     ArtifactCategory.MODULE
 )
+
+private fun DownloadedArtifact.isInstallableApk(): Boolean =
+    type == ArtifactType.KSU_MANAGER || name.endsWith(".apk", ignoreCase = true)
 
 @StringRes
 private fun ArtifactCategory.labelRes(): Int = when (this) {
