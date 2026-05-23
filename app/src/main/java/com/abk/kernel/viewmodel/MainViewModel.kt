@@ -227,16 +227,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     else -> BuildStatus.IDLE
                 }
                 _uiState.update {
-                    it.withBuildRunDisplay(
-                        run = run,
-                        status = bs,
-                        progress = progress,
-                        cancellingWorkflowRunIds = if (status == "completed") {
-                            it.cancellingWorkflowRunIds - run.id
-                        } else {
-                            it.cancellingWorkflowRunIds
-                        }
-                    )
+                    val cancelling = run.id in it.cancellingWorkflowRunIds
+                    if (cancelling && status != "completed") {
+                        it.copy(recentRuns = it.recentRuns.replaceRun(run))
+                    } else {
+                        it.withBuildRunDisplay(
+                            run = run,
+                            status = bs,
+                            progress = progress,
+                            cancellingWorkflowRunIds = if (status == "completed") {
+                                it.cancellingWorkflowRunIds - run.id
+                            } else {
+                                it.cancellingWorkflowRunIds
+                            }
+                        )
+                    }
                 }
                 syncBuildQueueWithRun(run, bs)
                 if (bs == BuildStatus.SUCCESS) {
@@ -1733,7 +1738,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             when (val result = cancelWorkflowRunWithRetry(owner, repoName, runId)) {
                 is Result.Success -> {
                     syncBuildQueueWithRunId(runId, BuildQueueItemStatus.CANCELLED)
-                    monitoredRunIds.remove(runId)
                     _uiState.update {
                         val affectsDisplay = it.currentRun?.id == runId || it.activeBuildRuns.any { run -> run.id == runId }
                         it.withoutActiveBuildRun(
@@ -1832,20 +1836,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is Result.Success -> {
                     val run = r.data
                     if (run.status == "completed") {
+                        monitoredRunIds.remove(runId)
                         _uiState.update { state ->
                             state.copy(
                                 cancellingWorkflowRunIds = state.cancellingWorkflowRunIds - runId,
-                                recentRuns = state.recentRuns.map { existing ->
-                                    if (existing.id == runId) run else existing
-                                }
+                                recentRuns = state.recentRuns.replaceRun(run)
                             )
                         }
+                        processBuildQueue()
                         return
                     }
                 }
                 else -> {}
             }
             delay(5_000)
+        }
+        _uiState.update { state ->
+            state.copy(cancellingWorkflowRunIds = state.cancellingWorkflowRunIds - runId)
         }
     }
 
@@ -4873,6 +4880,19 @@ private fun MainUiState.buildRunDescriptors(
 
 private fun WorkflowRun.isActiveBuildRun(): Boolean =
     status in setOf("queued", "waiting", "requested", "pending", "in_progress")
+
+private fun List<WorkflowRun>.replaceRun(run: WorkflowRun): List<WorkflowRun> {
+    var replaced = false
+    val updated = map { existing ->
+        if (existing.id == run.id) {
+            replaced = true
+            run
+        } else {
+            existing
+        }
+    }
+    return if (replaced) updated else updated + run
+}
 
 private fun WorkflowRun.toBuildStatus(): BuildStatus = when (status) {
     "queued", "waiting", "requested", "pending" -> BuildStatus.QUEUED
