@@ -236,9 +236,13 @@ fun FlashScreen(
                     local = emptyList()
                 )
             }
-        (workflowGroups + extraGroups).sortedWith(
-            compareByDescending<WorkflowArtifactGroup> { it.runNumber }.thenByDescending { it.runId }
-        )
+        (workflowGroups + extraGroups)
+            .filter { group ->
+                val run = recentRunById[group.runId]
+                val isActive = run?.isActiveFlashRun() == true
+                isActive || group.shouldAppearInWorkflowList(run)
+            }
+            .sortedWith(compareByDescending<WorkflowArtifactGroup> { it.runNumber }.thenByDescending { it.runId })
     }
     var filter by rememberSaveable(stateSaver = FlashFilterSaver) { mutableStateOf(FlashFilter()) }
     // rememberSaveable survives rotation/savedInstanceState but not process
@@ -3126,15 +3130,27 @@ private fun WorkflowArtifactGroup.kernelKind(
     }
 }
 
+private fun WorkflowArtifactGroup.hasRemoteManagerArtifact(): Boolean =
+    remote.any { DownloadUtils.classifyArtifact(it.name) == ArtifactType.KSU_MANAGER }
+
 private fun WorkflowArtifactGroup.hasManagerArtifact(): Boolean =
-    remote.any { DownloadUtils.classifyArtifact(it.name) == ArtifactType.KSU_MANAGER } ||
-        local.any { it.type == ArtifactType.KSU_MANAGER }
+    hasRemoteManagerArtifact() || local.any { it.type == ArtifactType.KSU_MANAGER }
 
 private fun WorkflowArtifactGroup.hasKernelArtifact(): Boolean =
     remote.any {
         val t = DownloadUtils.classifyArtifact(it.name)
         t == ArtifactType.KERNEL_PACKAGE || t == ArtifactType.KERNEL_IMG || t == ArtifactType.ANYKERNEL3
     } || local.any { it.type in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.KERNEL_IMG, ArtifactType.ANYKERNEL3) }
+
+private fun WorkflowArtifactGroup.hasRemoteKernelArtifact(): Boolean =
+    remote.any {
+        val t = DownloadUtils.classifyArtifact(it.name)
+        t == ArtifactType.KERNEL_PACKAGE || t == ArtifactType.KERNEL_IMG || t == ArtifactType.ANYKERNEL3
+    }
+
+private fun WorkflowArtifactGroup.hasSusfsModuleArtifact(): Boolean =
+    remote.any { DownloadUtils.classifyArtifact(it.name) == ArtifactType.SUSFS_MODULE } ||
+        local.any { it.type == ArtifactType.SUSFS_MODULE }
 
 private fun WorkflowArtifactGroup.managerKind(
     summary: BuildParameterSummary?,
@@ -3213,6 +3229,12 @@ private fun WorkflowArtifactGroup.primaryKind(run: WorkflowRun?): WorkflowPrimar
     if (hasManagerArtifact()) return WorkflowPrimary.Manager
     return WorkflowPrimary.Unknown
 }
+
+private fun WorkflowArtifactGroup.shouldAppearInWorkflowList(run: WorkflowRun?): Boolean =
+    when (primaryKind(run)) {
+        WorkflowPrimary.Kernel -> hasRemoteKernelArtifact()
+        else -> true
+    }
 
 private fun WorkflowArtifactGroup.matchesFilter(
     filter: FlashFilter,
