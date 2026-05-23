@@ -139,25 +139,13 @@ object BuildProgressUtils {
                 0
             }
         }
-        val runningCount = activeRuns.count { it.status == "in_progress" }
-        val queuedCount = activeRuns.size - runningCount
-        val currentStep = if (descriptors.isNotEmpty()) {
-            buildCompactMergedStep(activeRuns, pairs.toMap(), descriptors)
-        } else {
-            val detail = pairs
-                .filter { (run, _) -> run.status == "in_progress" }
-                .ifEmpty { pairs }
-                .take(2)
-                .joinToString("；") { (run, progress) ->
-                    "${runDisplayLabel(run)} ${progress.currentStep}"
-                }
-            buildString {
-                append(tr(R.string.bp_merge_progress, activeRuns.size))
-                if (runningCount > 0) append(tr(R.string.bp_merge_running, runningCount))
-                if (queuedCount > 0) append(tr(R.string.bp_merge_queued, queuedCount))
-                if (detail.isNotBlank()) append(" · ").append(detail)
-            }
-        }
+        // Both branches use the compact "#65 SukiSU SUSFS 6.6.89-…"-style
+        // chip output. The descriptor map is normally populated from the VM
+        // (buildQueue → KernelBuildConfig); when empty (e.g. notification
+        // service in a process that lacks queue context) the helper falls
+        // back to "#N {step.name}" per run — still without the old
+        // "Объединённый прогресс по N workflow" prefix.
+        val currentStep = buildCompactMergedStep(activeRuns, pairs.toMap(), descriptors)
         val steps = pairs.flatMap { (run, progress) ->
             progress.steps.map { step ->
                 step.copy(name = "${runDisplayLabel(run)} ${step.name}")
