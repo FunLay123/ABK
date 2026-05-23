@@ -1611,7 +1611,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val username = state.user?.login ?: return
         val repoName = state.forkRepo?.name ?: return
         viewModelScope.launch {
-            when (val r = github.listRecentRuns(username, repoName, perPage = 30)) {
+            when (val r = github.listRecentRuns(username, repoName, perPage = 100)) {
                 is Result.Success -> {
                     _uiState.update { it.copy(recentRuns = r.data) }
                     r.data.forEach { run ->
