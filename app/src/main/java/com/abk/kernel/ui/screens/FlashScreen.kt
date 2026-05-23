@@ -241,6 +241,21 @@ fun FlashScreen(
         )
     }
     var filter by rememberSaveable(stateSaver = FlashFilterSaver) { mutableStateOf(FlashFilter()) }
+    // rememberSaveable survives rotation/savedInstanceState but not process
+    // death. Persist to DataStore so the filter choice carries across cold
+    // starts. Gate the auto-save on `filterLoaded` so the dispatched default
+    // FlashFilter() doesn't overwrite the persisted value before the load
+    // coroutine finishes.
+    var filterLoaded by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!filterLoaded) {
+            vm.loadFlashFilterJson()?.toFlashFilterOrNull()?.let { filter = it }
+            filterLoaded = true
+        }
+    }
+    LaunchedEffect(filter, filterLoaded) {
+        if (filterLoaded) vm.saveFlashFilterJson(filter.toJsonString())
+    }
     var filterMenuExpanded by remember { mutableStateOf(false) }
     val dispatchedConfigByRunId = remember(state.buildQueue) {
         state.buildQueue
@@ -3061,32 +3076,40 @@ private data class FlashFilter(
     val workflowStates: Set<FlashFilterWorkflowState> = emptySet(),
 )
 
-private val FlashFilterSaver = androidx.compose.runtime.saveable.Saver<FlashFilter, Map<String, String>>(
-    save = { f ->
-        mapOf(
-            "ke" to f.kernelEnabled.toString(),
-            "kk" to f.kernelKinds.joinToString(",") { it.name },
-            "me" to f.managerEnabled.toString(),
-            "mk" to f.managerKinds.joinToString(",") { it.name },
-            "ws" to f.workflowStates.joinToString(",") { it.name }
-        )
-    },
-    restore = { m ->
-        FlashFilter(
-            kernelEnabled = m["ke"]?.toBooleanStrictOrNull() ?: true,
-            kernelKinds = m["kk"]?.takeIf { it.isNotBlank() }?.split(",")
-                ?.mapNotNull { runCatching { FlashFilterKernelKind.valueOf(it) }.getOrNull() }
-                ?.toSet() ?: emptySet(),
-            managerEnabled = m["me"]?.toBooleanStrictOrNull() ?: true,
-            managerKinds = m["mk"]?.takeIf { it.isNotBlank() }?.split(",")
-                ?.mapNotNull { runCatching { FlashFilterManagerKind.valueOf(it) }.getOrNull() }
-                ?.toSet() ?: setOf(FlashFilterManagerKind.Release),
-            workflowStates = m["ws"]?.takeIf { it.isNotBlank() }?.split(",")
-                ?.mapNotNull { runCatching { FlashFilterWorkflowState.valueOf(it) }.getOrNull() }
-                ?.toSet() ?: emptySet(),
-        )
-    }
+private fun flashFilterToMap(f: FlashFilter): Map<String, String> = mapOf(
+    "ke" to f.kernelEnabled.toString(),
+    "kk" to f.kernelKinds.joinToString(",") { it.name },
+    "me" to f.managerEnabled.toString(),
+    "mk" to f.managerKinds.joinToString(",") { it.name },
+    "ws" to f.workflowStates.joinToString(",") { it.name }
 )
+
+private fun flashFilterFromMap(m: Map<String, String?>): FlashFilter = FlashFilter(
+    kernelEnabled = m["ke"]?.toBooleanStrictOrNull() ?: true,
+    kernelKinds = m["kk"]?.takeIf { it.isNotBlank() }?.split(",")
+        ?.mapNotNull { runCatching { FlashFilterKernelKind.valueOf(it) }.getOrNull() }
+        ?.toSet() ?: emptySet(),
+    managerEnabled = m["me"]?.toBooleanStrictOrNull() ?: true,
+    managerKinds = m["mk"]?.takeIf { it.isNotBlank() }?.split(",")
+        ?.mapNotNull { runCatching { FlashFilterManagerKind.valueOf(it) }.getOrNull() }
+        ?.toSet() ?: setOf(FlashFilterManagerKind.Release),
+    workflowStates = m["ws"]?.takeIf { it.isNotBlank() }?.split(",")
+        ?.mapNotNull { runCatching { FlashFilterWorkflowState.valueOf(it) }.getOrNull() }
+        ?.toSet() ?: emptySet(),
+)
+
+private val FlashFilterSaver = androidx.compose.runtime.saveable.Saver<FlashFilter, Map<String, String>>(
+    save = { flashFilterToMap(it) },
+    restore = { flashFilterFromMap(it) }
+)
+
+private fun FlashFilter.toJsonString(): String = com.google.gson.Gson().toJson(flashFilterToMap(this))
+
+@Suppress("UNCHECKED_CAST")
+private fun String.toFlashFilterOrNull(): FlashFilter? = runCatching {
+    val raw = com.google.gson.Gson().fromJson(this, Map::class.java) as Map<String, String?>
+    flashFilterFromMap(raw)
+}.getOrNull()
 
 private fun WorkflowArtifactGroup.kernelKind(
     summary: BuildParameterSummary?,
@@ -3120,7 +3143,7 @@ private fun WorkflowArtifactGroup.managerKind(
     val branch = summary?.ksuBranch.orEmpty().lowercase()
     val hasDevName = remote.any { it.name.lowercase().contains("dev") } ||
         local.any { it.name.lowercase().contains("dev") }
-    val runName = ((run?.name ?: "") + " " + (run?.displayTitle ?: "")).lowercase()
+    val runName = ((run?.name ?: "") + " " + (run?.displayTitle ?: "") + " " + runTitle).lowercase()
     val runIsManagerWorkflow = "abk app" in runName || "abk-app" in runName ||
         "build app" in runName || "build-app" in runName ||
         "manager" in runName || "管理器" in runName || "getmanager" in runName
@@ -3146,17 +3169,25 @@ private fun WorkflowRun?.workflowState(): FlashFilterWorkflowState? = when {
     else -> FlashFilterWorkflowState.Finished
 }
 
-private fun WorkflowRun?.looksLikeManagerByName(): Boolean {
-    if (this == null) return false
-    val n = (name ?: "").lowercase() + " " + (displayTitle ?: "").lowercase()
+private fun String.titleLooksLikeManager(): Boolean {
+    val n = lowercase()
     return "abk app" in n || "abk-app" in n || "build app" in n ||
         "manager" in n || "管理器" in n || "getmanager" in n
 }
 
+private fun String.titleLooksLikeKernel(): Boolean {
+    val n = lowercase()
+    return "kernel" in n || "内核" in n
+}
+
+private fun WorkflowRun?.looksLikeManagerByName(): Boolean {
+    if (this == null) return false
+    return ((name ?: "") + " " + (displayTitle ?: "")).titleLooksLikeManager()
+}
+
 private fun WorkflowRun?.looksLikeKernelByName(): Boolean {
     if (this == null) return false
-    val n = (name ?: "").lowercase() + " " + (displayTitle ?: "").lowercase()
-    return "kernel" in n || "内核" in n
+    return ((name ?: "") + " " + (displayTitle ?: "")).titleLooksLikeKernel()
 }
 
 // Strict primary classification. A workflow belongs to ONE primary kind —
@@ -3170,6 +3201,14 @@ private enum class WorkflowPrimary { Kernel, Manager, Unknown }
 private fun WorkflowArtifactGroup.primaryKind(run: WorkflowRun?): WorkflowPrimary {
     if (run.looksLikeKernelByName()) return WorkflowPrimary.Kernel
     if (run.looksLikeManagerByName()) return WorkflowPrimary.Manager
+    // Older workflow runs aren't in state.recentRuns (the API page is bounded)
+    // so recentRunById[runId] is null and the name checks above don't fire.
+    // The group's own runTitle is populated from the artifact metadata even
+    // for those, so use it as a fallback. Without this, a kernel build that
+    // bundles a manager APK is misclassified as Manager and leaks through
+    // the Manager filter when the Kernel toggle is off.
+    if (runTitle.titleLooksLikeKernel()) return WorkflowPrimary.Kernel
+    if (runTitle.titleLooksLikeManager()) return WorkflowPrimary.Manager
     if (hasKernelArtifact()) return WorkflowPrimary.Kernel
     if (hasManagerArtifact()) return WorkflowPrimary.Manager
     return WorkflowPrimary.Unknown

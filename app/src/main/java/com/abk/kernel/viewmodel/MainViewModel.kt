@@ -2501,6 +2501,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setBackgroundImageEnabled(v: Boolean) = viewModelScope.launch { prefs.setBackgroundImageEnabled(v) }
     fun setUiSurfaceAlpha(alpha: Float) = viewModelScope.launch { prefs.setUiSurfaceAlpha(alpha) }
     fun acceptTerms() = viewModelScope.launch { prefs.acceptCurrentTerms() }
+    suspend fun loadFlashFilterJson(): String? = prefs.flashFilterJson.first()
+    fun saveFlashFilterJson(json: String) = viewModelScope.launch { prefs.saveFlashFilterJson(json) }
     fun setDownloadDirectory(path: String) = viewModelScope.launch {
         prefs.setDownloadDirectory(path)
     }
