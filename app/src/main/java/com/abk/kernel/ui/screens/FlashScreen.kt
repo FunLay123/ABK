@@ -289,12 +289,15 @@ fun FlashScreen(
             it.matchesFilter(filter, state.buildParameterSummaries, recentRunById, dispatchedVariantByRunId)
         }
     }
+    val visibleWorkflowGroups = remember(filteredGroups, recentRunById) {
+        limitWorkflowGroupsForDisplay(filteredGroups, recentRunById)
+    }
     // Stagger summary loads so the first frame of the list isn't blocked by N
     // simultaneous GitHub API calls (caused both UI jank and "Read timed out"
     // errors when the workflow list was long). VM dedupes already-loaded ids.
-    LaunchedEffect(allWorkflowGroups.map { it.runId }) {
+    LaunchedEffect(visibleWorkflowGroups.map { it.runId }) {
         delay(200)
-        allWorkflowGroups.forEach { group ->
+        visibleWorkflowGroups.forEach { group ->
             vm.loadBuildParameterSummary(group.runId)
             delay(150)
         }
@@ -726,8 +729,8 @@ fun FlashScreen(
                         }
 
                         when {
-                            filteredGroups.isNotEmpty() -> {
-                                items(filteredGroups, key = { "workflow-${it.runId}" }) { group ->
+                            visibleWorkflowGroups.isNotEmpty() -> {
+                                items(visibleWorkflowGroups, key = { "workflow-${it.runId}" }) { group ->
                                     val run = recentRunById[group.runId]
                                     val active = run?.isActiveFlashRun() == true
                                     // Per-run dispatched config drives the kernel-kind + SUSFS chips.
@@ -3068,6 +3071,8 @@ private val artifactCategoryOrder = listOf(
     ArtifactCategory.MODULE
 )
 
+private const val MAX_VISIBLE_WORKFLOWS_PER_CATEGORY = 15
+
 private fun DownloadedArtifact.isInstallableApk(): Boolean =
     type == ArtifactType.KSU_MANAGER || name.endsWith(".apk", ignoreCase = true)
 
@@ -3293,6 +3298,26 @@ private fun WorkflowArtifactGroup.matchesFilter(
             if (!filter.kernelEnabled) return false
             if (filter.kernelKinds.isEmpty()) return true
             dispatchedKKind == null || dispatchedKKind in filter.kernelKinds
+        }
+    }
+}
+
+private fun limitWorkflowGroupsForDisplay(
+    groups: List<WorkflowArtifactGroup>,
+    runs: Map<Long, WorkflowRun>
+): List<WorkflowArtifactGroup> {
+    val counts = mutableMapOf<WorkflowPrimary, Int>()
+    return groups.filter { group ->
+        val bucket = when (group.primaryKind(runs[group.runId])) {
+            WorkflowPrimary.Manager -> WorkflowPrimary.Manager
+            else -> WorkflowPrimary.Kernel
+        }
+        val next = (counts[bucket] ?: 0) + 1
+        if (next > MAX_VISIBLE_WORKFLOWS_PER_CATEGORY) {
+            false
+        } else {
+            counts[bucket] = next
+            true
         }
     }
 }
