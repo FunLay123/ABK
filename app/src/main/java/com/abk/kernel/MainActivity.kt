@@ -197,7 +197,7 @@ private fun TermsAgreementDialog(
 ) {
     val scrollState = rememberScrollState()
     val canAccept by remember {
-        derivedStateOf { scrollState.maxValue > 0 && scrollState.value >= scrollState.maxValue }
+        derivedStateOf { scrollState.maxValue == 0 || scrollState.value >= scrollState.maxValue }
     }
 
     AlertDialog(
