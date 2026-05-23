@@ -117,8 +117,7 @@ object NotificationUtils {
             when (kind) {
                 BuildKind.MultipleKernels -> R.string.notif_build_kernels_running
                 BuildKind.Mixed -> R.string.notif_build_artifacts_running
-                // Kernel / ManagerOnly / Unknown: keep the original single-kernel
-                // string. Manager-only just doesn't get the island attachment.
+                BuildKind.ManagerOnly -> R.string.notif_build_manager_running
                 else -> R.string.notif_build_running
             }
         )

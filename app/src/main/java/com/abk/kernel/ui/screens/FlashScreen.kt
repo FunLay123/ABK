@@ -2254,7 +2254,6 @@ private fun BuildingWorkflowDetail(
                         modifier = Modifier.weight(1f)
                     )
                 }
-                BuildElapsedChip(createdAt = run.createdAt)
             }
         }
 
@@ -2267,9 +2266,23 @@ private fun BuildingWorkflowDetail(
         } else {
             artifactCategoryOrder
         }
+        // The elapsed chip rides above the first visible category tile, right-
+        // aligned to mirror the tile's right edge.
+        val elapsedAnchorCategory = visibleCategories.first()
         visibleCategories.forEach { category ->
             item("category-build-${category.name}") {
-                CategoryHeader(category)
+                if (category == elapsedAnchorCategory) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CategoryHeader(category)
+                        Spacer(Modifier.weight(1f))
+                        BuildElapsedChip(createdAt = run.createdAt)
+                    }
+                } else {
+                    CategoryHeader(category)
+                }
             }
             item("progress-${category.name}") {
                 CategoryProgressCard(progress = progress)
@@ -2338,28 +2351,23 @@ private fun BuildElapsedChip(createdAt: String) {
         "%02d:%02d".format(m, s)
     }
     Surface(
-        modifier = Modifier
-            .padding(top = 4.dp)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(50),
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Icon(
                 Icons.Default.Schedule,
                 contentDescription = null,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(14.dp)
             )
             Text(
-                text = stringResource(R.string.flash_build_elapsed, formatted),
-                style = MaterialTheme.typography.titleMedium,
+                text = formatted,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold
             )
         }
@@ -3116,15 +3124,17 @@ private fun WorkflowArtifactGroup.managerKind(
     val runIsManagerWorkflow = "abk app" in runName || "abk-app" in runName ||
         "build app" in runName || "build-app" in runName ||
         "manager" in runName || "管理器" in runName || "getmanager" in runName
-    val devInRunName = runIsManagerWorkflow && "dev" in runName
-    val releaseInRunName = runIsManagerWorkflow && ("release" in runName || "релиз" in runName)
-    // If we have neither a summary nor any manager-specific signal, we genuinely
-    // don't know — return null so callers can choose lenient behaviour rather
-    // than defaulting to Release.
-    if (summary == null && !hasDevName && !devInRunName && !releaseInRunName) return null
+    // When the run is identifiably a manager workflow, commit to a kind: an
+    // explicit "dev" marker (in name, artifact filename, or branch) means Dev,
+    // otherwise it's the Release counterpart. Returning null here previously
+    // let non-dev "Build ABK App" runs leak through the Dev sub-filter as
+    // "unclassified" because matchesFilter treats null leniently.
+    if (runIsManagerWorkflow) {
+        val isDev = "dev" in runName || hasDevName || "dev" in branch
+        return if (isDev) FlashFilterManagerKind.Dev else FlashFilterManagerKind.Release
+    }
+    if (summary == null && !hasDevName) return null
     return when {
-        devInRunName -> FlashFilterManagerKind.Dev
-        releaseInRunName -> FlashFilterManagerKind.Release
         "dev" in branch || hasDevName -> FlashFilterManagerKind.Dev
         else -> FlashFilterManagerKind.Release
     }
