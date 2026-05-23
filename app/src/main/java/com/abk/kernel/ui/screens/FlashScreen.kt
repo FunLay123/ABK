@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.InstallMobile
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.RunCircle
 import androidx.compose.material.icons.filled.Shield
@@ -192,6 +193,7 @@ fun FlashScreen(
     var prebuiltParameterTarget by remember { mutableStateOf<PrebuiltGkiRelease?>(null) }
     var deleteRemoteWorkflowRun by remember { mutableStateOf(false) }
     var showFlashConfirm by remember { mutableStateOf(false) }
+    var cancelConfirmRunId by remember { mutableStateOf<Long?>(null) }
     var showTerminal by remember { mutableStateOf(false) }
     var terminalTitle by remember { mutableStateOf(context.getString(R.string.flash_terminal)) }
     var terminalCanReboot by remember { mutableStateOf(false) }
@@ -478,6 +480,31 @@ fun FlashScreen(
         )
     }
 
+    // Cancel-build confirmation dialog. Styled to match the flash confirm
+    // above (Warning icon, error-tinted confirm). Tapping the big cancel
+    // button inside the in-progress workflow detail surfaces this rather
+    // than firing the cancel request immediately.
+    cancelConfirmRunId?.let { confirmRunId ->
+        AlertDialog(
+            onDismissRequest = { cancelConfirmRunId = null },
+            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text(stringResource(R.string.flash_cancel_confirm_title)) },
+            text = { Text(stringResource(R.string.flash_cancel_confirm_msg)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        cancelConfirmRunId = null
+                        vm.cancelWorkflowRun(confirmRunId)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text(stringResource(R.string.flash_cancel_confirm_yes)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { cancelConfirmRunId = null }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+
     state.error?.let { error ->
         AlertDialog(
             onDismissRequest = { vm.clearError() },
@@ -683,8 +710,18 @@ fun FlashScreen(
                                 items(filteredGroups, key = { "workflow-${it.runId}" }) { group ->
                                     val run = recentRunById[group.runId]
                                     val active = run?.isActiveFlashRun() == true
+                                    // Per-run dispatched config drives the kernel-kind + SUSFS chips.
+                                    // Only fall back to pendingDispatchedConfig for runs that ARE
+                                    // kernel-named (or have kernel artifacts) — otherwise the chip
+                                    // leaks the dispatched ReSuKiSU variant onto Build ABK App /
+                                    // GetManager / Auto Trigger runs, making them visually
+                                    // indistinguishable from kernel builds in the Manager filter.
                                     val dispatchedConfig = dispatchedConfigByRunId[group.runId]
-                                        ?: if (active) pendingDispatchedConfig else null
+                                        ?: if (active && (run.looksLikeKernelByName() || group.hasKernelArtifact())) {
+                                            pendingDispatchedConfig
+                                        } else {
+                                            null
+                                        }
                                     WorkflowRunCard(
                                         group = group,
                                         summary = state.buildParameterSummaries[group.runId],
@@ -861,11 +898,21 @@ fun FlashScreen(
                     selectedPrebuiltReleaseId = null
                 }
                 val activeRun = recentRunById[routeRunId]?.takeIf { it.isActiveFlashRun() }
+                val isCancellingThis = routeRunId in state.cancellingWorkflowRunIds
                 // Single FlashDetailBackSurface with a Crossfade inside — so
                 // when a workflow finishes while the user is staring at the
                 // in-progress detail, the page fades over to the completed
-                // detail instead of jumping abruptly.
-                val showBuilding = activeRun != null && (group == null || group.remote.isEmpty())
+                // detail instead of jumping abruptly. Hold on the building
+                // page while a cancel is mid-flight so the user keeps
+                // seeing the "Workflow отменяется…" spinner instead of
+                // bouncing into the empty-state for a split second.
+                val keepBuildingForCancel = isCancellingThis &&
+                    (group == null || group.remote.isEmpty())
+                val buildingRun = activeRun
+                    ?: if (keepBuildingForCancel) recentRunById[routeRunId] else null
+                val showBuilding = buildingRun != null &&
+                    (activeRun != null || isCancellingThis) &&
+                    (group == null || group.remote.isEmpty())
                 FlashDetailBackSurface(
                     predictiveBackEnabled = state.predictiveBackEnabled,
                     outerPadding = outerPadding,
@@ -876,13 +923,13 @@ fun FlashScreen(
                     backgroundContent = { FlashListContent() }
                 ) {
                     Crossfade(targetState = showBuilding, label = "flash-detail-build-state") { isBuilding ->
-                        if (isBuilding && activeRun != null) {
+                        if (isBuilding && buildingRun != null) {
                             BuildingWorkflowDetail(
-                                run = activeRun,
+                                run = buildingRun,
                                 progress = if (state.currentRun?.id == routeRunId) state.buildProgress else state.buildProgressByRunId[routeRunId],
-                                cancelling = routeRunId in state.cancellingWorkflowRunIds,
+                                cancelling = isCancellingThis,
                                 onBack = ::returnToWorkflowList,
-                                onCancel = { vm.cancelWorkflowRun(routeRunId) }
+                                onCancel = { cancelConfirmRunId = routeRunId }
                             )
                         } else {
                     LazyColumn(
@@ -2197,12 +2244,17 @@ private fun BuildingWorkflowDetail(
                         )
                     }
                     Text(
-                        text = stringResource(R.string.flash_building_subtitle),
+                        text = if (cancelling) {
+                            stringResource(R.string.flash_cancelling_subtitle)
+                        } else {
+                            stringResource(R.string.flash_building_subtitle)
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
                     )
                 }
+                BuildElapsedChip(createdAt = run.createdAt)
             }
         }
 
@@ -2249,6 +2301,67 @@ private fun BuildingWorkflowDetail(
                     style = MaterialTheme.typography.titleMedium
                 )
             }
+        }
+    }
+}
+
+/**
+ * Real-time build elapsed-time chip. Re-uses the run's GitHub-side
+ * `created_at` (ISO-8601 UTC) so the duration matches what the workflow
+ * page shows in the browser — i.e. it ticks even if the device was offline
+ * during the early phase of the build. Re-renders every second while the
+ * detail is visible.
+ */
+@Composable
+private fun BuildElapsedChip(createdAt: String) {
+    val startMillis = remember(createdAt) {
+        runCatching {
+            if (createdAt.isBlank()) 0L
+            else java.time.Instant.parse(createdAt).toEpochMilli()
+        }.getOrDefault(0L)
+    }
+    if (startMillis <= 0L) return
+    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(startMillis) {
+        while (true) {
+            nowMillis = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
+    val elapsedSec = ((nowMillis - startMillis) / 1000L).coerceAtLeast(0L)
+    val h = elapsedSec / 3600
+    val m = (elapsedSec % 3600) / 60
+    val s = elapsedSec % 60
+    val formatted = if (h > 0) {
+        "%d:%02d:%02d".format(h, m, s)
+    } else {
+        "%02d:%02d".format(m, s)
+    }
+    Surface(
+        modifier = Modifier
+            .padding(top = 4.dp)
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                Icons.Default.Schedule,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = stringResource(R.string.flash_build_elapsed, formatted),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }

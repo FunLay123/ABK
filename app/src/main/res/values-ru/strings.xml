@@ -316,6 +316,11 @@
     <string name="flash_cancel_build">Отменить сборку</string>
     <string name="flash_building_title">Сборка в процессе</string>
     <string name="flash_building_subtitle">Workflow выполняется, артефакты появятся после завершения.</string>
+    <string name="flash_cancelling_subtitle">Workflow отменяется, дождитесь подтверждения от GitHub…</string>
+    <string name="flash_cancel_confirm_title">Отменить сборку?</string>
+    <string name="flash_cancel_confirm_msg">Workflow остановится на стороне GitHub. Уже скачанные артефакты сохранятся.</string>
+    <string name="flash_cancel_confirm_yes">Да, отменить</string>
+    <string name="flash_build_elapsed">Время сборки %1$s</string>
     <string name="flash_filter_kernel">Ядро</string>
     <string name="flash_filter_kernel_resukisu">ReSukiSU</string>
     <string name="flash_filter_kernel_sukisu">SukiSU</string>

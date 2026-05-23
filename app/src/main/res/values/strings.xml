@@ -334,6 +334,11 @@
     <string name="flash_cancel_build">取消构建</string>
     <string name="flash_building_title">正在构建</string>
     <string name="flash_building_subtitle">工作流正在运行，完成后会出现产物。</string>
+    <string name="flash_cancelling_subtitle">正在取消工作流，等待 GitHub 确认…</string>
+    <string name="flash_cancel_confirm_title">取消构建？</string>
+    <string name="flash_cancel_confirm_msg">工作流将在 GitHub 端停止。已下载的产物会保留。</string>
+    <string name="flash_cancel_confirm_yes">是的，取消</string>
+    <string name="flash_build_elapsed">构建时长 %1$s</string>
     <string name="flash_filter_kernel">内核</string>
     <string name="flash_filter_kernel_resukisu">ReSukiSU</string>
     <string name="flash_filter_kernel_sukisu">SukiSU</string>

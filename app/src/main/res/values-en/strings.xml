@@ -334,6 +334,11 @@
     <string name="flash_cancel_build">Cancel build</string>
     <string name="flash_building_title">Build in progress</string>
     <string name="flash_building_subtitle">Workflow is running. Artifacts will appear once it finishes.</string>
+    <string name="flash_cancelling_subtitle">Workflow is cancelling, waiting for GitHub to confirm…</string>
+    <string name="flash_cancel_confirm_title">Cancel build?</string>
+    <string name="flash_cancel_confirm_msg">The workflow will stop on GitHub. Already downloaded artifacts will remain.</string>
+    <string name="flash_cancel_confirm_yes">Yes, cancel</string>
+    <string name="flash_build_elapsed">Build time %1$s</string>
     <string name="flash_filter_kernel">Kernel</string>
     <string name="flash_filter_kernel_resukisu">ReSukiSU</string>
     <string name="flash_filter_kernel_sukisu">SukiSU</string>
