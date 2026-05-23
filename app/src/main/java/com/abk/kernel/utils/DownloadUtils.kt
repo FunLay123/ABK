@@ -41,6 +41,11 @@ object DownloadUtils {
             lower.contains("anykernel") || lower.contains("ak3") -> ArtifactType.ANYKERNEL3
             lower.endsWith(".zip") && isLikelyModuleZipName(lower) -> ArtifactType.SUSFS_MODULE
             isLikelyModuleZipName(lower) && !lower.contains("anykernel") -> ArtifactType.SUSFS_MODULE
+            // Build ABK App workflows upload a single artifact bundle named
+            // "abk-apks" that contains the debug/release APK files. Treat the
+            // bundle itself as a manager artifact so completed manager runs
+            // remain visible in the workflow list and manager filter.
+            lower == "abk-apks" || lower.contains("abk-apks") -> ArtifactType.KSU_MANAGER
             lower.endsWith(".apk") && (
                 lower.contains("manager") ||
                     lower.contains("kernelsu") ||
