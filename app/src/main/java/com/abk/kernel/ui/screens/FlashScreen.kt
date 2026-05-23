@@ -709,7 +709,8 @@ fun FlashScreen(
                             ) {
                                 OutlinedButton(
                                     onClick = { vm.loadRecentRuns() },
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
+                                    enabled = !state.isRefreshingRecentRuns
                                 ) {
                                     Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
                                     Spacer(Modifier.width(6.dp))

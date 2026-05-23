@@ -82,6 +82,7 @@ data class MainUiState(
     val buildStatus: BuildStatus = BuildStatus.IDLE,
     val currentRun: WorkflowRun? = null,
     val recentRuns: List<WorkflowRun> = emptyList(),
+    val isRefreshingRecentRuns: Boolean = false,
     val buildProgress: BuildProgress = BuildProgress(),
     val activeBuildRuns: List<WorkflowRun> = emptyList(),
     // Kernel-only mirrors of buildStatus/currentRun/activeBuildRuns. Used by the
@@ -186,6 +187,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val artifactDownloadJobs = mutableMapOf<Long, Job>()
     private var hasCheckedWorkflowEnablementThisLaunch = false
     private var buildQueueJob: Job? = null
+    private var recentRunsRefreshJob: Job? = null
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -1615,26 +1617,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val state = _uiState.value
         val username = state.user?.login ?: return
         val repoName = state.forkRepo?.name ?: return
-        viewModelScope.launch {
-            when (val r = github.listRecentRuns(username, repoName, perPage = 100)) {
-                is Result.Success -> {
-                    _uiState.update { it.copy(recentRuns = r.data) }
-                    r.data.forEach { run ->
-                        syncBuildQueueWithRun(run, run.toBuildStatus())
-                        if (_uiState.value.activeBuildRuns.any { it.id == run.id }) {
-                            _uiState.update {
-                                it.withBuildRunDisplay(
-                                    run = run,
-                                    status = run.toBuildStatus(),
-                                    progress = it.buildProgressByRunId[run.id] ?: BuildProgressUtils.defaultFor(run)
-                                )
+        if (recentRunsRefreshJob?.isActive == true || state.isRefreshingRecentRuns) return
+        recentRunsRefreshJob = viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshingRecentRuns = true) }
+            try {
+                when (val r = github.listRecentRuns(username, repoName, perPage = 100)) {
+                    is Result.Success -> {
+                        _uiState.update { it.copy(recentRuns = r.data) }
+                        r.data.forEach { run ->
+                            syncBuildQueueWithRun(run, run.toBuildStatus())
+                            if (_uiState.value.activeBuildRuns.any { it.id == run.id }) {
+                                _uiState.update {
+                                    it.withBuildRunDisplay(
+                                        run = run,
+                                        status = run.toBuildStatus(),
+                                        progress = it.buildProgressByRunId[run.id] ?: BuildProgressUtils.defaultFor(run)
+                                    )
+                                }
                             }
                         }
+                        autoMonitorRunningCustomBuild(username, repoName, r.data)
+                        refreshArtifactsForRuns(username, repoName, r.data)
                     }
-                    autoMonitorRunningCustomBuild(username, repoName, r.data)
-                    refreshArtifactsForRuns(username, repoName, r.data)
+                    else -> {}
                 }
-                else -> {}
+            } finally {
+                _uiState.update { it.copy(isRefreshingRecentRuns = false) }
+                recentRunsRefreshJob = null
             }
         }
     }
@@ -2443,17 +2452,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .take(MAX_REMOTE_ARTIFACT_RUNS)
         if (completedRuns.isEmpty()) return
 
-        val collected = completedRuns.flatMap { run ->
-            when (val artifacts = github.listArtifacts(owner, repoName, run.id)) {
-                is Result.Success -> artifacts.data.map { it.withRun(run) }
-                else -> emptyList()
+        val existingArtifacts = _uiState.value.artifacts
+        val (merged, pendingRunId) = withContext(Dispatchers.IO) {
+            val collected = completedRuns.flatMap { run ->
+                when (val artifacts = github.listArtifacts(owner, repoName, run.id)) {
+                    is Result.Success -> artifacts.data.map { it.withRun(run) }
+                    else -> emptyList()
+                }
             }
+            val mergedArtifacts = mergeRemoteArtifacts(existingArtifacts, collected)
+            prefs.saveRemoteArtifactsJson(gson.toJson(mergedArtifacts))
+            mergedArtifacts to prefs.pendingAutoDownloadRunId.first()
         }
-        val merged = mergeRemoteArtifacts(_uiState.value.artifacts, collected)
         _uiState.update { it.copy(artifacts = merged) }
-        prefs.saveRemoteArtifactsJson(gson.toJson(merged))
 
-        val pendingRunId = prefs.pendingAutoDownloadRunId.first()
         if (pendingRunId > 0L && completedRuns.any { it.id == pendingRunId }) {
             maybeAutoDownloadRun(
                 pendingRunId,
