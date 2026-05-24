@@ -631,6 +631,10 @@ fun WorkflowRun.isManagerBuild(): Boolean {
     return lower.hasManagerBuildSignal()
 }
 
+/** Dev manager workflow (e.g. Build ABK App Dev). Uses [name] only — not [displayTitle]. */
+fun WorkflowRun.isManagerDevBuild(): Boolean =
+    "dev" in name.orEmpty().lowercase()
+
 private fun String.hasManagerBuildSignal(): Boolean =
     "abk app" in this || "abk-app" in this ||
         "build app" in this || "build-app" in this ||

@@ -65,6 +65,7 @@ import com.abk.kernel.data.model.ModuleCatalogItem
 import com.abk.kernel.data.model.ModuleCatalogRepository
 import com.abk.kernel.data.model.WorkflowRun
 import com.abk.kernel.data.model.isManagerBuild
+import com.abk.kernel.data.model.isManagerDevBuild
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
@@ -2480,12 +2481,7 @@ private fun buildRunChipsForStatus(
 private fun buildRunChipLabel(run: WorkflowRun, item: BuildQueueItem?): String {
     val runLabel = if (run.runNumber > 0) "#${run.runNumber}" else "#${run.id}"
     if (run.isManagerBuild()) {
-        val combined = listOf(run.displayTitle, run.name)
-            .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
-            .joinToString(" ")
-            .lowercase()
-        val isDev = "dev" in combined
-        return if (isDev) "Manager Dev" else "Manager"
+        return if (run.isManagerDevBuild()) "Manager Dev" else "Manager"
     }
     val cfg = item?.config
     val variant = cfg?.kernelsuVariant?.takeIf { it != KSU_VARIANT_NONE }.orEmpty()

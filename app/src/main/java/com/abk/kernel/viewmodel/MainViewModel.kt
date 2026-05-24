@@ -4861,8 +4861,7 @@ private fun buildDisplaySnapshot(
  *
  * Kernel runs pull their fields from BuildQueueItem.config (the dispatched
  * intent, never lies). Manager-only runs detected via run name fall back to
- * a Manager / Manager Dev label based on whether "dev" appears in the run
- * name.
+ * a Manager / Manager Dev label from the workflow name (not displayTitle).
  */
 private fun MainUiState.buildRunDescriptors(
     runs: List<WorkflowRun>
@@ -4884,11 +4883,9 @@ private fun MainUiState.buildRunDescriptors(
                 )
             }
             run.isManagerBuild() -> {
-                val combined = (run.name.orEmpty() + " " + run.displayTitle.orEmpty()).lowercase()
-                val isDev = "dev" in combined
                 run.id to BuildProgressUtils.RunDescriptor(
                     isManager = true,
-                    managerIsDev = isDev
+                    managerIsDev = run.isManagerDevBuild()
                 )
             }
             else -> null

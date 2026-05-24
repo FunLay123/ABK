@@ -4,6 +4,7 @@ import com.abk.kernel.data.model.BuildParameterSummary
 import com.abk.kernel.data.model.WorkflowRun
 import com.abk.kernel.data.model.isKernelBuild
 import com.abk.kernel.data.model.isManagerBuild
+import com.abk.kernel.data.model.isManagerDevBuild
 
 enum class FlashFilterKernelKind { ResuKisu, SukiSu, Official, None }
 
@@ -53,7 +54,10 @@ object FlashWorkflowFilter {
         val runIsManagerWorkflow = run?.isManagerBuild() == true || fallbackRunTitleIsManager
         if (runIsManagerWorkflow) {
             val branch = summary?.ksuBranch.orEmpty()
-            val isDev = "dev" in workflowName || hasDevArtifact || ksuBranchIndicatesDev(branch)
+            val isDev = run?.isManagerDevBuild()
+                ?: ("dev" in workflowName)
+                || hasDevArtifact
+                || ksuBranchIndicatesDev(branch)
             return if (isDev) FlashFilterManagerKind.Dev else FlashFilterManagerKind.Release
         }
         if (summary == null && !hasDevArtifact) return null
