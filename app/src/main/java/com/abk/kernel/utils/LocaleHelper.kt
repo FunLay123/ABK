@@ -14,6 +14,9 @@ object LocaleHelper {
 
     private var appContext: Context? = null
 
+    /** Localized context between [applyLocale] in attachBaseContext and [init] in onCreate. */
+    private var earlyContext: Context? = null
+
     /** Mirrors the language code stored in prefs (used before [appContext] is ready). */
     @Volatile
     private var cachedLanguage: String? = null
@@ -22,10 +25,11 @@ object LocaleHelper {
         val language = getLanguage(context)
         cachedLanguage = language
         appContext = wrap(context.applicationContext, localeForLanguage(language))
+        earlyContext = null
     }
 
     fun str(resId: Int, vararg args: Any?): String {
-        val c = appContext ?: return ""
+        val c = appContext ?: earlyContext ?: return ""
         return if (args.isEmpty()) c.getString(resId) else c.getString(resId, *args)
     }
 
@@ -49,7 +53,11 @@ object LocaleHelper {
     fun applyLocale(context: Context): Context {
         val language = getLanguage(context)
         cachedLanguage = language
-        return wrap(context, localeForLanguage(language))
+        val locale = localeForLanguage(language)
+        if (appContext == null) {
+            earlyContext = wrap(context.applicationContext, locale)
+        }
+        return wrap(context, locale)
     }
 
     private fun localeForLanguage(language: String): Locale = when (language) {
