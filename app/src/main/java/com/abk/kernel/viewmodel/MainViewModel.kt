@@ -30,6 +30,8 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -1732,7 +1734,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         stopForegroundWorkflowRefresh()
         foregroundWorkflowRefreshJob = viewModelScope.launch {
             loadRecentRuns(showRefreshIndicator = false, lightweight = true)
-            while (coroutineContext.isActive) {
+            while (currentCoroutineContext().isActive) {
                 delay(intervalMs)
                 if (!appInForeground || !_uiState.value.workflowForegroundRefreshEnabled) break
                 val current = _uiState.value
