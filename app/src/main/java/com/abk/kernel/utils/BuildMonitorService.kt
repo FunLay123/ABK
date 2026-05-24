@@ -244,7 +244,7 @@ class BuildMonitorService : Service() {
                 allSucceeded = completedRunSuccess.values.all { it }
             )
         }
-        if (finish.shouldStop) stopSelf()
+        if (finish.shouldStop) stopServiceAndForeground()
         return finish
     }
 
@@ -258,6 +258,15 @@ class BuildMonitorService : Service() {
             current
         }
         jobs.forEach { it.cancel() }
+        stopServiceAndForeground()
+    }
+
+    private fun removeForegroundNotification() {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+    }
+
+    private fun stopServiceAndForeground() {
+        removeForegroundNotification()
         stopSelf()
     }
 
@@ -280,6 +289,7 @@ class BuildMonitorService : Service() {
             completedRunSuccess.clear()
         }
         scope.cancel()
+        removeForegroundNotification()
         super.onDestroy()
     }
 

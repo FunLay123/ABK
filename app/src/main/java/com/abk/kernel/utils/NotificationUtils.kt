@@ -54,7 +54,9 @@ object NotificationUtils {
 
     private val MIUI_FOCUS_PERMISSION_URI = Uri.parse("content://miui.statusbar.notification.public")
     private val whitespaceRegex = Regex("\\s+")
+    @Volatile
     private var lastBuildNotificationSignature: String? = null
+    @Volatile
     private var lastBuildProgressPercent: Int? = null
 
     fun createChannels(context: Context) {
