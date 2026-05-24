@@ -64,7 +64,7 @@ object RootUtils {
     }
 
     fun init(context: Context) {
-        appContext = context.applicationContext
+        appContext = context.applicationContext ?: context
         Shell.enableVerboseLogging = false
         Shell.setDefaultBuilder(
             Shell.Builder.create()
@@ -1515,7 +1515,7 @@ object RootUtils {
         val shell = builder.build()
         if (isShellRoot(shell)) return shell
         shell.close()
-        error("Root shell unavailable")
+        throw IllegalStateException("Root shell unavailable")
     }
 
     private fun isShellRoot(shell: Shell): Boolean {

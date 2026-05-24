@@ -5,8 +5,11 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.abk.kernel.utils.DownloadDirectoryUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.runBlocking
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "abk_prefs")
 
@@ -84,6 +87,14 @@ class PreferencesRepository(private val context: Context) {
     val webViewDebugEnabled: Flow<Boolean> = context.dataStore.data.map {
         it[KEY_WEBVIEW_DEBUG_ENABLED] ?: false
     }
+
+    /** Blocking read for non-Compose entry points; never call from the main thread. */
+    fun readWebViewDebugEnabledBlocking(): Boolean = runCatching {
+        runBlocking(Dispatchers.IO) {
+            context.dataStore.data.first()[KEY_WEBVIEW_DEBUG_ENABLED] ?: false
+        }
+    }.getOrDefault(false)
+
     val termsAcceptedVersion: Flow<Int> = context.dataStore.data.map { it[KEY_TERMS_ACCEPTED_VERSION] ?: 0 }
     val flashFilterJson: Flow<String?> = context.dataStore.data.map { it[KEY_FLASH_FILTER] }
 

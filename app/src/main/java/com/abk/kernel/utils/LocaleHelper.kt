@@ -24,7 +24,7 @@ object LocaleHelper {
     fun init(context: Context) {
         val language = getLanguage(context)
         cachedLanguage = language
-        appContext = wrap(context.applicationContext, localeForLanguage(language))
+        appContext = wrap(appContextFor(context), localeForLanguage(language))
         earlyContext = null
     }
 
@@ -47,10 +47,10 @@ object LocaleHelper {
         cachedLanguage = language
         context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
             .edit().putString(KEY, language).apply()
-        appContext = wrap(context.applicationContext, localeForLanguage(language))
+        appContext = wrap(appContextFor(context), localeForLanguage(language))
     }
 
-    fun applyLocale(context: Context): Context {
+    fun applyLocale(context: Context): Context = runCatching {
         val language = getLanguage(context)
         cachedLanguage = language
         val locale = localeForLanguage(language)
@@ -58,8 +58,8 @@ object LocaleHelper {
             // applicationContext is null during Application.attachBaseContext — use base context.
             earlyContext = wrap(context, locale)
         }
-        return wrap(context, locale)
-    }
+        wrap(context, locale)
+    }.getOrElse { context }
 
     private fun localeForLanguage(language: String): Locale = when (language) {
         LANG_ZH -> Locale.SIMPLIFIED_CHINESE
@@ -67,6 +67,9 @@ object LocaleHelper {
         LANG_RU -> Locale.forLanguageTag("ru")
         else -> Locale.forLanguageTag(language)
     }
+
+    private fun appContextFor(context: Context): Context =
+        context.applicationContext ?: context
 
     private fun wrap(context: Context, locale: Locale): Context {
         Locale.setDefault(locale)

@@ -579,8 +579,8 @@ fun FlashScreen(
         }
     }
 
-    if (showFlashConfirm && selectedItem != null) {
-        val item = selectedItem!!
+    if (showFlashConfirm) {
+        val item = selectedItem ?: return
         AlertDialog(
             onDismissRequest = { showFlashConfirm = false },
             icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },

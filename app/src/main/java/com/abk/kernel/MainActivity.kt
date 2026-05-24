@@ -3,8 +3,8 @@ package com.abk.kernel
 import android.Manifest
 import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
 import com.abk.kernel.utils.LocaleHelper
+import com.abk.kernel.utils.findActivity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -657,12 +657,6 @@ private fun isLikelyModuleZipIntent(mimeType: String?, uri: Uri): Boolean {
     val cleanMime = mimeType?.lowercase().orEmpty()
     val path = uri.toString().lowercase()
     return cleanMime in MODULE_ZIP_MIME_TYPES || path.endsWith(".zip")
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }
 
 private const val EXIT_BACK_INTERVAL_MS = 2_000L
