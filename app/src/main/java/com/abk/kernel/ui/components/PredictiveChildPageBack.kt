@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.pow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 
 const val CHILD_PAGE_BACK_VISUAL_EXPONENT = 1.8f
@@ -94,7 +96,7 @@ fun rememberChildPageBackController(
             try {
                 animateToDismissed()
             } finally {
-                dismissJobs.remove(job)
+                dismissJobs.remove(coroutineContext.job)
             }
         }
         dismissJobs.add(job)
@@ -130,6 +132,7 @@ fun rememberChildPageBackController(
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
 fun childPageOverlayEnterTransition(
     predictiveBackEnabled: Boolean,
     motionScheme: MotionScheme = MaterialTheme.motionScheme,
@@ -142,6 +145,7 @@ fun childPageOverlayEnterTransition(
         }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
 fun childPageOverlayExitTransition(
     predictiveBackEnabled: Boolean,
     motionScheme: MotionScheme = MaterialTheme.motionScheme,
