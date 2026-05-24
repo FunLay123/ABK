@@ -2855,39 +2855,52 @@ private fun buildWorkflowGroups(
         val local = localByRunId[runId].orEmpty()
         val firstRemote = remote.firstOrNull()
         val firstLocal = local.firstOrNull()
+        val runTitle = firstRemote?.runTitle?.ifBlank { null }
+            ?: firstLocal?.runTitle?.ifBlank { null }
+            ?: runs[runId]?.displayTitle?.ifBlank { null }
+            ?: runs[runId]?.name?.ifBlank { null }
+            ?: unlinkedWorkflowTitle
+        val filteredRemote = remote.filterNot { shouldHideManagerCertArtifact(runTitle, it.name) }
+        val filteredLocal = local.filterNot { shouldHideManagerCertArtifact(runTitle, it.name) }
         val runCreatedAt = runs[runId]?.createdAt
             ?: firstRemote?.runCreatedAt
             ?: ""
-        val remoteTypes = remote.map { DownloadUtils.classifyArtifact(it.name) }
+        val remoteTypes = filteredRemote.map { DownloadUtils.classifyArtifact(it.name) }
         val remoteCategories = remoteTypes.mapNotNull(DownloadUtils::classifyCategory).toSet()
-        val localCategories = local.map { it.category }.toSet()
+        val localCategories = filteredLocal.map { it.category }.toSet()
         val categories = (remoteCategories + localCategories)
         WorkflowArtifactGroup(
             runId = runId,
-            runTitle = firstRemote?.runTitle?.ifBlank { null }
-                ?: firstLocal?.runTitle?.ifBlank { null }
-                ?: unlinkedWorkflowTitle,
+            runTitle = runTitle,
             runNumber = firstRemote?.runNumber ?: firstLocal?.runNumber ?: 0,
             runCreatedAt = runCreatedAt,
-            remote = remote,
-            local = local,
+            remote = filteredRemote,
+            local = filteredLocal,
             categories = categories,
             cachedHasRemoteManagerArtifact = remoteTypes.any { it == ArtifactType.KSU_MANAGER },
             cachedHasManagerArtifact = remoteTypes.any { it == ArtifactType.KSU_MANAGER } ||
-                local.any { it.type == ArtifactType.KSU_MANAGER },
+                filteredLocal.any { it.type == ArtifactType.KSU_MANAGER },
             cachedHasKernelArtifact = remoteTypes.any {
                 it == ArtifactType.KERNEL_PACKAGE || it == ArtifactType.KERNEL_IMG || it == ArtifactType.ANYKERNEL3
-            } || local.any { it.type in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.KERNEL_IMG, ArtifactType.ANYKERNEL3) },
+            } || filteredLocal.any { it.type in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.KERNEL_IMG, ArtifactType.ANYKERNEL3) },
             cachedHasRemoteKernelArtifact = remoteTypes.any {
                 it == ArtifactType.KERNEL_PACKAGE || it == ArtifactType.KERNEL_IMG || it == ArtifactType.ANYKERNEL3
             },
             cachedHasSusfsModuleArtifact = remoteTypes.any { it == ArtifactType.SUSFS_MODULE } ||
-                local.any { it.type == ArtifactType.SUSFS_MODULE }
+                filteredLocal.any { it.type == ArtifactType.SUSFS_MODULE }
         )
     }.sortedWith(
         compareByDescending<WorkflowArtifactGroup> { it.runNumber }
             .thenByDescending { it.runId }
     )
+}
+
+private fun shouldHideManagerCertArtifact(runTitle: String, artifactName: String): Boolean {
+    val lowerArtifact = artifactName.lowercase()
+    if (lowerArtifact != "abk-manager-cert.generated.env") return false
+    val lowerTitle = runTitle.lowercase()
+    return listOf("abk app", "abk-app", "build app", "manager", "管理器", "getmanager")
+        .any { it in lowerTitle }
 }
 
 private data class WorkflowArtifactGroup(
