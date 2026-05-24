@@ -1067,6 +1067,13 @@ fun FlashScreen(
                             } else {
                                 artifactCategoryOrder
                             }
+                            val runCreatedAt = detailRun?.createdAt?.takeIf { it.isNotBlank() }
+                                ?: group.runCreatedAt
+                            val runFinishedAt = detailRun?.updatedAt?.takeIf { it.isNotBlank() }
+                                ?: group.runUpdatedAt
+                            val elapsedAnchorCategory = visibleCategories.firstOrNull { category ->
+                                group.hasArtifactsInCategory(category)
+                            } ?: visibleCategories.first()
 
                             visibleCategories.forEach { category ->
                                 val remoteInCategory = group.remote.filter {
@@ -1081,7 +1088,13 @@ fun FlashScreen(
 
                                 if (remoteInCategory.isNotEmpty() || localOnly.isNotEmpty()) {
                                     item("category-${group.runId}-${category.name}") {
-                                        CategoryHeader(category)
+                                        CategoryHeaderWithDuration(
+                                            category = category,
+                                            showDuration = category == elapsedAnchorCategory,
+                                            createdAt = runCreatedAt,
+                                            finishedAt = runFinishedAt,
+                                            live = false
+                                        )
                                     }
                                 }
 
@@ -2390,18 +2403,11 @@ private fun BuildingWorkflowDetail(
         val elapsedAnchorCategory = visibleCategories.first()
         visibleCategories.forEach { category ->
             item("category-build-${category.name}") {
-                if (category == elapsedAnchorCategory) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CategoryHeader(category)
-                        Spacer(Modifier.weight(1f))
-                        BuildDurationChip(createdAt = run.createdAt)
-                    }
-                } else {
-                    CategoryHeader(category)
-                }
+                CategoryHeaderWithDuration(
+                    category = category,
+                    showDuration = category == elapsedAnchorCategory,
+                    createdAt = run.createdAt
+                )
             }
             item("progress-${category.name}") {
                 CategoryProgressCard(progress = progress)
@@ -2585,11 +2591,6 @@ private fun WorkflowDetailHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
-            BuildDurationChip(
-                createdAt = group.runCreatedAt,
-                finishedAt = group.runUpdatedAt,
-                live = false
-            )
             IconButton(onClick = onShowParameters) {
                 Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.flash_parameter_details))
             }
@@ -2615,6 +2616,44 @@ private fun CategoryHeader(category: ArtifactCategory) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+@Composable
+private fun CategoryHeaderWithDuration(
+    category: ArtifactCategory,
+    showDuration: Boolean,
+    createdAt: String,
+    finishedAt: String? = null,
+    live: Boolean = finishedAt.isNullOrBlank()
+) {
+    if (showDuration) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CategoryHeader(category)
+            Spacer(Modifier.weight(1f))
+            BuildDurationChip(
+                createdAt = createdAt,
+                finishedAt = finishedAt,
+                live = live
+            )
+        }
+    } else {
+        CategoryHeader(category)
+    }
+}
+
+private fun WorkflowArtifactGroup.hasArtifactsInCategory(category: ArtifactCategory): Boolean {
+    val remoteInCategory = remote.filter {
+        DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) == category
+    }
+    if (remoteInCategory.isNotEmpty()) return true
+    val matchedLocalPaths = remoteInCategory
+        .flatMap { source -> local.filter { DownloadUtils.matchesDownloadedArtifact(it, source) } }
+        .map { it.filePath }
+        .toSet()
+    return local.any { it.category == category && it.filePath !in matchedLocalPaths }
 }
 
 @Composable
