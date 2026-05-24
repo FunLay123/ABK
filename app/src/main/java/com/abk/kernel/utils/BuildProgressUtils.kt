@@ -6,7 +6,6 @@ import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.BuildStepProgress
 import com.abk.kernel.data.model.WorkflowJob
 import com.abk.kernel.data.model.WorkflowRun
-import java.util.Locale
 import kotlin.math.roundToInt
 
 object BuildProgressUtils {
@@ -212,10 +211,10 @@ object BuildProgressUtils {
     private fun translateWorkflowStepName(name: String): String {
         if (name.isBlank()) return name
         val trimmed = name.trim()
-        val table = when (Locale.getDefault().language) {
-            "ru" -> WORKFLOW_STEP_RU
-            "en" -> WORKFLOW_STEP_EN
-            else -> return name // zh (base) and unrecognized locales: leave as-is
+        val table = when (LocaleHelper.currentUiLanguage()) {
+            LocaleHelper.LANG_RU -> WORKFLOW_STEP_RU
+            LocaleHelper.LANG_EN -> WORKFLOW_STEP_EN
+            else -> return name // zh (base): keep upstream YAML names for summary fetch
         }
         return table[trimmed] ?: name
     }

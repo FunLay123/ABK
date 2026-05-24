@@ -14,8 +14,14 @@ object LocaleHelper {
 
     private var appContext: Context? = null
 
+    /** Mirrors the language code stored in prefs (used before [appContext] is ready). */
+    @Volatile
+    private var cachedLanguage: String? = null
+
     fun init(context: Context) {
-        appContext = wrap(context.applicationContext, Locale(getLanguage(context)))
+        val language = getLanguage(context)
+        cachedLanguage = language
+        appContext = wrap(context.applicationContext, localeForLanguage(language))
     }
 
     fun str(resId: Int, vararg args: Any?): String {
@@ -23,18 +29,35 @@ object LocaleHelper {
         return if (args.isEmpty()) c.getString(resId) else c.getString(resId, *args)
     }
 
+    /** App UI language from Settings — same source as [wrap] / [str]. */
+    fun currentUiLanguage(): String {
+        appContext?.let { return getLanguage(it) }
+        return cachedLanguage ?: detectDefault()
+    }
+
     fun getLanguage(context: Context): String =
         context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
             .getString(KEY, detectDefault()) ?: detectDefault()
 
     fun setLanguage(context: Context, language: String) {
+        cachedLanguage = language
         context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
             .edit().putString(KEY, language).apply()
-        appContext = wrap(context.applicationContext, Locale(language))
+        appContext = wrap(context.applicationContext, localeForLanguage(language))
     }
 
-    fun applyLocale(context: Context): Context =
-        wrap(context, Locale(getLanguage(context)))
+    fun applyLocale(context: Context): Context {
+        val language = getLanguage(context)
+        cachedLanguage = language
+        return wrap(context, localeForLanguage(language))
+    }
+
+    private fun localeForLanguage(language: String): Locale = when (language) {
+        LANG_ZH -> Locale.SIMPLIFIED_CHINESE
+        LANG_EN -> Locale.ENGLISH
+        LANG_RU -> Locale.forLanguageTag("ru")
+        else -> Locale.forLanguageTag(language)
+    }
 
     private fun wrap(context: Context, locale: Locale): Context {
         Locale.setDefault(locale)
