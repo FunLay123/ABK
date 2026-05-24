@@ -116,10 +116,20 @@ class BuildMonitorService : Service() {
                         when (run.status) {
                             "completed" -> {
                                 val success = run.conclusion == "success"
+                                val cancelled = run.conclusion == "cancelled"
                                 val completedKind = kindForRun(run)
-                                val finish = finishMonitoring(runId, success)
+                                val finish = finishMonitoring(
+                                    runId,
+                                    success = if (cancelled) null else success
+                                )
                                 if (notifyBuild) {
-                                    if (finish.shouldStop) {
+                                    if (cancelled) {
+                                        if (finish.shouldStop) {
+                                            NotificationUtils.cancelBuildNotification(applicationContext)
+                                        } else {
+                                            publishMergedRunningNotification()
+                                        }
+                                    } else if (finish.shouldStop) {
                                         NotificationUtils.notifyBuildDone(
                                             applicationContext,
                                             finish.allSucceeded,
