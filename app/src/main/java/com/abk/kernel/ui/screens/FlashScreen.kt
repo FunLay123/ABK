@@ -151,7 +151,12 @@ import com.abk.kernel.data.model.PREBUILT_GKI_RUN_ID
 import com.abk.kernel.data.model.PrebuiltGkiAsset
 import com.abk.kernel.data.model.PrebuiltGkiRelease
 import com.abk.kernel.data.model.WorkflowRun
-import com.abk.kernel.data.model.isManagerBuild
+import com.abk.kernel.utils.FlashFilter
+import com.abk.kernel.utils.FlashFilterKernelKind
+import com.abk.kernel.utils.FlashFilterManagerKind
+import com.abk.kernel.utils.FlashFilterWorkflowState
+import com.abk.kernel.utils.FlashWorkflowFilter
+import com.abk.kernel.utils.WorkflowPrimary
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
@@ -280,13 +285,13 @@ fun FlashScreen(
     // still want the kernel / SUSFS chips to reflect the dispatched config.
     // Use the most recent DISPATCHING/RUNNING queue item as a fallback for
     // active runs whose runId isn't in the map yet.
-    val pendingDispatchedConfig = remember(state.buildQueue) {
+    // Only the workflow currently being linked (DISPATCHING, no runId yet) may
+    // borrow queue config. Using the first RUNNING item picked the still-active
+    // kernel build when a manager workflow started afterward.
+    val linkingDispatchedConfig = remember(state.buildQueue) {
         state.buildQueue
             .firstOrNull {
-                it.status in setOf(
-                    BuildQueueItemStatus.DISPATCHING,
-                    BuildQueueItemStatus.RUNNING
-                )
+                it.status == BuildQueueItemStatus.DISPATCHING && it.runId <= 0L
             }
             ?.config
     }
@@ -302,8 +307,34 @@ fun FlashScreen(
         dispatchedVariantByRunId
     ) {
         value = withContext(Dispatchers.Default) {
-            allWorkflowGroups.filter {
-                it.matchesFilter(filter, state.buildParameterSummaries, recentRunById, dispatchedVariantByRunId)
+            allWorkflowGroups.filter { group ->
+                val run = recentRunById[group.runId]
+                val summary = state.buildParameterSummaries[group.runId]
+                val primary = FlashWorkflowFilter.primaryKind(
+                    run = run,
+                    runTitle = group.runTitle,
+                    hasKernelArtifact = group.hasKernelArtifact(),
+                    hasManagerArtifact = group.hasManagerArtifact()
+                )
+                val kKind = FlashWorkflowFilter.kernelKind(
+                    summary = summary,
+                    fallbackVariant = dispatchedVariantByRunId[group.runId]
+                )
+                val mKind = FlashWorkflowFilter.managerKind(
+                    run = run,
+                    runTitle = group.runTitle,
+                    remoteArtifactNames = group.remote.map { it.name },
+                    localArtifactNames = group.local.map { it.name },
+                    summary = summary
+                )
+                val workflowState = run.workflowState()
+                FlashWorkflowFilter.matchesFilter(
+                    primary = primary,
+                    filter = filter,
+                    kernelKind = kKind,
+                    managerKind = mKind,
+                    workflowState = workflowState
+                )
             }
         }
     }
@@ -767,14 +798,25 @@ fun FlashScreen(
                                     // GetManager / Auto Trigger runs, making them visually
                                     // indistinguishable from kernel builds in the Manager filter.
                                     val dispatchedConfig = dispatchedConfigByRunId[group.runId]
-                                        ?: if (active && (run.looksLikeKernelByName() || group.hasKernelArtifact())) {
-                                            pendingDispatchedConfig
+                                        ?: if (active && FlashWorkflowFilter.shouldUsePendingDispatchedConfig(
+                                                run,
+                                                group.hasKernelArtifact()
+                                            )
+                                        ) {
+                                            linkingDispatchedConfig
                                         } else {
                                             null
                                         }
+                                    val isManagerPrimary = FlashWorkflowFilter.primaryKind(
+                                        run = run,
+                                        runTitle = group.runTitle,
+                                        hasKernelArtifact = group.hasKernelArtifact(),
+                                        hasManagerArtifact = group.hasManagerArtifact()
+                                    ) == WorkflowPrimary.Manager
                                     WorkflowRunCard(
                                         group = group,
                                         summary = state.buildParameterSummaries[group.runId],
+                                        showKernelBuildChips = !isManagerPrimary,
                                         dispatchedKernelVariant = dispatchedConfig?.kernelsuVariant,
                                         dispatchedSusfsEnabled = dispatchedConfig?.let { !it.cancelSusfs },
                                         active = active,
@@ -1003,8 +1045,14 @@ fun FlashScreen(
                                 )
                             }
 
+                            val detailRun = recentRunById[group.runId]
                             val visibleCategories = if (
-                                group.primaryKind(recentRunById[group.runId]) == WorkflowPrimary.Manager
+                                FlashWorkflowFilter.primaryKind(
+                                    run = detailRun,
+                                    runTitle = group.runTitle,
+                                    hasKernelArtifact = group.hasKernelArtifact(),
+                                    hasManagerArtifact = group.hasManagerArtifact()
+                                ) == WorkflowPrimary.Manager
                             ) {
                                 listOf(ArtifactCategory.MANAGER)
                             } else {
@@ -2126,6 +2174,7 @@ private fun prebuiltArtifactType(asset: PrebuiltGkiAsset): ArtifactType {
 private fun WorkflowRunCard(
     group: WorkflowArtifactGroup,
     summary: BuildParameterSummary?,
+    showKernelBuildChips: Boolean,
     dispatchedKernelVariant: String?,
     dispatchedSusfsEnabled: Boolean?,
     active: Boolean,
@@ -2138,8 +2187,12 @@ private fun WorkflowRunCard(
     val sourceCount = group.remote.size
     val downloadedCount = group.local.size
     val categories = artifactCategoryOrder.filter { it in group.categories }
-    val kernelKind = group.kernelKind(summary, dispatchedKernelVariant)
-    val susfsOn = run {
+    val kernelKind = if (showKernelBuildChips) {
+        FlashWorkflowFilter.kernelKind(summary, dispatchedKernelVariant)
+    } else {
+        null
+    }
+    val susfsOn = if (showKernelBuildChips) {
         val v = summary?.susfsEnabled.orEmpty().lowercase().trim()
         if (v.isNotBlank()) {
             v !in setOf("false", "0", "no", "disabled", "off", "未启用", "未開啟", "未开启")
@@ -2149,6 +2202,8 @@ private fun WorkflowRunCard(
             // kernel-kind chip does.
             dispatchedSusfsEnabled == true
         }
+    } else {
+        false
     }
     val dateLabel = group.runCreatedAt.take(10)
     Card(
@@ -2315,7 +2370,7 @@ private fun BuildingWorkflowDetail(
         // Hide irrelevant categories: a manager-only build doesn't produce kernel artifacts
         // or modules, so only show "Manager artifacts" for it. Kernel / hybrid builds keep
         // all three sections.
-        val isPureManager = run.looksLikeManagerByName() && !run.looksLikeKernelByName()
+        val isPureManager = FlashWorkflowFilter.isPureManagerBuild(run)
         val visibleCategories = if (isPureManager) {
             listOf(ArtifactCategory.MANAGER)
         } else {
@@ -3173,18 +3228,6 @@ private fun ArtifactCategory.icon(): ImageVector = when (this) {
     ArtifactCategory.MODULE -> Icons.Default.Extension
 }
 
-private enum class FlashFilterKernelKind { ResuKisu, SukiSu, Official, None }
-private enum class FlashFilterManagerKind { Release, Dev }
-private enum class FlashFilterWorkflowState { Running, Finished }
-
-private data class FlashFilter(
-    val kernelEnabled: Boolean = true,
-    val kernelKinds: Set<FlashFilterKernelKind> = emptySet(),
-    val managerEnabled: Boolean = true,
-    val managerKinds: Set<FlashFilterManagerKind> = setOf(FlashFilterManagerKind.Release),
-    val workflowStates: Set<FlashFilterWorkflowState> = emptySet(),
-)
-
 private fun flashFilterToMap(f: FlashFilter): Map<String, String> = mapOf(
     "ke" to f.kernelEnabled.toString(),
     "kk" to f.kernelKinds.joinToString(",") { it.name },
@@ -3220,21 +3263,6 @@ private fun String.toFlashFilterOrNull(): FlashFilter? = runCatching {
     flashFilterFromMap(raw)
 }.getOrNull()
 
-private fun WorkflowArtifactGroup.kernelKind(
-    summary: BuildParameterSummary?,
-    fallbackVariant: String? = null
-): FlashFilterKernelKind? {
-    val raw = summary?.ksuVariant.orEmpty().ifBlank { fallbackVariant.orEmpty() }
-    val v = raw.lowercase()
-    if (v.isBlank()) return null
-    return when {
-        "resuki" in v || "re-suki" in v || "resukisu" in v -> FlashFilterKernelKind.ResuKisu
-        "sukisu" in v -> FlashFilterKernelKind.SukiSu
-        "kernelsu" in v || "official" in v -> FlashFilterKernelKind.Official
-        else -> FlashFilterKernelKind.None
-    }
-}
-
 private fun WorkflowArtifactGroup.hasRemoteManagerArtifact(): Boolean =
     cachedHasRemoteManagerArtifact
 
@@ -3250,137 +3278,24 @@ private fun WorkflowArtifactGroup.hasRemoteKernelArtifact(): Boolean =
 private fun WorkflowArtifactGroup.hasSusfsModuleArtifact(): Boolean =
     cachedHasSusfsModuleArtifact
 
-private fun WorkflowArtifactGroup.managerKind(
-    summary: BuildParameterSummary?,
-    run: WorkflowRun?
-): FlashFilterManagerKind? {
-    val branch = summary?.ksuBranch.orEmpty().lowercase()
-    val hasDevName = remote.any { it.name.lowercase().contains("dev") } ||
-        local.any { it.name.lowercase().contains("dev") }
-    val runName = ((run?.name ?: "") + " " + (run?.displayTitle ?: "") + " " + runTitle).lowercase()
-    val fallbackRunTitleIsManager = run == null && (
-        "abk app" in runName || "abk-app" in runName ||
-            "build app" in runName || "build-app" in runName ||
-            "manager" in runName || "管理器" in runName || "getmanager" in runName
-        )
-    val runIsManagerWorkflow = run?.isManagerBuild() == true || fallbackRunTitleIsManager
-    // When the run is identifiably a manager workflow, commit to a kind: an
-    // explicit "dev" marker (in name, artifact filename, or branch) means Dev,
-    // otherwise it's the Release counterpart. Returning null here previously
-    // let non-dev "Build ABK App" runs leak through the Dev sub-filter as
-    // "unclassified" because matchesFilter treats null leniently.
-    if (runIsManagerWorkflow) {
-        val isDev = "dev" in runName || hasDevName || "dev" in branch
-        return if (isDev) FlashFilterManagerKind.Dev else FlashFilterManagerKind.Release
-    }
-    if (summary == null && !hasDevName) return null
-    return when {
-        "dev" in branch || hasDevName -> FlashFilterManagerKind.Dev
-        else -> FlashFilterManagerKind.Release
-    }
-}
-
 private fun WorkflowRun?.workflowState(): FlashFilterWorkflowState? = when {
     this == null -> null
     this.isActiveFlashRun() -> FlashFilterWorkflowState.Running
     else -> FlashFilterWorkflowState.Finished
 }
 
-private fun String.titleLooksLikeManager(): Boolean {
-    val n = lowercase()
-    return "abk app" in n || "abk-app" in n || "build app" in n ||
-        "manager" in n || "管理器" in n || "getmanager" in n
-}
-
-private fun String.titleLooksLikeKernel(): Boolean {
-    val n = lowercase()
-    return "kernel" in n || "内核" in n
-}
-
-private fun WorkflowRun?.looksLikeManagerByName(): Boolean {
-    if (this == null) return false
-    return ((name ?: "") + " " + (displayTitle ?: "")).titleLooksLikeManager()
-}
-
-private fun WorkflowRun?.looksLikeKernelByName(): Boolean {
-    if (this == null) return false
-    return ((name ?: "") + " " + (displayTitle ?: "")).titleLooksLikeKernel()
-}
-
-// Strict primary classification. A workflow belongs to ONE primary kind —
-// either Kernel or Manager — never both. Kernel build workflows often bundle
-// a manager APK as a courtesy, but they are still PRIMARILY kernel and must
-// be governed by the kernel filter, not the manager filter. Without this,
-// kernel workflows leak through the "Manager: Release/Dev" filter because of
-// the bundled APK.
-private enum class WorkflowPrimary { Kernel, Manager, Unknown }
-
-private fun WorkflowArtifactGroup.primaryKind(run: WorkflowRun?): WorkflowPrimary {
-    if (run.looksLikeKernelByName()) return WorkflowPrimary.Kernel
-    if (run.looksLikeManagerByName()) return WorkflowPrimary.Manager
-    // Older workflow runs aren't in state.recentRuns (the API page is bounded)
-    // so recentRunById[runId] is null and the name checks above don't fire.
-    // The group's own runTitle is populated from the artifact metadata even
-    // for those, so use it as a fallback. Without this, a kernel build that
-    // bundles a manager APK is misclassified as Manager and leaks through
-    // the Manager filter when the Kernel toggle is off.
-    if (runTitle.titleLooksLikeKernel()) return WorkflowPrimary.Kernel
-    if (runTitle.titleLooksLikeManager()) return WorkflowPrimary.Manager
-    if (hasKernelArtifact()) return WorkflowPrimary.Kernel
-    if (hasManagerArtifact()) return WorkflowPrimary.Manager
-    return WorkflowPrimary.Unknown
-}
-
 private fun WorkflowArtifactGroup.shouldAppearInWorkflowList(run: WorkflowRun?): Boolean =
-    when (primaryKind(run)) {
+    when (
+        FlashWorkflowFilter.primaryKind(
+            run = run,
+            runTitle = runTitle,
+            hasKernelArtifact = hasKernelArtifact(),
+            hasManagerArtifact = hasManagerArtifact()
+        )
+    ) {
         WorkflowPrimary.Kernel -> hasRemoteKernelArtifact()
         else -> true
     }
-
-private fun WorkflowArtifactGroup.matchesFilter(
-    filter: FlashFilter,
-    summaries: Map<Long, BuildParameterSummary>,
-    runs: Map<Long, WorkflowRun>,
-    dispatchedVariantByRunId: Map<Long, String>
-): Boolean {
-    val summary = summaries[runId]
-    val run = runs[runId]
-    val state = run.workflowState()
-    val dispatchedVariant = dispatchedVariantByRunId[runId]
-
-    // Running/Finished subfilter (no top-level Workflow toggle anymore).
-    if (filter.workflowStates.isNotEmpty()) {
-        if (state == null || state !in filter.workflowStates) return false
-    }
-
-    // When kernel/manager kind can't be determined from name or artifacts yet
-    // (in-progress run with no artifacts, or trimmed-from-recent-runs), treat
-    // it as kernel-like — this app is primarily a kernel builder and an
-    // Unknown workflow leaking through "Manager: Release/Dev" is more
-    // surprising than under-showing one mystery workflow.
-    val dispatchedKKind = kernelKind(summary, dispatchedVariant)
-    return when (primaryKind(run)) {
-        WorkflowPrimary.Kernel -> {
-            if (!filter.kernelEnabled) return false
-            if (filter.kernelKinds.isEmpty()) return true
-            dispatchedKKind == null || dispatchedKKind in filter.kernelKinds
-        }
-        WorkflowPrimary.Manager -> {
-            if (!filter.managerEnabled) return false
-            if (filter.managerKinds.isEmpty()) return true
-            val mKind = managerKind(summary, run)
-            mKind == null || mKind in filter.managerKinds
-        }
-        WorkflowPrimary.Unknown -> {
-            // Gate Unknown under the kernel filter so toggling Kernel off
-            // doesn't leave it visible. If the kernel kind chip resolved to
-            // something (via dispatched variant), respect kernelKinds too.
-            if (!filter.kernelEnabled) return false
-            if (filter.kernelKinds.isEmpty()) return true
-            dispatchedKKind == null || dispatchedKKind in filter.kernelKinds
-        }
-    }
-}
 
 private fun limitWorkflowGroupsForDisplay(
     groups: List<WorkflowArtifactGroup>,
@@ -3388,7 +3303,15 @@ private fun limitWorkflowGroupsForDisplay(
 ): List<WorkflowArtifactGroup> {
     val counts = mutableMapOf<WorkflowPrimary, Int>()
     return groups.filter { group ->
-        val bucket = when (group.primaryKind(runs[group.runId])) {
+        val run = runs[group.runId]
+        val bucket = when (
+            FlashWorkflowFilter.primaryKind(
+                run = run,
+                runTitle = group.runTitle,
+                hasKernelArtifact = group.hasKernelArtifact(),
+                hasManagerArtifact = group.hasManagerArtifact()
+            )
+        ) {
             WorkflowPrimary.Manager -> WorkflowPrimary.Manager
             else -> WorkflowPrimary.Kernel
         }
