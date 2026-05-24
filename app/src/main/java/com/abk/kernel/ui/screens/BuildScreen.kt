@@ -6,11 +6,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -68,6 +65,9 @@ import com.abk.kernel.data.model.isManagerBuild
 import com.abk.kernel.data.model.isManagerDevBuild
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
+import com.abk.kernel.ui.components.childPageOverlayEnterTransition
+import com.abk.kernel.ui.components.childPageOverlayExitTransition
+import com.abk.kernel.ui.components.rememberChildPageBackController
 import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
@@ -84,18 +84,10 @@ import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.pow
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
-private const val BUILD_PLAN_BACK_VISUAL_EXPONENT = 1.8f
-private const val BUILD_PLAN_BACK_SCALE_DELTA = 0.09f
-private const val BUILD_PLAN_BACK_SCRIM_ALPHA = 0.32f
 private const val CATALOG_MODULE_REMOVE_DELAY_MS = 260L
-private val BUILD_PLAN_BACK_MAX_OFFSET = 56.dp
-private val BUILD_PLAN_BACK_MAX_CORNER = 32.dp
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -143,18 +135,6 @@ fun BuildScreen(
     var showPlanLibraryPage by rememberSaveable { mutableStateOf(false) }
     var showBuildQueuePage by rememberSaveable { mutableStateOf(false) }
     var planToolsExpanded by rememberSaveable { mutableStateOf(false) }
-    var planBackProgress by remember { mutableFloatStateOf(0f) }
-    val animatedPlanBackProgress by animateFloatAsState(
-        targetValue = planBackProgress.coerceIn(0f, 1f),
-        animationSpec = motionScheme.fastSpatialSpec(),
-        label = "build-plan-back-progress"
-    )
-    val visualPlanBackProgress = animatedPlanBackProgress
-        .coerceIn(0f, 1f)
-        .pow(BUILD_PLAN_BACK_VISUAL_EXPONENT)
-    val density = LocalDensity.current
-    val planBackOffsetPx = with(density) { BUILD_PLAN_BACK_MAX_OFFSET.toPx() }
-    val planBackCorner = with(density) { (BUILD_PLAN_BACK_MAX_CORNER.toPx() * visualPlanBackProgress).toDp() }
     var savePlanName by remember { mutableStateOf("") }
     var importPlanCode by remember { mutableStateOf("") }
     var importPlanPreview by remember { mutableStateOf<BuildPlanImportPreview?>(null) }
@@ -199,46 +179,37 @@ fun BuildScreen(
         if (config != rawConfig) vm.updateBuildConfig(config)
     }
 
-    fun openPlanLibraryPage() {
-        planBackProgress = 0f
-        showBuildQueuePage = false
-        showPlanLibraryPage = true
-    }
-
-    fun openBuildQueuePage() {
-        planBackProgress = 0f
-        showPlanLibraryPage = false
-        showBuildQueuePage = true
-    }
-
     fun closeChildPage() {
         showPlanLibraryPage = false
         showBuildQueuePage = false
     }
 
+    val childPageBack = rememberChildPageBackController(
+        enabled = childPageVisible,
+        predictiveBackEnabled = state.predictiveBackEnabled,
+        onBack = ::closeChildPage,
+    )
+
+    fun openPlanLibraryPage() {
+        childPageBack.resetProgress()
+        showBuildQueuePage = false
+        showPlanLibraryPage = true
+    }
+
+    fun openBuildQueuePage() {
+        childPageBack.resetProgress()
+        showPlanLibraryPage = false
+        showBuildQueuePage = true
+    }
+
     ObserveChildPageVisibility(
         transition = childPageTransition,
         onVisibleChange = onPlanPageVisibleChange,
-        onAfterExitAnimation = { planBackProgress = 0f }
+        onAfterExitAnimation = { childPageBack.resetProgress() }
     )
 
     DisposableEffect(Unit) {
         onDispose { onPlanPageVisibleChange(false) }
-    }
-
-    PredictiveBackHandler(enabled = childPageVisible && state.predictiveBackEnabled) { progress ->
-        try {
-            progress.collect { backEvent ->
-                planBackProgress = backEvent.progress.coerceIn(0f, 1f)
-            }
-            closeChildPage()
-        } catch (_: CancellationException) {
-            planBackProgress = 0f
-        }
-    }
-
-    BackHandler(enabled = childPageVisible && !state.predictiveBackEnabled) {
-        closeChildPage()
     }
 
     if (showConfirmDialog) {
@@ -1299,29 +1270,20 @@ fun BuildScreen(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = BUILD_PLAN_BACK_SCRIM_ALPHA * visualPlanBackProgress))
+                    .background(Color.Black.copy(alpha = childPageBack.scrimAlpha))
             )
         }
 
         childPageTransition.AnimatedVisibility(
             visible = { it },
-            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
-                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
-            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            enter = childPageOverlayEnterTransition(state.predictiveBackEnabled, motionScheme),
+            exit = childPageOverlayExitTransition(state.predictiveBackEnabled, motionScheme),
             modifier = childPageModifier
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        translationX = planBackOffsetPx * visualPlanBackProgress
-                        scaleX = 1f - BUILD_PLAN_BACK_SCALE_DELTA * visualPlanBackProgress
-                        scaleY = 1f - BUILD_PLAN_BACK_SCALE_DELTA * visualPlanBackProgress
-                        alpha = 1f - 0.06f * visualPlanBackProgress
-                        shape = RoundedCornerShape(planBackCorner)
-                        clip = visualPlanBackProgress > 0.01f
-                    }
+                    .then(childPageBack.backTransformModifier())
             ) {
                 BuildPlanPageBackground(
                     backgroundUri = state.customBackgroundUri,
@@ -1337,7 +1299,7 @@ fun BuildScreen(
                                 stringResource(R.string.build_plan_library)
                             },
                             navigationIcon = {
-                                IconButton(onClick = ::closeChildPage) {
+                                IconButton(onClick = childPageBack::requestDismiss) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.build_back_to_config))
                                 }
                             }
@@ -1350,7 +1312,7 @@ fun BuildScreen(
                             cancellingRunIds = state.cancellingWorkflowRunIds,
                             onApply = {
                                 vm.updateBuildConfig(it.config)
-                                closeChildPage()
+                                childPageBack.requestDismiss()
                                 Toast.makeText(context, context.getString(R.string.build_queue_applied), Toast.LENGTH_SHORT).show()
                             },
                             onRemove = { vm.removeBuildQueueItem(it.id) },
@@ -1366,7 +1328,7 @@ fun BuildScreen(
                             plans = state.buildPlans,
                             onApply = {
                                 vm.applyBuildPlan(it)
-                                closeChildPage()
+                                childPageBack.requestDismiss()
                                 Toast.makeText(context, context.getString(R.string.build_plan_applied_edit), Toast.LENGTH_SHORT).show()
                             },
                             onShare = { sharePlanTarget = it },

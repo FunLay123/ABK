@@ -12,16 +12,11 @@ import android.os.Build
 import android.os.Environment
 import android.provider.OpenableColumns
 import android.provider.Settings
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -67,6 +62,9 @@ import com.abk.kernel.data.model.AbkRuntimeModule
 import com.abk.kernel.data.model.AbkRuntimeStatus
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
+import com.abk.kernel.ui.components.childPageOverlayEnterTransition
+import com.abk.kernel.ui.components.childPageOverlayExitTransition
+import com.abk.kernel.ui.components.rememberChildPageBackController
 import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.ui.components.ExpressiveSwitch
 import com.abk.kernel.ui.components.ExpressiveHeroCard
@@ -78,18 +76,9 @@ import com.abk.kernel.ui.webui.ModuleWebUiActivity
 import com.abk.kernel.utils.RootUtils
 import com.abk.kernel.viewmodel.MainViewModel
 import java.io.File
-import kotlin.math.pow
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
-
-private const val RUNTIME_PATCH_BACK_VISUAL_EXPONENT = 1.8f
-private const val RUNTIME_PATCH_BACK_SCALE_DELTA = 0.09f
-private const val RUNTIME_PATCH_BACK_SCRIM_ALPHA = 0.32f
-private val RUNTIME_PATCH_BACK_MAX_OFFSET = 56.dp
-private val RUNTIME_PATCH_BACK_MAX_CORNER = 32.dp
 
 @Composable
 fun RuntimeHomeScreen(
@@ -105,32 +94,29 @@ fun RuntimeHomeScreen(
         visible = showManagerPatchPage,
         label = "runtime-manager-patch"
     )
-    var managerPatchBackProgress by remember { mutableFloatStateOf(0f) }
     var managerPatchBackEnabled by remember { mutableStateOf(true) }
     val motionScheme = MaterialTheme.motionScheme
-    val animatedManagerPatchBackProgress by animateFloatAsState(
-        targetValue = managerPatchBackProgress.coerceIn(0f, 1f),
-        animationSpec = motionScheme.fastSpatialSpec(),
-        label = "runtime-manager-patch-back-progress"
-    )
-    val visualManagerPatchBackProgress = animatedManagerPatchBackProgress
-        .coerceIn(0f, 1f)
-        .pow(RUNTIME_PATCH_BACK_VISUAL_EXPONENT)
-    val density = LocalDensity.current
-    val managerPatchBackOffsetPx = with(density) { RUNTIME_PATCH_BACK_MAX_OFFSET.toPx() }
-    val managerPatchBackCorner = with(density) {
-        (RUNTIME_PATCH_BACK_MAX_CORNER.toPx() * visualManagerPatchBackProgress).toDp()
-    }
 
     LaunchedEffect(state.runtimeNavigationEnabled, state.rootGranted) {
         if (state.runtimeNavigationEnabled) vm.refreshAbkRuntimeStatus()
     }
 
+    fun closeManagerPatchPage() {
+        if (!managerPatchBackEnabled) return
+        showManagerPatchPage = false
+    }
+
+    val childPageBack = rememberChildPageBackController(
+        enabled = showManagerPatchPage && managerPatchBackEnabled,
+        predictiveBackEnabled = state.predictiveBackEnabled,
+        onBack = ::closeManagerPatchPage,
+    )
+
     ObserveChildPageVisibility(
         transition = managerPatchPageTransition,
         onVisibleChange = onManagerPatchPageVisibleChange,
         onAfterExitAnimation = {
-            managerPatchBackProgress = 0f
+            childPageBack.resetProgress()
             managerPatchBackEnabled = true
         }
     )
@@ -140,26 +126,6 @@ fun RuntimeHomeScreen(
             onManagerPatchPageVisibleChange(false)
             managerPatchBackEnabled = true
         }
-    }
-
-    fun closeManagerPatchPage() {
-        if (!managerPatchBackEnabled) return
-        showManagerPatchPage = false
-    }
-
-    PredictiveBackHandler(enabled = showManagerPatchPage && managerPatchBackEnabled && state.predictiveBackEnabled) { progress ->
-        try {
-            progress.collect { backEvent ->
-                managerPatchBackProgress = backEvent.progress.coerceIn(0f, 1f)
-            }
-            closeManagerPatchPage()
-        } catch (_: CancellationException) {
-            managerPatchBackProgress = 0f
-        }
-    }
-
-    BackHandler(enabled = showManagerPatchPage && managerPatchBackEnabled && !state.predictiveBackEnabled) {
-        closeManagerPatchPage()
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -202,7 +168,7 @@ fun RuntimeHomeScreen(
                     error = state.abkRuntimeError,
                     onRefresh = vm::refreshAbkRuntimeStatus,
                     onOpenManagerPatch = {
-                        managerPatchBackProgress = 0f
+                        childPageBack.resetProgress()
                         managerPatchBackEnabled = true
                         showManagerPatchPage = true
                     }
@@ -226,29 +192,20 @@ fun RuntimeHomeScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = RUNTIME_PATCH_BACK_SCRIM_ALPHA * visualManagerPatchBackProgress))
+                    .background(Color.Black.copy(alpha = childPageBack.scrimAlpha))
             )
         }
 
         managerPatchPageTransition.AnimatedVisibility(
             visible = { it },
-            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
-                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
-            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            enter = childPageOverlayEnterTransition(state.predictiveBackEnabled, motionScheme),
+            exit = childPageOverlayExitTransition(state.predictiveBackEnabled, motionScheme),
             modifier = childPageModifier
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        translationX = managerPatchBackOffsetPx * visualManagerPatchBackProgress
-                        scaleX = 1f - RUNTIME_PATCH_BACK_SCALE_DELTA * visualManagerPatchBackProgress
-                        scaleY = 1f - RUNTIME_PATCH_BACK_SCALE_DELTA * visualManagerPatchBackProgress
-                        alpha = 1f - 0.06f * visualManagerPatchBackProgress
-                        shape = RoundedCornerShape(managerPatchBackCorner)
-                        clip = visualManagerPatchBackProgress > 0.01f
-                    }
+                    .then(childPageBack.backTransformModifier())
             ) {
                 AbkRootPatchScreen(
                     rootGranted = state.rootGranted,
@@ -256,7 +213,7 @@ fun RuntimeHomeScreen(
                     runtimeVariant = state.abkRuntimeStatus?.manager?.variant.orEmpty(),
                     backgroundUri = state.customBackgroundUri,
                     backgroundImageEnabled = state.backgroundImageEnabled,
-                    onBack = ::closeManagerPatchPage,
+                    onBack = childPageBack::requestDismiss,
                     onBackEnabledChange = { managerPatchBackEnabled = it }
                 )
             }

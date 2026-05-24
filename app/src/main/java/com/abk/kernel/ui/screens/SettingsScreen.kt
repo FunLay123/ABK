@@ -9,16 +9,11 @@ import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -56,6 +50,9 @@ import com.abk.kernel.utils.DownloadDirectoryUtils
 import com.abk.kernel.utils.LocaleHelper
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
+import com.abk.kernel.ui.components.childPageOverlayEnterTransition
+import com.abk.kernel.ui.components.childPageOverlayExitTransition
+import com.abk.kernel.ui.components.rememberChildPageBackController
 import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
@@ -68,16 +65,6 @@ import com.abk.kernel.data.model.ManagerSettingItem
 import com.abk.kernel.data.model.ManagerSettingKind
 import com.abk.kernel.viewmodel.MainUiState
 import com.abk.kernel.viewmodel.MainViewModel
-import kotlin.math.pow
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.collect
-
-private const val THEME_BACK_VISUAL_EXPONENT = 1.8f
-private const val THEME_BACK_SCALE_DELTA = 0.09f
-private const val THEME_BACK_SCRIM_ALPHA = 0.32f
-private val THEME_BACK_MAX_OFFSET = 56.dp
-private val THEME_BACK_MAX_CORNER = 32.dp
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsScreen(
@@ -95,7 +82,6 @@ fun SettingsScreen(
     var showAboutPage by rememberSaveable { mutableStateOf(false) }
     var showOpenSourceLicenses by rememberSaveable { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
-    var themeBackProgress by remember { mutableFloatStateOf(0f) }
     val showChildPage = showThemeSettings || showAppProfileTemplates || showManagerTools ||
         showAboutPage || showOpenSourceLicenses
     val childPageTransition = rememberChildPageOverlayTransition(
@@ -103,17 +89,6 @@ fun SettingsScreen(
         label = "settings-child-page"
     )
     val motionScheme = MaterialTheme.motionScheme
-    val animatedThemeBackProgress by animateFloatAsState(
-        targetValue = themeBackProgress.coerceIn(0f, 1f),
-        animationSpec = motionScheme.fastSpatialSpec(),
-        label = "settings-theme-back-progress"
-    )
-    val visualThemeBackProgress = animatedThemeBackProgress
-        .coerceIn(0f, 1f)
-        .pow(THEME_BACK_VISUAL_EXPONENT)
-    val density = LocalDensity.current
-    val themeBackOffsetPx = with(density) { THEME_BACK_MAX_OFFSET.toPx() }
-    val themeBackCorner = with(density) { (THEME_BACK_MAX_CORNER.toPx() * visualThemeBackProgress).toDp() }
 
     LaunchedEffect(Unit) {
         vm.refreshManagerSettings(force = true)
@@ -126,10 +101,24 @@ fun SettingsScreen(
         }
     }
 
+    fun closeChildPage() {
+        showThemeSettings = false
+        showAppProfileTemplates = false
+        showManagerTools = false
+        showAboutPage = false
+        showOpenSourceLicenses = false
+    }
+
+    val childPageBack = rememberChildPageBackController(
+        enabled = showChildPage,
+        predictiveBackEnabled = state.predictiveBackEnabled,
+        onBack = ::closeChildPage,
+    )
+
     ObserveChildPageVisibility(
         transition = childPageTransition,
         onVisibleChange = onThemePageVisibleChange,
-        onAfterExitAnimation = { themeBackProgress = 0f }
+        onAfterExitAnimation = { childPageBack.resetProgress() }
     )
 
     DisposableEffect(Unit) {
@@ -137,7 +126,7 @@ fun SettingsScreen(
     }
 
     fun openThemeSettings() {
-        themeBackProgress = 0f
+        childPageBack.resetProgress()
         showAppProfileTemplates = false
         showManagerTools = false
         showAboutPage = false
@@ -145,12 +134,8 @@ fun SettingsScreen(
         showThemeSettings = true
     }
 
-    fun closeThemeSettings() {
-        showThemeSettings = false
-    }
-
     fun openAppProfileTemplates() {
-        themeBackProgress = 0f
+        childPageBack.resetProgress()
         showThemeSettings = false
         showManagerTools = false
         showAboutPage = false
@@ -160,7 +145,7 @@ fun SettingsScreen(
     }
 
     fun openManagerTools() {
-        themeBackProgress = 0f
+        childPageBack.resetProgress()
         showThemeSettings = false
         showAppProfileTemplates = false
         showAboutPage = false
@@ -170,7 +155,7 @@ fun SettingsScreen(
     }
 
     fun openAboutPage() {
-        themeBackProgress = 0f
+        childPageBack.resetProgress()
         showThemeSettings = false
         showAppProfileTemplates = false
         showManagerTools = false
@@ -179,35 +164,12 @@ fun SettingsScreen(
     }
 
     fun openOpenSourceLicenses() {
-        themeBackProgress = 0f
+        childPageBack.resetProgress()
         showThemeSettings = false
         showAppProfileTemplates = false
         showManagerTools = false
         showAboutPage = false
         showOpenSourceLicenses = true
-    }
-
-    fun closeChildPage() {
-        showThemeSettings = false
-        showAppProfileTemplates = false
-        showManagerTools = false
-        showAboutPage = false
-        showOpenSourceLicenses = false
-    }
-
-    PredictiveBackHandler(enabled = showChildPage && state.predictiveBackEnabled) { progress ->
-        try {
-            progress.collect { backEvent ->
-                themeBackProgress = backEvent.progress.coerceIn(0f, 1f)
-            }
-            closeChildPage()
-        } catch (_: CancellationException) {
-            themeBackProgress = 0f
-        }
-    }
-
-    BackHandler(enabled = showChildPage && !state.predictiveBackEnabled) {
-        closeChildPage()
     }
 
     if (showLogoutDialog) {
@@ -269,29 +231,20 @@ fun SettingsScreen(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = THEME_BACK_SCRIM_ALPHA * visualThemeBackProgress))
+                    .background(Color.Black.copy(alpha = childPageBack.scrimAlpha))
             )
         }
 
         childPageTransition.AnimatedVisibility(
             visible = { it && showThemeSettings },
-            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
-                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
-            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            enter = childPageOverlayEnterTransition(state.predictiveBackEnabled, motionScheme),
+            exit = childPageOverlayExitTransition(state.predictiveBackEnabled, motionScheme),
             modifier = childPageModifier
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        translationX = themeBackOffsetPx * visualThemeBackProgress
-                        scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                        scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                        alpha = 1f - 0.06f * visualThemeBackProgress
-                        shape = RoundedCornerShape(themeBackCorner)
-                        clip = visualThemeBackProgress > 0.01f
-                    }
+                    .then(childPageBack.backTransformModifier())
             ) {
                 SettingsPageBackground(
                     backgroundUri = state.customBackgroundUri,
@@ -303,7 +256,7 @@ fun SettingsScreen(
                         ExpressiveTopBar(
                             title = stringResource(R.string.settings_theme),
                             navigationIcon = {
-                                IconButton(onClick = ::closeThemeSettings) {
+                                IconButton(onClick = childPageBack::requestDismiss) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                                 }
                             }
@@ -336,23 +289,14 @@ fun SettingsScreen(
 
         childPageTransition.AnimatedVisibility(
             visible = { it && showAppProfileTemplates },
-            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
-                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
-            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            enter = childPageOverlayEnterTransition(state.predictiveBackEnabled, motionScheme),
+            exit = childPageOverlayExitTransition(state.predictiveBackEnabled, motionScheme),
             modifier = childPageModifier
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        translationX = themeBackOffsetPx * visualThemeBackProgress
-                        scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                        scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                        alpha = 1f - 0.06f * visualThemeBackProgress
-                        shape = RoundedCornerShape(themeBackCorner)
-                        clip = visualThemeBackProgress > 0.01f
-                    }
+                    .then(childPageBack.backTransformModifier())
             ) {
                 SettingsPageBackground(
                     backgroundUri = state.customBackgroundUri,
@@ -364,7 +308,7 @@ fun SettingsScreen(
                         ExpressiveTopBar(
                             title = stringResource(R.string.settings_app_profile_templates),
                             navigationIcon = {
-                                IconButton(onClick = ::closeChildPage) {
+                                IconButton(onClick = childPageBack::requestDismiss) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                                 }
                             },
@@ -390,23 +334,14 @@ fun SettingsScreen(
 
         childPageTransition.AnimatedVisibility(
             visible = { it && showManagerTools },
-            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
-                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
-            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            enter = childPageOverlayEnterTransition(state.predictiveBackEnabled, motionScheme),
+            exit = childPageOverlayExitTransition(state.predictiveBackEnabled, motionScheme),
             modifier = childPageModifier
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        translationX = themeBackOffsetPx * visualThemeBackProgress
-                        scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                        scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                        alpha = 1f - 0.06f * visualThemeBackProgress
-                        shape = RoundedCornerShape(themeBackCorner)
-                        clip = visualThemeBackProgress > 0.01f
-                    }
+                    .then(childPageBack.backTransformModifier())
             ) {
                 SettingsPageBackground(
                     backgroundUri = state.customBackgroundUri,
@@ -418,7 +353,7 @@ fun SettingsScreen(
                         ExpressiveTopBar(
                             title = stringResource(R.string.settings_tools),
                             navigationIcon = {
-                                IconButton(onClick = ::closeChildPage) {
+                                IconButton(onClick = childPageBack::requestDismiss) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                                 }
                             },
@@ -443,23 +378,14 @@ fun SettingsScreen(
 
         childPageTransition.AnimatedVisibility(
             visible = { it && showAboutPage },
-            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
-                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
-            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            enter = childPageOverlayEnterTransition(state.predictiveBackEnabled, motionScheme),
+            exit = childPageOverlayExitTransition(state.predictiveBackEnabled, motionScheme),
             modifier = childPageModifier
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        translationX = themeBackOffsetPx * visualThemeBackProgress
-                        scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                        scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                        alpha = 1f - 0.06f * visualThemeBackProgress
-                        shape = RoundedCornerShape(themeBackCorner)
-                        clip = visualThemeBackProgress > 0.01f
-                    }
+                    .then(childPageBack.backTransformModifier())
             ) {
                 SettingsPageBackground(
                     backgroundUri = state.customBackgroundUri,
@@ -471,7 +397,7 @@ fun SettingsScreen(
                         ExpressiveTopBar(
                             title = stringResource(R.string.settings_about_title),
                             navigationIcon = {
-                                IconButton(onClick = ::closeChildPage) {
+                                IconButton(onClick = childPageBack::requestDismiss) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                                 }
                             }
@@ -489,23 +415,14 @@ fun SettingsScreen(
 
         childPageTransition.AnimatedVisibility(
             visible = { it && showOpenSourceLicenses },
-            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
-                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
-            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            enter = childPageOverlayEnterTransition(state.predictiveBackEnabled, motionScheme),
+            exit = childPageOverlayExitTransition(state.predictiveBackEnabled, motionScheme),
             modifier = childPageModifier
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        translationX = themeBackOffsetPx * visualThemeBackProgress
-                        scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                        scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                        alpha = 1f - 0.06f * visualThemeBackProgress
-                        shape = RoundedCornerShape(themeBackCorner)
-                        clip = visualThemeBackProgress > 0.01f
-                    }
+                    .then(childPageBack.backTransformModifier())
             ) {
                 SettingsPageBackground(
                     backgroundUri = state.customBackgroundUri,
@@ -517,7 +434,7 @@ fun SettingsScreen(
                         ExpressiveTopBar(
                             title = stringResource(R.string.settings_open_source_licenses),
                             navigationIcon = {
-                                IconButton(onClick = ::closeChildPage) {
+                                IconButton(onClick = childPageBack::requestDismiss) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                                 }
                             }

@@ -3,14 +3,9 @@
 package com.abk.kernel.ui.screens
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -46,22 +41,15 @@ import com.abk.kernel.data.model.ModuleCatalogItem
 import com.abk.kernel.data.model.ModuleCatalogRepository
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
+import com.abk.kernel.ui.components.childPageOverlayEnterTransition
+import com.abk.kernel.ui.components.childPageOverlayExitTransition
+import com.abk.kernel.ui.components.rememberChildPageBackController
 import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
-import kotlin.math.pow
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.collect
-
-private const val MODULE_REPOSITORY_BACK_VISUAL_EXPONENT = 1.8f
-private const val MODULE_REPOSITORY_BACK_SCALE_DELTA = 0.09f
-private const val MODULE_REPOSITORY_BACK_SCRIM_ALPHA = 0.32f
-private val MODULE_REPOSITORY_BACK_MAX_OFFSET = 56.dp
-private val MODULE_REPOSITORY_BACK_MAX_CORNER = 32.dp
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModuleRepositoryScreen(
@@ -82,20 +70,6 @@ fun ModuleRepositoryScreen(
     )
     var pendingCatalogModule by remember { mutableStateOf<ModuleCatalogItem?>(null) }
     var selectedCatalogModuleStages by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var repositoryBackProgress by remember { mutableFloatStateOf(0f) }
-    val animatedRepositoryBackProgress by animateFloatAsState(
-        targetValue = repositoryBackProgress.coerceIn(0f, 1f),
-        animationSpec = motionScheme.fastSpatialSpec(),
-        label = "module-repository-back-progress"
-    )
-    val visualRepositoryBackProgress = animatedRepositoryBackProgress
-        .coerceIn(0f, 1f)
-        .pow(MODULE_REPOSITORY_BACK_VISUAL_EXPONENT)
-    val density = LocalDensity.current
-    val repositoryBackOffsetPx = with(density) { MODULE_REPOSITORY_BACK_MAX_OFFSET.toPx() }
-    val repositoryBackCorner = with(density) {
-        (MODULE_REPOSITORY_BACK_MAX_CORNER.toPx() * visualRepositoryBackProgress).toDp()
-    }
     val mergedModules = remember(state.moduleCatalogRepositories) {
         mergeCatalogModules(state.moduleCatalogRepositories)
     }
@@ -108,38 +82,29 @@ fun ModuleRepositoryScreen(
             .toSet()
     }
 
-    fun openRepositorySettings() {
-        repositoryBackProgress = 0f
-        showRepositorySettings = true
-    }
-
     fun closeRepositorySettings() {
         showRepositorySettings = false
+    }
+
+    val childPageBack = rememberChildPageBackController(
+        enabled = showRepositorySettings,
+        predictiveBackEnabled = state.predictiveBackEnabled,
+        onBack = ::closeRepositorySettings,
+    )
+
+    fun openRepositorySettings() {
+        childPageBack.resetProgress()
+        showRepositorySettings = true
     }
 
     ObserveChildPageVisibility(
         transition = repositoryPageTransition,
         onVisibleChange = onRepositoryPageVisibleChange,
-        onAfterExitAnimation = { repositoryBackProgress = 0f }
+        onAfterExitAnimation = { childPageBack.resetProgress() }
     )
 
     DisposableEffect(Unit) {
         onDispose { onRepositoryPageVisibleChange(false) }
-    }
-
-    PredictiveBackHandler(enabled = showRepositorySettings && state.predictiveBackEnabled) { progress ->
-        try {
-            progress.collect { backEvent ->
-                repositoryBackProgress = backEvent.progress.coerceIn(0f, 1f)
-            }
-            closeRepositorySettings()
-        } catch (_: CancellationException) {
-            repositoryBackProgress = 0f
-        }
-    }
-
-    BackHandler(enabled = showRepositorySettings && !state.predictiveBackEnabled) {
-        closeRepositorySettings()
     }
 
     pendingCatalogModule?.let { module ->
@@ -301,29 +266,20 @@ fun ModuleRepositoryScreen(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = MODULE_REPOSITORY_BACK_SCRIM_ALPHA * visualRepositoryBackProgress))
+                    .background(Color.Black.copy(alpha = childPageBack.scrimAlpha))
             )
         }
 
         repositoryPageTransition.AnimatedVisibility(
             visible = { it },
-            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
-                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
-            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            enter = childPageOverlayEnterTransition(state.predictiveBackEnabled, motionScheme),
+            exit = childPageOverlayExitTransition(state.predictiveBackEnabled, motionScheme),
             modifier = childPageModifier
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        translationX = repositoryBackOffsetPx * visualRepositoryBackProgress
-                        scaleX = 1f - MODULE_REPOSITORY_BACK_SCALE_DELTA * visualRepositoryBackProgress
-                        scaleY = 1f - MODULE_REPOSITORY_BACK_SCALE_DELTA * visualRepositoryBackProgress
-                        alpha = 1f - 0.06f * visualRepositoryBackProgress
-                        shape = RoundedCornerShape(repositoryBackCorner)
-                        clip = visualRepositoryBackProgress > 0.01f
-                    }
+                    .then(childPageBack.backTransformModifier())
             ) {
                 ModuleRepositoryPageBackground(
                     backgroundUri = state.customBackgroundUri,
@@ -335,7 +291,7 @@ fun ModuleRepositoryScreen(
                         ExpressiveTopBar(
                             title = stringResource(R.string.module_repo_central),
                             navigationIcon = {
-                                IconButton(onClick = ::closeRepositorySettings) {
+                                IconButton(onClick = childPageBack::requestDismiss) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.module_repo_back))
                                 }
                             }

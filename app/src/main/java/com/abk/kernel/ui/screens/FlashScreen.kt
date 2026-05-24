@@ -7,7 +7,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
@@ -161,6 +160,7 @@ import com.abk.kernel.utils.WorkflowPrimary
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.CHILD_PAGE_NAV_EXIT_DELAY_MS
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
+import com.abk.kernel.ui.components.rememberChildPageBackController
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -170,17 +170,9 @@ import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.utils.DownloadUtils
 import com.abk.kernel.utils.RootUtils
 import com.abk.kernel.viewmodel.MainViewModel
-import kotlin.math.pow
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private const val FLASH_DETAIL_BACK_VISUAL_EXPONENT = 1.8f
-private const val FLASH_DETAIL_BACK_SCALE_DELTA = 0.09f
-private const val FLASH_DETAIL_BACK_SCRIM_ALPHA = 0.32f
-private val FLASH_DETAIL_BACK_MAX_OFFSET = 56.dp
-private val FLASH_DETAIL_BACK_MAX_CORNER = 32.dp
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -1041,14 +1033,14 @@ fun FlashScreen(
                     backgroundImageEnabled = state.backgroundImageEnabled,
                     onBack = ::returnToWorkflowList,
                     backgroundContent = { FlashListContent() }
-                ) {
+                ) { dismiss ->
                     Crossfade(targetState = showBuilding, label = "flash-detail-build-state") { isBuilding ->
                         if (isBuilding && buildingRun != null) {
                             BuildingWorkflowDetail(
                                 run = buildingRun,
                                 progress = if (state.currentRun?.id == routeRunId) state.buildProgress else state.buildProgressByRunId[routeRunId],
                                 cancelling = isCancellingThis,
-                                onBack = ::returnToWorkflowList,
+                                onBack = dismiss,
                                 onCancel = { cancelConfirmRunId = routeRunId }
                             )
                         } else {
@@ -1064,7 +1056,7 @@ fun FlashScreen(
                             item {
                                 WorkflowDetailHeader(
                                     group = group,
-                                    onBack = ::returnToWorkflowList,
+                                    onBack = dismiss,
                                     onShowParameters = { parameterTarget = group },
                                     onDelete = {
                                         deleteWorkflowTarget = group
@@ -1208,7 +1200,7 @@ fun FlashScreen(
                     backgroundImageEnabled = state.backgroundImageEnabled,
                     onBack = ::returnToPrebuiltReleaseList,
                     backgroundContent = { FlashListContent() }
-                ) {
+                ) { dismiss ->
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1223,7 +1215,7 @@ fun FlashScreen(
                                     release = release,
                                     sourceCount = selectedPrebuiltAssets.size,
                                     visibleCount = filteredPrebuiltAssets.size,
-                                    onBack = ::returnToPrebuiltReleaseList,
+                                    onBack = dismiss,
                                     onShowParameters = { prebuiltParameterTarget = release },
                                     onRefresh = { vm.loadPrebuiltGkiAssets(release, force = true) }
                                 )
@@ -1301,36 +1293,13 @@ private fun FlashDetailBackSurface(
     backgroundImageEnabled: Boolean,
     onBack: () -> Unit,
     backgroundContent: @Composable () -> Unit,
-    content: @Composable () -> Unit
+    content: @Composable (dismiss: () -> Unit) -> Unit
 ) {
-    val motionScheme = MaterialTheme.motionScheme
-    var backProgress by remember { mutableFloatStateOf(0f) }
-    val animatedBackProgress by animateFloatAsState(
-        targetValue = backProgress.coerceIn(0f, 1f),
-        animationSpec = motionScheme.fastSpatialSpec(),
-        label = "flash-detail-back-progress"
+    val back = rememberChildPageBackController(
+        enabled = true,
+        predictiveBackEnabled = predictiveBackEnabled,
+        onBack = onBack,
     )
-    val visualBackProgress = animatedBackProgress
-        .coerceIn(0f, 1f)
-        .pow(FLASH_DETAIL_BACK_VISUAL_EXPONENT)
-    val density = LocalDensity.current
-    val backOffsetPx = with(density) { FLASH_DETAIL_BACK_MAX_OFFSET.toPx() }
-    val backCorner = with(density) { (FLASH_DETAIL_BACK_MAX_CORNER.toPx() * visualBackProgress).toDp() }
-
-    PredictiveBackHandler(enabled = predictiveBackEnabled) { progress ->
-        try {
-            progress.collect { backEvent ->
-                backProgress = backEvent.progress.coerceIn(0f, 1f)
-            }
-            onBack()
-        } catch (_: CancellationException) {
-            backProgress = 0f
-        }
-    }
-
-    BackHandler(enabled = !predictiveBackEnabled) {
-        onBack()
-    }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val childPageTopInset = outerPadding.calculateTopPadding()
@@ -1342,24 +1311,16 @@ private fun FlashDetailBackSurface(
         backgroundContent()
         Box(
             childPageModifier
-                .background(Color.Black.copy(alpha = FLASH_DETAIL_BACK_SCRIM_ALPHA * visualBackProgress))
+                .background(Color.Black.copy(alpha = back.scrimAlpha))
         )
         Box(
-            modifier = childPageModifier
-                .graphicsLayer {
-                    translationX = backOffsetPx * visualBackProgress
-                    scaleX = 1f - FLASH_DETAIL_BACK_SCALE_DELTA * visualBackProgress
-                    scaleY = 1f - FLASH_DETAIL_BACK_SCALE_DELTA * visualBackProgress
-                    alpha = 1f - 0.06f * visualBackProgress
-                    shape = RoundedCornerShape(backCorner)
-                    clip = visualBackProgress > 0.01f
-                }
+            modifier = childPageModifier.then(back.backTransformModifier())
         ) {
             FlashDetailPageBackground(
                 backgroundUri = backgroundUri,
                 backgroundImageEnabled = backgroundImageEnabled
             )
-            content()
+            content(back::requestDismiss)
         }
     }
 }
