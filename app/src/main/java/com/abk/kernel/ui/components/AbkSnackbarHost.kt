@@ -55,21 +55,18 @@ fun AbkSnackbarHost(
         modifier = modifier.padding(horizontal = 20.dp),
         snackbar = { data ->
             Snackbar(
-                snackbarData = data,
+                modifier = Modifier.padding(vertical = 4.dp),
                 shape = RoundedCornerShape(14.dp),
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                actionColor = MaterialTheme.colorScheme.primary,
+                actionContentColor = MaterialTheme.colorScheme.primary,
                 dismissActionContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                tonalElevation = 1.dp,
-                shadowElevation = 3.dp,
-                modifier = Modifier.padding(vertical = 4.dp)
             ) {
                 Text(
                     text = data.visuals.message,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                 )
             }
         }
