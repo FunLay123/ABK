@@ -16,7 +16,7 @@ object BuildProgressUtils {
      * compact technical format instead of the old "Объединённый прогресс по
      * N workflow…" wall of text:
      *   single:   "#42 SukiSU SUSFS 6.6.89-android15-2025-06"
-     *   multiple: "2 Workflows · #42 SukiSU SUSFS 6.6.89-… · Manager Dev"
+     *   multiple: "#42 SukiSU SUSFS 6.6.89-… · Manager Dev"
      *
      * Sourced from BuildQueueItem.config in the ViewModel — runs without a
      * descriptor fall back to the older "#N {step.name}" rendering.
@@ -188,11 +188,10 @@ object BuildProgressUtils {
                 }
             }
         }
-        // No "N Workflows · " prefix and no middle-dot separators — the
-        // banner is more readable when chips are simply comma-separated, and
-        // the workflow count is already visible above via the chip rows in
-        // the progress card.
-        return entries.joinToString(", ")
+        // Keep the same middle-dot separator the card already uses between
+        // percent and the first workflow label so multi-run rows read
+        // consistently for both kernel and manager sections.
+        return entries.joinToString(" · ")
     }
 
     private fun runDisplayLabel(run: WorkflowRun): String =
