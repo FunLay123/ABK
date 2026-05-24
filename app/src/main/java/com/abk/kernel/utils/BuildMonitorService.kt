@@ -116,12 +116,18 @@ class BuildMonitorService : Service() {
                         when (run.status) {
                             "completed" -> {
                                 val success = run.conclusion == "success"
+                                val completedKind = kindForRun(run)
                                 val finish = finishMonitoring(runId, success)
-                                if (notifyBuild && finish.shouldStop) {
-                                    NotificationUtils.notifyBuildDone(
-                                        applicationContext,
-                                        finish.allSucceeded
-                                    )
+                                if (notifyBuild) {
+                                    if (finish.shouldStop) {
+                                        NotificationUtils.notifyBuildDone(
+                                            applicationContext,
+                                            finish.allSucceeded,
+                                            completedKind
+                                        )
+                                    } else {
+                                        publishMergedRunningNotification()
+                                    }
                                 }
                                 break
                             }
@@ -138,9 +144,18 @@ class BuildMonitorService : Service() {
                                 delay(30_000)
                             }
                             else -> {
+                                val failedKind = kindForRun(run)
                                 val finish = finishMonitoring(runId, success = false)
-                                if (notifyBuild && finish.shouldStop) {
-                                    NotificationUtils.notifyBuildDone(applicationContext, success = false)
+                                if (notifyBuild) {
+                                    if (finish.shouldStop) {
+                                        NotificationUtils.notifyBuildDone(
+                                            applicationContext,
+                                            success = false,
+                                            kind = failedKind
+                                        )
+                                    } else {
+                                        publishMergedRunningNotification()
+                                    }
                                 }
                                 break
                             }
@@ -190,6 +205,22 @@ class BuildMonitorService : Service() {
             managers >= 1 -> NotificationUtils.BuildKind.ManagerOnly
             else -> NotificationUtils.BuildKind.Unknown
         }
+    }
+
+    private fun publishMergedRunningNotification() {
+        val merged = mergedActiveProgress() ?: return
+        NotificationUtils.notifyBuildRunning(
+            applicationContext,
+            merged.percent,
+            merged.currentStep,
+            kind = mergedActiveKind()
+        )
+    }
+
+    private fun kindForRun(run: WorkflowRun): NotificationUtils.BuildKind = when {
+        run.isManagerBuild() -> NotificationUtils.BuildKind.ManagerOnly
+        run.isKernelBuild() -> NotificationUtils.BuildKind.Kernel
+        else -> NotificationUtils.BuildKind.Unknown
     }
 
     private fun finishMonitoring(runId: Long, success: Boolean? = null): MonitorFinish {

@@ -980,6 +980,8 @@
     <string name="notif_build_manager_running">Идёт сборка менеджера…</string>
     <string name="notif_build_done">Сборка ядра завершена!</string>
     <string name="notif_build_failed">Сборка ядра не удалась</string>
+    <string name="notif_build_manager_done">Сборка менеджера завершена!</string>
+    <string name="notif_build_manager_failed">Сборка менеджера не удалась</string>
     <string name="notif_downloading">Загрузка артефактов сборки…</string>
     <string name="notif_download_done">Загрузка завершена</string>
 

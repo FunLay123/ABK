@@ -114,12 +114,7 @@ object NotificationUtils {
         val intent = Intent(context, MainActivity::class.java)
         val pi = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
         val title = context.getString(
-            when (kind) {
-                BuildKind.MultipleKernels -> R.string.notif_build_kernels_running
-                BuildKind.Mixed -> R.string.notif_build_artifacts_running
-                BuildKind.ManagerOnly -> R.string.notif_build_manager_running
-                else -> R.string.notif_build_running
-            }
+            runningTitleRes(kind)
         )
         val text = when {
             normalizedProgress != null && normalizedStep.isNotBlank() -> "$normalizedProgress% · $normalizedStep"
@@ -142,7 +137,7 @@ object NotificationUtils {
             // Manager-only builds skip the HyperOS island. A 30-second APK
             // build doesn't warrant grabbing the status-bar focus area; the
             // ongoing notification still shows in the shade.
-            if (kind != BuildKind.ManagerOnly) {
+            if (shouldAttachIsland(kind)) {
                 attachMiuiBuildIsland(
                     context = context,
                     content = BuildIslandContent(
@@ -156,13 +151,14 @@ object NotificationUtils {
         }
     }
 
-    fun notifyBuildDone(context: Context, success: Boolean) {
+    fun notifyBuildDone(
+        context: Context,
+        success: Boolean,
+        kind: BuildKind = BuildKind.Unknown
+    ) {
         val intent = Intent(context, MainActivity::class.java)
         val pi = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-        val title = if (success)
-            context.getString(R.string.notif_build_done)
-        else
-            context.getString(R.string.notif_build_failed)
+        val title = context.getString(doneTitleRes(success, kind))
         val progress = if (success) 100 else lastBuildProgressPercent ?: 0
         val notif = NotificationCompat.Builder(context, CHANNEL_BUILD)
             .setSmallIcon(
@@ -170,23 +166,32 @@ object NotificationUtils {
                 else android.R.drawable.ic_dialog_alert
             )
             .setContentTitle(title)
+            .setContentText(
+                if (success) {
+                    context.getString(R.string.bp_all_steps_done)
+                } else {
+                    context.getString(R.string.build_failed)
+                }
+            )
             .setAutoCancel(true)
             .setContentIntent(pi)
             .build()
             .apply {
-                attachMiuiBuildIsland(
-                    context = context,
-                    content = BuildIslandContent(
-                        title = title,
-                        content = if (success) {
-                            context.getString(R.string.bp_all_steps_done)
-                        } else {
-                            context.getString(R.string.build_failed)
-                        },
-                        progress = progress,
-                        color = if (success) COLOR_BUILD_SUCCESS else COLOR_BUILD_FAILED
+                if (shouldAttachIsland(kind)) {
+                    attachMiuiBuildIsland(
+                        context = context,
+                        content = BuildIslandContent(
+                            title = title,
+                            content = if (success) {
+                                context.getString(R.string.bp_all_steps_done)
+                            } else {
+                                context.getString(R.string.build_failed)
+                            },
+                            progress = progress,
+                            color = if (success) COLOR_BUILD_SUCCESS else COLOR_BUILD_FAILED
+                        )
                     )
-                )
+                }
             }
         lastBuildNotificationSignature = null
         lastBuildProgressPercent = null
@@ -379,6 +384,24 @@ object NotificationUtils {
     private fun buildRunningNotificationSignature(progress: Int?, currentStep: String, kind: BuildKind): String {
         return "running|${kind.name}|${progress ?: "indef"}|$currentStep"
     }
+
+    private fun runningTitleRes(kind: BuildKind): Int = when (kind) {
+        BuildKind.MultipleKernels -> R.string.notif_build_kernels_running
+        BuildKind.Mixed -> R.string.notif_build_artifacts_running
+        BuildKind.ManagerOnly -> R.string.notif_build_manager_running
+        else -> R.string.notif_build_running
+    }
+
+    private fun doneTitleRes(success: Boolean, kind: BuildKind): Int = when (kind) {
+        BuildKind.ManagerOnly -> {
+            if (success) R.string.notif_build_manager_done else R.string.notif_build_manager_failed
+        }
+        else -> {
+            if (success) R.string.notif_build_done else R.string.notif_build_failed
+        }
+    }
+
+    private fun shouldAttachIsland(kind: BuildKind): Boolean = kind != BuildKind.ManagerOnly
 
     private data class BuildIslandContent(
         val title: String,

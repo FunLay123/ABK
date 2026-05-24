@@ -998,6 +998,8 @@
     <string name="notif_build_manager_running">Building manager…</string>
     <string name="notif_build_done">Kernel build complete.</string>
     <string name="notif_build_failed">Kernel build failed</string>
+    <string name="notif_build_manager_done">Manager build complete.</string>
+    <string name="notif_build_manager_failed">Manager build failed</string>
     <string name="notif_downloading">Downloading build artifact…</string>
     <string name="notif_download_done">Download complete</string>
 
