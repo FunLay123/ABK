@@ -380,6 +380,9 @@ private fun AbkMainScaffold(
                 settingsThemePageVisible = false
                 rootAuthDetailPageVisible = false
                 managerPatchPageVisible = false
+                // Flash NavHost is recreated on tab entry — clear stale saveable
+                // state so the bottom bar does not hide until a detail opens.
+                flashDetailPageVisible = false
             }
             AbkTab.Modules -> {
                 buildPlanPageVisible = false

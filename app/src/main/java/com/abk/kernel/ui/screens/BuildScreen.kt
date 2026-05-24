@@ -67,6 +67,7 @@ import com.abk.kernel.data.model.WorkflowRun
 import com.abk.kernel.data.model.isManagerBuild
 import com.abk.kernel.data.model.isManagerDevBuild
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
+import com.abk.kernel.ui.components.ObserveChildPageVisibility
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -213,15 +214,12 @@ fun BuildScreen(
         showBuildQueuePage = false
     }
 
-    LaunchedEffect(childPageVisible) {
-        if (childPageVisible) {
-            onPlanPageVisibleChange(true)
-        } else {
-            delay(BUILD_PLAN_PAGE_EXIT_DELAY_MS)
-            planBackProgress = 0f
-            onPlanPageVisibleChange(false)
-        }
-    }
+    ObserveChildPageVisibility(
+        visible = childPageVisible,
+        onVisibleChange = onPlanPageVisibleChange,
+        exitDelayMs = BUILD_PLAN_PAGE_EXIT_DELAY_MS,
+        onAfterExitDelay = { planBackProgress = 0f }
+    )
 
     DisposableEffect(Unit) {
         onDispose { onPlanPageVisibleChange(false) }

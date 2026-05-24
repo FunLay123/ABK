@@ -66,6 +66,7 @@ import com.abk.kernel.data.model.AbkRuntimeBuildInfo
 import com.abk.kernel.data.model.AbkRuntimeModule
 import com.abk.kernel.data.model.AbkRuntimeStatus
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
+import com.abk.kernel.ui.components.ObserveChildPageVisibility
 import com.abk.kernel.ui.components.ExpressiveSwitch
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -79,7 +80,6 @@ import java.io.File
 import kotlin.math.pow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
@@ -122,15 +122,15 @@ fun RuntimeHomeScreen(
         if (state.runtimeNavigationEnabled) vm.refreshAbkRuntimeStatus()
     }
 
-    LaunchedEffect(showManagerPatchPage) {
-        onManagerPatchPageVisibleChange(showManagerPatchPage)
-        if (!showManagerPatchPage) {
-            delay(RUNTIME_PATCH_PAGE_EXIT_DELAY_MS)
+    ObserveChildPageVisibility(
+        visible = showManagerPatchPage,
+        onVisibleChange = onManagerPatchPageVisibleChange,
+        exitDelayMs = RUNTIME_PATCH_PAGE_EXIT_DELAY_MS,
+        onAfterExitDelay = {
             managerPatchBackProgress = 0f
             managerPatchBackEnabled = true
-            onManagerPatchPageVisibleChange(false)
         }
-    }
+    )
 
     DisposableEffect(Unit) {
         onDispose {

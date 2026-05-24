@@ -45,6 +45,7 @@ import com.abk.kernel.data.model.CustomExternalModuleStage
 import com.abk.kernel.data.model.ModuleCatalogItem
 import com.abk.kernel.data.model.ModuleCatalogRepository
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
+import com.abk.kernel.ui.components.ObserveChildPageVisibility
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveTopBar
@@ -52,7 +53,6 @@ import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
 import kotlin.math.pow
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 
 private const val MODULE_REPOSITORY_BACK_VISUAL_EXPONENT = 1.8f
@@ -114,15 +114,12 @@ fun ModuleRepositoryScreen(
         showRepositorySettings = false
     }
 
-    LaunchedEffect(showRepositorySettings) {
-        if (showRepositorySettings) {
-            onRepositoryPageVisibleChange(true)
-        } else {
-            delay(MODULE_REPOSITORY_PAGE_EXIT_DELAY_MS)
-            repositoryBackProgress = 0f
-            onRepositoryPageVisibleChange(false)
-        }
-    }
+    ObserveChildPageVisibility(
+        visible = showRepositorySettings,
+        onVisibleChange = onRepositoryPageVisibleChange,
+        exitDelayMs = MODULE_REPOSITORY_PAGE_EXIT_DELAY_MS,
+        onAfterExitDelay = { repositoryBackProgress = 0f }
+    )
 
     DisposableEffect(Unit) {
         onDispose { onRepositoryPageVisibleChange(false) }

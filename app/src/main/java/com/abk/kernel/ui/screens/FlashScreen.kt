@@ -159,6 +159,7 @@ import com.abk.kernel.utils.FlashFilterWorkflowState
 import com.abk.kernel.utils.FlashWorkflowFilter
 import com.abk.kernel.utils.WorkflowPrimary
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
+import com.abk.kernel.ui.components.ObserveChildPageVisibility
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -194,7 +195,9 @@ fun FlashScreen(
     var activeContentTab by rememberSaveable { mutableStateOf(FlashContentTab.Workflows) }
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
-    val flashDetailRouteActive = currentBackStackEntry?.destination?.route != FLASH_ROUTE_LIST
+    // NavHost has no back-stack entry for a frame on first composition — treat
+    // null as the list route so we do not flash childPageVisible on tab open.
+    val flashDetailRouteActive = isFlashDetailRoute(currentBackStackEntry?.destination?.route)
     var selectedRunId by remember { mutableStateOf<Long?>(null) }
     var selectedPrebuiltReleaseId by remember { mutableStateOf<Long?>(null) }
     var selectedItem by remember { mutableStateOf<DownloadedArtifact?>(null) }
@@ -397,14 +400,11 @@ fun FlashScreen(
         }
     }
 
-    LaunchedEffect(flashDetailRouteActive) {
-        if (flashDetailRouteActive) {
-            onDetailPageVisibleChange(true)
-        } else {
-            delay(FLASH_DETAIL_PAGE_EXIT_DELAY_MS)
-            onDetailPageVisibleChange(false)
-        }
-    }
+    ObserveChildPageVisibility(
+        visible = flashDetailRouteActive,
+        onVisibleChange = onDetailPageVisibleChange,
+        exitDelayMs = FLASH_DETAIL_PAGE_EXIT_DELAY_MS
+    )
 
     DisposableEffect(Unit) {
         onDispose { onDetailPageVisibleChange(false) }
@@ -3122,6 +3122,9 @@ private fun flashCommandPreview(item: DownloadedArtifact) = when (item.type) {
     ArtifactType.SUSFS_MODULE -> "install-module ${item.name}"
     else -> "run ${item.name}"
 }
+
+private fun isFlashDetailRoute(route: String?): Boolean =
+    route != null && route != FLASH_ROUTE_LIST
 
 private const val FLASH_ROUTE_LIST = "flash_list"
 private const val FLASH_ARG_RUN_ID = "runId"

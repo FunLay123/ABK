@@ -55,6 +55,7 @@ import com.abk.kernel.R
 import com.abk.kernel.utils.DownloadDirectoryUtils
 import com.abk.kernel.utils.LocaleHelper
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
+import com.abk.kernel.ui.components.ObserveChildPageVisibility
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -68,7 +69,6 @@ import com.abk.kernel.viewmodel.MainUiState
 import com.abk.kernel.viewmodel.MainViewModel
 import kotlin.math.pow
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 
 private const val THEME_BACK_VISUAL_EXPONENT = 1.8f
@@ -122,15 +122,12 @@ fun SettingsScreen(
         }
     }
 
-    LaunchedEffect(showChildPage) {
-        if (showChildPage) {
-            onThemePageVisibleChange(true)
-        } else {
-            delay(THEME_PAGE_EXIT_DELAY_MS)
-            themeBackProgress = 0f
-            onThemePageVisibleChange(false)
-        }
-    }
+    ObserveChildPageVisibility(
+        visible = showChildPage,
+        onVisibleChange = onThemePageVisibleChange,
+        exitDelayMs = THEME_PAGE_EXIT_DELAY_MS,
+        onAfterExitDelay = { themeBackProgress = 0f }
+    )
 
     DisposableEffect(Unit) {
         onDispose { onThemePageVisibleChange(false) }

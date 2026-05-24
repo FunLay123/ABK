@@ -92,6 +92,7 @@ import com.abk.kernel.R
 import com.abk.kernel.data.model.RootGrantApp
 import com.abk.kernel.data.model.RootGrantProfile
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
+import com.abk.kernel.ui.components.ObserveChildPageVisibility
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveSwitch
@@ -101,7 +102,6 @@ import com.abk.kernel.viewmodel.MainViewModel
 import kotlin.math.pow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 
@@ -158,15 +158,12 @@ fun RootAuthorizationScreen(
         if (state.runtimeNavigationEnabled) vm.refreshRootGrantApps()
     }
 
-    LaunchedEffect(selectedApp != null) {
-        if (selectedApp != null) {
-            onDetailPageVisibleChange(true)
-        } else {
-            delay(ROOT_AUTH_DETAIL_EXIT_DELAY_MS)
-            detailBackProgress = 0f
-            onDetailPageVisibleChange(false)
-        }
-    }
+    ObserveChildPageVisibility(
+        visible = selectedApp != null,
+        onVisibleChange = onDetailPageVisibleChange,
+        exitDelayMs = ROOT_AUTH_DETAIL_EXIT_DELAY_MS,
+        onAfterExitDelay = { detailBackProgress = 0f }
+    )
 
     DisposableEffect(Unit) {
         onDispose { onDetailPageVisibleChange(false) }
@@ -309,7 +306,10 @@ fun RootAuthorizationScreen(
                         saving = state.rootGrantSavingPackage == app.packageName,
                         anySaving = state.rootGrantSavingPackage != null,
                         onToggle = { allowed -> vm.setRootGrantAllowed(app.packageName, allowed) },
-                        onOpen = { selectedPackage = app.packageName }
+                        onOpen = {
+                            onDetailPageVisibleChange(true)
+                            selectedPackage = app.packageName
+                        }
                     )
                 }
             }
