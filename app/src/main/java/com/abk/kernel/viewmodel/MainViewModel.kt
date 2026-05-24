@@ -10,6 +10,9 @@ import android.os.Build
 import androidx.annotation.StringRes
 import com.abk.kernel.utils.LocaleHelper
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import com.abk.kernel.BuildConfig
 import com.abk.kernel.R
@@ -130,6 +133,8 @@ data class MainUiState(
     val termsAccepted: Boolean = false,
     val autoDownload: Boolean = true,
     val notifyBuild: Boolean = true,
+    val workflowForegroundRefreshEnabled: Boolean = PreferencesRepository.DEFAULT_WORKFLOW_FOREGROUND_REFRESH_ENABLED,
+    val workflowForegroundRefreshIntervalSec: Int = PreferencesRepository.DEFAULT_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC,
     val themeMode: String = "dark",
     val dynamicColorEnabled: Boolean = true,
     val customThemeColorArgb: Int? = null,
@@ -190,6 +195,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var hasCheckedWorkflowEnablementThisLaunch = false
     private var buildQueueJob: Job? = null
     private var recentRunsRefreshJob: Job? = null
+    private var foregroundWorkflowRefreshJob: Job? = null
+    private var foregroundWorkflowRefreshIntervalSec =
+        PreferencesRepository.DEFAULT_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC
+    private var appInForeground = false
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -261,6 +270,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         observePreferences()
+        observeForegroundWorkflowRefresh()
         registerStatusReceiver()
     }
 
@@ -390,6 +400,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             prefs.predictiveBackEnabled.collect { enabled ->
                 _uiState.update { it.copy(predictiveBackEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            combine(
+                prefs.workflowForegroundRefreshEnabled,
+                prefs.workflowForegroundRefreshIntervalSec
+            ) { enabled, intervalSec ->
+                enabled to intervalSec
+            }.collect { (enabled, intervalSec) ->
+                foregroundWorkflowRefreshIntervalSec = intervalSec
+                _uiState.update {
+                    it.copy(
+                        workflowForegroundRefreshEnabled = enabled,
+                        workflowForegroundRefreshIntervalSec = intervalSec
+                    )
+                }
+                updateForegroundWorkflowRefreshScheduler()
             }
         }
         viewModelScope.launch {
@@ -1620,13 +1647,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         queueItemId?.let { markBuildQueueItemFailed(it, text(R.string.vm_build_run_not_found_short)) }
     }
 
-    fun loadRecentRuns() {
+    fun loadRecentRuns(
+        showRefreshIndicator: Boolean = true,
+        lightweight: Boolean = false
+    ) {
         val state = _uiState.value
         val username = state.user?.login ?: return
         val repoName = state.forkRepo?.name ?: return
-        if (recentRunsRefreshJob?.isActive == true || state.isRefreshingRecentRuns) return
+        if (recentRunsRefreshJob?.isActive == true || (showRefreshIndicator && state.isRefreshingRecentRuns)) return
         recentRunsRefreshJob = viewModelScope.launch {
-            _uiState.update { it.copy(isRefreshingRecentRuns = true) }
+            if (showRefreshIndicator) {
+                _uiState.update { it.copy(isRefreshingRecentRuns = true) }
+            }
             try {
                 when (val r = github.listRecentRuns(username, repoName, perPage = RECENT_WORKFLOW_RUNS_PAGE_SIZE)) {
                     is Result.Success -> {
@@ -1643,16 +1675,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 }
                             }
                         }
-                        autoMonitorRunningCustomBuild(username, repoName, r.data)
-                        refreshArtifactsForRuns(username, repoName, r.data)
+                        if (!lightweight) {
+                            autoMonitorRunningCustomBuild(username, repoName, r.data)
+                            refreshArtifactsForRuns(username, repoName, r.data)
+                        }
                     }
                     else -> {}
                 }
             } finally {
-                _uiState.update { it.copy(isRefreshingRecentRuns = false) }
+                if (showRefreshIndicator) {
+                    _uiState.update { it.copy(isRefreshingRecentRuns = false) }
+                }
                 recentRunsRefreshJob = null
             }
         }
+    }
+
+    private fun observeForegroundWorkflowRefresh() {
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                appInForeground = true
+                updateForegroundWorkflowRefreshScheduler()
+            }
+
+            override fun onStop(owner: LifecycleOwner) {
+                appInForeground = false
+                stopForegroundWorkflowRefresh()
+            }
+        })
+        viewModelScope.launch {
+            _uiState
+                .map { it.isLoggedIn && it.forkRepo != null }
+                .distinctUntilChanged()
+                .collect { updateForegroundWorkflowRefreshScheduler() }
+        }
+    }
+
+    private fun updateForegroundWorkflowRefreshScheduler() {
+        val state = _uiState.value
+        val shouldRun = appInForeground &&
+            state.workflowForegroundRefreshEnabled &&
+            state.isLoggedIn &&
+            state.forkRepo != null
+        if (!shouldRun) {
+            stopForegroundWorkflowRefresh()
+            return
+        }
+        startForegroundWorkflowRefresh(state.workflowForegroundRefreshIntervalSec)
+    }
+
+    private fun startForegroundWorkflowRefresh(intervalSec: Int) {
+        val intervalMs = intervalSec * 1000L
+        val existing = foregroundWorkflowRefreshJob
+        if (existing?.isActive == true && foregroundWorkflowRefreshIntervalSec == intervalSec) return
+        foregroundWorkflowRefreshIntervalSec = intervalSec
+        stopForegroundWorkflowRefresh()
+        foregroundWorkflowRefreshJob = viewModelScope.launch {
+            loadRecentRuns(showRefreshIndicator = false, lightweight = true)
+            while (isActive) {
+                delay(intervalMs)
+                if (!appInForeground || !_uiState.value.workflowForegroundRefreshEnabled) break
+                val current = _uiState.value
+                if (!current.isLoggedIn || current.forkRepo == null) continue
+                loadRecentRuns(showRefreshIndicator = false, lightweight = true)
+            }
+        }
+    }
+
+    private fun stopForegroundWorkflowRefresh() {
+        foregroundWorkflowRefreshJob?.cancel()
+        foregroundWorkflowRefreshJob = null
     }
 
     private suspend fun autoMonitorRunningCustomBuild(
@@ -2550,6 +2642,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!v) prefs.clearPendingAutoDownloadRunId()
     }
     fun setNotifyBuild(v: Boolean) = viewModelScope.launch { prefs.setNotifyBuild(v) }
+    fun setWorkflowForegroundRefreshEnabled(v: Boolean) = viewModelScope.launch {
+        prefs.setWorkflowForegroundRefreshEnabled(v)
+    }
+    fun setWorkflowForegroundRefreshIntervalSec(seconds: Int) = viewModelScope.launch {
+        prefs.setWorkflowForegroundRefreshIntervalSec(seconds)
+    }
     fun setThemeMode(mode: String) = viewModelScope.launch { prefs.setThemeMode(mode) }
     fun setDynamicColorEnabled(
         v: Boolean,

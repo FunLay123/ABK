@@ -61,6 +61,7 @@ import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveSwitchItem
 import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.ui.theme.uiSurfaceColor
+import com.abk.kernel.data.repository.PreferencesRepository
 import com.abk.kernel.data.model.ManagerSettingItem
 import com.abk.kernel.data.model.ManagerSettingKind
 import com.abk.kernel.viewmodel.MainUiState
@@ -551,6 +552,23 @@ private fun SettingsMainContent(
         }
 
         SettingsGroup(title = stringResource(R.string.settings_build)) {
+            SwitchSettingsItem(
+                icon = Icons.Default.Sync,
+                title = stringResource(R.string.settings_workflow_foreground_refresh),
+                subtitle = stringResource(R.string.settings_workflow_foreground_refresh_desc),
+                checked = state.workflowForegroundRefreshEnabled,
+                onCheckedChange = { vm.setWorkflowForegroundRefreshEnabled(it) }
+            )
+            AnimatedVisibility(
+                visible = state.workflowForegroundRefreshEnabled,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                WorkflowForegroundRefreshIntervalPicker(
+                    selectedSec = state.workflowForegroundRefreshIntervalSec,
+                    onSelect = { vm.setWorkflowForegroundRefreshIntervalSec(it) }
+                )
+            }
             SwitchSettingsItem(
                 icon = Icons.Default.Download,
                 title = stringResource(R.string.settings_auto_download),
@@ -1881,6 +1899,43 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
         }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { content() }
+    }
+}
+
+@Composable
+private fun WorkflowForegroundRefreshIntervalPicker(
+    selectedSec: Int,
+    onSelect: (Int) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.settings_workflow_foreground_refresh_interval),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            PreferencesRepository.WORKFLOW_FOREGROUND_REFRESH_INTERVALS_SEC.sorted().forEach { sec ->
+                FilterChip(
+                    selected = selectedSec == sec,
+                    onClick = { onSelect(sec) },
+                    label = {
+                        Text(
+                            stringResource(R.string.settings_workflow_foreground_refresh_interval_sec, sec),
+                            maxLines = 1
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
     }
 }
 

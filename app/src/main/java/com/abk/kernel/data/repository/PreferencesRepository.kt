@@ -24,6 +24,11 @@ class PreferencesRepository(private val context: Context) {
         val KEY_FORK_REPO_NAME = stringPreferencesKey("fork_repo_name")
         val KEY_AUTO_DOWNLOAD = booleanPreferencesKey("auto_download")
         val KEY_NOTIFY_BUILD = booleanPreferencesKey("notify_build")
+        val KEY_WORKFLOW_FOREGROUND_REFRESH_ENABLED = booleanPreferencesKey("workflow_foreground_refresh_enabled")
+        val KEY_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC = intPreferencesKey("workflow_foreground_refresh_interval_sec")
+        const val DEFAULT_WORKFLOW_FOREGROUND_REFRESH_ENABLED = true
+        const val DEFAULT_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC = 20
+        val WORKFLOW_FOREGROUND_REFRESH_INTERVALS_SEC = setOf(10, 20, 30)
         val KEY_LAST_RUN_ID = longPreferencesKey("last_run_id")
         val KEY_THEME = stringPreferencesKey("theme_mode") // "system" | "light" | "dark"
         val KEY_DYNAMIC_COLOR_ENABLED = booleanPreferencesKey("dynamic_color_enabled")
@@ -57,6 +62,14 @@ class PreferencesRepository(private val context: Context) {
     val forkRepoName: Flow<String?> = context.dataStore.data.map { it[KEY_FORK_REPO_NAME] }
     val autoDownload: Flow<Boolean> = context.dataStore.data.map { it[KEY_AUTO_DOWNLOAD] ?: true }
     val notifyBuild: Flow<Boolean> = context.dataStore.data.map { it[KEY_NOTIFY_BUILD] ?: true }
+    val workflowForegroundRefreshEnabled: Flow<Boolean> = context.dataStore.data.map {
+        it[KEY_WORKFLOW_FOREGROUND_REFRESH_ENABLED] ?: DEFAULT_WORKFLOW_FOREGROUND_REFRESH_ENABLED
+    }
+    val workflowForegroundRefreshIntervalSec: Flow<Int> = context.dataStore.data.map { preferences ->
+        normalizeWorkflowForegroundRefreshIntervalSec(
+            preferences[KEY_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC]
+        )
+    }
     val lastRunId: Flow<Long> = context.dataStore.data.map { it[KEY_LAST_RUN_ID] ?: -1L }
     val themeMode: Flow<String> = context.dataStore.data.map { it[KEY_THEME] ?: "dark" }
     val dynamicColorEnabled: Flow<Boolean> = context.dataStore.data.map { it[KEY_DYNAMIC_COLOR_ENABLED] ?: true }
@@ -104,6 +117,21 @@ class PreferencesRepository(private val context: Context) {
     suspend fun saveForkRepoName(name: String) = context.dataStore.edit { it[KEY_FORK_REPO_NAME] = name }
     suspend fun setAutoDownload(v: Boolean) = context.dataStore.edit { it[KEY_AUTO_DOWNLOAD] = v }
     suspend fun setNotifyBuild(v: Boolean) = context.dataStore.edit { it[KEY_NOTIFY_BUILD] = v }
+    suspend fun setWorkflowForegroundRefreshEnabled(v: Boolean) = context.dataStore.edit {
+        it[KEY_WORKFLOW_FOREGROUND_REFRESH_ENABLED] = v
+    }
+    suspend fun setWorkflowForegroundRefreshIntervalSec(seconds: Int) = context.dataStore.edit {
+        it[KEY_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC] = normalizeWorkflowForegroundRefreshIntervalSec(seconds)
+    }
+
+    private fun normalizeWorkflowForegroundRefreshIntervalSec(raw: Int?): Int {
+        val value = raw ?: DEFAULT_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC
+        return if (value in WORKFLOW_FOREGROUND_REFRESH_INTERVALS_SEC) {
+            value
+        } else {
+            DEFAULT_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC
+        }
+    }
     suspend fun saveLastRunId(id: Long) = context.dataStore.edit { it[KEY_LAST_RUN_ID] = id }
     suspend fun setThemeMode(mode: String) = context.dataStore.edit { it[KEY_THEME] = mode }
     suspend fun setDynamicColorEnabled(

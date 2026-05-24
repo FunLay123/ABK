@@ -493,6 +493,10 @@
     <string name="settings_about">О приложении</string>
     <string name="settings_version">Версия</string>
     <string name="settings_source_repo">Исходный репозиторий</string>
+    <string name="settings_workflow_foreground_refresh">Автообновление workflow</string>
+    <string name="settings_workflow_foreground_refresh_desc">Периодически запрашивает список запусков GitHub Actions, пока ABK открыт. Не заменяет уведомления о сборке.</string>
+    <string name="settings_workflow_foreground_refresh_interval">Интервал обновления</string>
+    <string name="settings_workflow_foreground_refresh_interval_sec">%1$d с</string>
     <string name="settings_auto_download">Автозагрузка после сборки</string>
     <string name="settings_notify_build">Уведомления о статусе сборки</string>
     <string name="settings_theme">Тема</string>
