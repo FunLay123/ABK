@@ -1626,7 +1626,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         recentRunsRefreshJob = viewModelScope.launch {
             _uiState.update { it.copy(isRefreshingRecentRuns = true) }
             try {
-                when (val r = github.listRecentRuns(username, repoName, perPage = 25)) {
+                when (val r = github.listRecentRuns(username, repoName, perPage = RECENT_WORKFLOW_RUNS_PAGE_SIZE)) {
                     is Result.Success -> {
                         _uiState.update { it.copy(recentRuns = r.data) }
                         r.data.forEach { run ->
@@ -4990,7 +4990,8 @@ private fun List<CustomExternalModule>?.toWorkflowInput(): String = this.orEmpty
     }
     .joinToString("|")
 
-private const val MAX_REMOTE_ARTIFACT_RUNS = 30
+private const val RECENT_WORKFLOW_RUNS_PAGE_SIZE = 40
+private const val MAX_REMOTE_ARTIFACT_RUNS = RECENT_WORKFLOW_RUNS_PAGE_SIZE
 private const val MAX_PERSISTED_REMOTE_ARTIFACTS = 240
 private const val KERNEL_WORKFLOW_FILE = "kernel-custom.yml"
 private const val ONEPLUS_WORKFLOW_FILE = "oneplus-custom.yml"
