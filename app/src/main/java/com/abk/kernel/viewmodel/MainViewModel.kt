@@ -3773,7 +3773,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (runId in current.loadingBuildParameterRunIds) return
         val username = current.user?.login ?: return
         val repoName = current.forkRepo?.name ?: return
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _uiState.update {
                 it.copy(
                     loadingBuildParameterRunIds = it.loadingBuildParameterRunIds + runId,
@@ -3838,7 +3838,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 buildParameterErrors = it.buildParameterErrors - runId
             )
         }
-        prefs.saveBuildParameterSummariesJson(gson.toJson(updated.values.sortedByDescending { it.runNumber }))
+        withContext(Dispatchers.IO) {
+            prefs.saveBuildParameterSummariesJson(
+                gson.toJson(updated.values.sortedByDescending { it.runNumber })
+            )
+        }
     }
 
     private fun parseDownloadedArtifacts(json: String?): List<DownloadedArtifact> {

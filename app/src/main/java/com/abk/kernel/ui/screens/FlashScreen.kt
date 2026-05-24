@@ -108,6 +108,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -291,13 +292,28 @@ fun FlashScreen(
     val dispatchedVariantByRunId = remember(dispatchedConfigByRunId) {
         dispatchedConfigByRunId.mapValues { it.value.kernelsuVariant }
     }
-    val filteredGroups = remember(allWorkflowGroups, filter, state.buildParameterSummaries, recentRunById, dispatchedVariantByRunId) {
-        allWorkflowGroups.filter {
-            it.matchesFilter(filter, state.buildParameterSummaries, recentRunById, dispatchedVariantByRunId)
+    val filteredGroups by produceState(
+        initialValue = allWorkflowGroups,
+        allWorkflowGroups,
+        filter,
+        state.buildParameterSummaries,
+        recentRunById,
+        dispatchedVariantByRunId
+    ) {
+        value = withContext(Dispatchers.Default) {
+            allWorkflowGroups.filter {
+                it.matchesFilter(filter, state.buildParameterSummaries, recentRunById, dispatchedVariantByRunId)
+            }
         }
     }
-    val visibleWorkflowGroups = remember(filteredGroups, recentRunById) {
-        limitWorkflowGroupsForDisplay(filteredGroups, recentRunById)
+    val visibleWorkflowGroups by produceState(
+        initialValue = limitWorkflowGroupsForDisplay(allWorkflowGroups, recentRunById),
+        filteredGroups,
+        recentRunById
+    ) {
+        value = withContext(Dispatchers.Default) {
+            limitWorkflowGroupsForDisplay(filteredGroups, recentRunById)
+        }
     }
     val shouldPrefetchWorkflowSummaries = remember(filter) {
         filter.kernelEnabled && filter.kernelKinds.isNotEmpty()
