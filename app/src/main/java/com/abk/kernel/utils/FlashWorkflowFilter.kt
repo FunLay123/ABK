@@ -48,18 +48,18 @@ object FlashWorkflowFilter {
         summary: BuildParameterSummary?
     ): FlashFilterManagerKind? {
         val workflowName = (run?.name ?: runTitle).orEmpty().lowercase()
-        val hasDevName = (remoteArtifactNames + localArtifactNames).any { it.lowercase().contains("dev") }
+        val hasDevArtifact = (remoteArtifactNames + localArtifactNames).any(::artifactNameIndicatesManagerDev)
         val fallbackRunTitleIsManager = run == null && runTitle.titleLooksLikeManager()
         val runIsManagerWorkflow = run?.isManagerBuild() == true || fallbackRunTitleIsManager
         if (runIsManagerWorkflow) {
-            val branch = summary?.ksuBranch.orEmpty().lowercase()
-            val isDev = "dev" in workflowName || hasDevName || "dev" in branch
+            val branch = summary?.ksuBranch.orEmpty()
+            val isDev = "dev" in workflowName || hasDevArtifact || ksuBranchIndicatesDev(branch)
             return if (isDev) FlashFilterManagerKind.Dev else FlashFilterManagerKind.Release
         }
-        if (summary == null && !hasDevName) return null
-        val branch = summary?.ksuBranch.orEmpty().lowercase()
+        if (summary == null && !hasDevArtifact) return null
+        val branch = summary?.ksuBranch.orEmpty()
         return when {
-            "dev" in branch || hasDevName -> FlashFilterManagerKind.Dev
+            ksuBranchIndicatesDev(branch) || hasDevArtifact -> FlashFilterManagerKind.Dev
             else -> FlashFilterManagerKind.Release
         }
     }
@@ -128,3 +128,29 @@ private fun String.titleLooksLikeKernel(): Boolean {
     val n = lowercase()
     return "kernel" in n || "内核" in n
 }
+
+/**
+ * Detects dev manager artifacts without matching "device" / "development" substrings.
+ * Release Build ABK App bundles also ship debug APKs, so "debug" alone is not a dev signal.
+ */
+internal fun artifactNameIndicatesManagerDev(name: String): Boolean {
+    val lower = name.lowercase()
+    return MANAGER_DEV_ARTIFACT_MARKERS.any { lower.contains(it) }
+}
+
+/** KSU branch field from build summary — exact dev branch, not "development". */
+internal fun ksuBranchIndicatesDev(branch: String): Boolean {
+    val b = branch.lowercase().trim()
+    if (b.isBlank()) return false
+    return b == "dev" || b.endsWith("/dev") || b.startsWith("dev/") || "-dev" in b
+}
+
+private val MANAGER_DEV_ARTIFACT_MARKERS = listOf(
+    "-dev.apk",
+    "_dev.apk",
+    "-dev-",
+    "_dev_",
+    "/dev/",
+    "abk-dev",
+    "app-dev"
+)
