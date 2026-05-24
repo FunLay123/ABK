@@ -34,10 +34,12 @@ object FlashWorkflowFilter {
             if (run.isManagerBuild()) return WorkflowPrimary.Manager
             if (run.isKernelBuild()) return WorkflowPrimary.Kernel
         }
-        if (runTitle.titleLooksLikeKernel()) return WorkflowPrimary.Kernel
-        if (runTitle.titleLooksLikeManager()) return WorkflowPrimary.Manager
+        // Without a WorkflowRun (trimmed from recentRuns), artifacts are more reliable
+        // than runTitle — kernel workflows often bundle a manager APK.
         if (hasKernelArtifact) return WorkflowPrimary.Kernel
+        if (runTitle.titleLooksLikeKernel()) return WorkflowPrimary.Kernel
         if (hasManagerArtifact) return WorkflowPrimary.Manager
+        if (runTitle.titleLooksLikeManager()) return WorkflowPrimary.Manager
         return WorkflowPrimary.Unknown
     }
 
@@ -132,8 +134,14 @@ object FlashWorkflowFilter {
 
 private fun String.titleLooksLikeManager(): Boolean {
     val n = lowercase()
-    return "abk app" in n || "abk-app" in n || "build app" in n ||
-        "manager" in n || "管理器" in n || "getmanager" in n
+    if (n.isBlank() || titleLooksLikeKernel()) return false
+    if ("package manager" in n) return false
+    return "abk app" in n || "abk-app" in n || "build app" in n || "build-app" in n ||
+        "debug apk" in n ||
+        "ksu manager" in n || "sukisu manager" in n || "kernelsu manager" in n ||
+        "getmanager" in n || "get manager" in n ||
+        "管理器" in n ||
+        ("manager" in n && "kernel" !in n && "内核" !in n)
 }
 
 private fun String.titleLooksLikeKernel(): Boolean {
