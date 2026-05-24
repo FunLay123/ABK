@@ -850,6 +850,10 @@ fun FlashScreen(
                                         onClick = {
                                             selectedRunId = group.runId
                                             selectedPrebuiltReleaseId = null
+                                            // Set before navigate so the first predictive-back
+                                            // gesture cannot reach MainActivity's exit handler
+                                            // while LaunchedEffect(flashDetailRouteActive) is pending.
+                                            onDetailPageVisibleChange(true)
                                             navController.navigate(flashWorkflowRoute(group.runId))
                                         },
                                         onShowParameters = { parameterTarget = group },
@@ -922,6 +926,7 @@ fun FlashScreen(
                                             onClick = {
                                                 selectedPrebuiltReleaseId = release.id
                                                 selectedRunId = null
+                                                onDetailPageVisibleChange(true)
                                                 navController.navigate(flashPrebuiltRoute(release.id))
                                             }
                                         )
@@ -1014,6 +1019,7 @@ fun FlashScreen(
                 LaunchedEffect(routeRunId) {
                     selectedRunId = routeRunId
                     selectedPrebuiltReleaseId = null
+                    onDetailPageVisibleChange(true)
                 }
                 val activeRun = recentRunById[routeRunId]?.takeIf { it.isActiveFlashRun() }
                 val isCancellingThis = routeRunId in state.cancellingWorkflowRunIds
@@ -1192,6 +1198,7 @@ fun FlashScreen(
                 LaunchedEffect(releaseId) {
                     selectedPrebuiltReleaseId = releaseId
                     selectedRunId = null
+                    onDetailPageVisibleChange(true)
                 }
                 LaunchedEffect(release?.id, state.prebuiltGkiEnabled, state.isLoggedIn) {
                     if (release != null && state.prebuiltGkiEnabled && state.isLoggedIn) {
