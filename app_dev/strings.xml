@@ -511,6 +511,10 @@
     <string name="settings_about">关于</string>
     <string name="settings_version">版本</string>
     <string name="settings_source_repo">源仓库</string>
+    <string name="settings_workflow_foreground_refresh">自动刷新 Workflow</string>
+    <string name="settings_workflow_foreground_refresh_desc">仅在 ABK 处于前台时定期获取最近的 GitHub Actions 运行列表。不会替代构建监控通知。</string>
+    <string name="settings_workflow_foreground_refresh_interval">刷新间隔</string>
+    <string name="settings_workflow_foreground_refresh_interval_sec">%1$d 秒</string>
     <string name="settings_auto_download">构建完成后自动下载</string>
     <string name="settings_notify_build">构建状态通知</string>
     <string name="settings_theme">主题</string>
