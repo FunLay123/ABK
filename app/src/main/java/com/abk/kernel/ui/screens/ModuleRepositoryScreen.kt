@@ -46,6 +46,7 @@ import com.abk.kernel.data.model.ModuleCatalogItem
 import com.abk.kernel.data.model.ModuleCatalogRepository
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
+import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveTopBar
@@ -58,7 +59,6 @@ import kotlinx.coroutines.flow.collect
 private const val MODULE_REPOSITORY_BACK_VISUAL_EXPONENT = 1.8f
 private const val MODULE_REPOSITORY_BACK_SCALE_DELTA = 0.09f
 private const val MODULE_REPOSITORY_BACK_SCRIM_ALPHA = 0.32f
-private const val MODULE_REPOSITORY_PAGE_EXIT_DELAY_MS = 280L
 private val MODULE_REPOSITORY_BACK_MAX_OFFSET = 56.dp
 private val MODULE_REPOSITORY_BACK_MAX_CORNER = 32.dp
 
@@ -76,6 +76,10 @@ fun ModuleRepositoryScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var showRepositorySettings by rememberSaveable { mutableStateOf(false) }
+    val repositoryPageTransition = rememberChildPageOverlayTransition(
+        visible = showRepositorySettings,
+        label = "module-repository-settings"
+    )
     var pendingCatalogModule by remember { mutableStateOf<ModuleCatalogItem?>(null) }
     var selectedCatalogModuleStages by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var repositoryBackProgress by remember { mutableFloatStateOf(0f) }
@@ -114,10 +118,9 @@ fun ModuleRepositoryScreen(
     }
 
     ObserveChildPageVisibility(
-        visible = showRepositorySettings,
+        transition = repositoryPageTransition,
         onVisibleChange = onRepositoryPageVisibleChange,
-        exitDelayMs = MODULE_REPOSITORY_PAGE_EXIT_DELAY_MS,
-        onAfterExitDelay = { repositoryBackProgress = 0f }
+        onAfterExitAnimation = { repositoryBackProgress = 0f }
     )
 
     DisposableEffect(Unit) {
@@ -289,8 +292,8 @@ fun ModuleRepositoryScreen(
             )
         }
 
-        AnimatedVisibility(
-            visible = showRepositorySettings,
+        repositoryPageTransition.AnimatedVisibility(
+            visible = { it },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()),
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()),
             modifier = childPageModifier
@@ -302,8 +305,8 @@ fun ModuleRepositoryScreen(
             )
         }
 
-        AnimatedVisibility(
-            visible = showRepositorySettings,
+        repositoryPageTransition.AnimatedVisibility(
+            visible = { it },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +

@@ -56,6 +56,7 @@ import com.abk.kernel.utils.DownloadDirectoryUtils
 import com.abk.kernel.utils.LocaleHelper
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
+import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -74,7 +75,6 @@ import kotlinx.coroutines.flow.collect
 private const val THEME_BACK_VISUAL_EXPONENT = 1.8f
 private const val THEME_BACK_SCALE_DELTA = 0.09f
 private const val THEME_BACK_SCRIM_ALPHA = 0.32f
-private const val THEME_PAGE_EXIT_DELAY_MS = 280L
 private val THEME_BACK_MAX_OFFSET = 56.dp
 private val THEME_BACK_MAX_CORNER = 32.dp
 
@@ -98,6 +98,10 @@ fun SettingsScreen(
     var themeBackProgress by remember { mutableFloatStateOf(0f) }
     val showChildPage = showThemeSettings || showAppProfileTemplates || showManagerTools ||
         showAboutPage || showOpenSourceLicenses
+    val childPageTransition = rememberChildPageOverlayTransition(
+        visible = showChildPage,
+        label = "settings-child-page"
+    )
     val motionScheme = MaterialTheme.motionScheme
     val animatedThemeBackProgress by animateFloatAsState(
         targetValue = themeBackProgress.coerceIn(0f, 1f),
@@ -123,10 +127,9 @@ fun SettingsScreen(
     }
 
     ObserveChildPageVisibility(
-        visible = showChildPage,
+        transition = childPageTransition,
         onVisibleChange = onThemePageVisibleChange,
-        exitDelayMs = THEME_PAGE_EXIT_DELAY_MS,
-        onAfterExitDelay = { themeBackProgress = 0f }
+        onAfterExitAnimation = { themeBackProgress = 0f }
     )
 
     DisposableEffect(Unit) {
@@ -257,8 +260,8 @@ fun SettingsScreen(
             )
         }
 
-        AnimatedVisibility(
-            visible = showChildPage,
+        childPageTransition.AnimatedVisibility(
+            visible = { it },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()),
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()),
             modifier = childPageModifier
@@ -270,8 +273,8 @@ fun SettingsScreen(
             )
         }
 
-        AnimatedVisibility(
-            visible = showThemeSettings,
+        childPageTransition.AnimatedVisibility(
+            visible = { it && showThemeSettings },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
@@ -331,8 +334,8 @@ fun SettingsScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = showAppProfileTemplates,
+        childPageTransition.AnimatedVisibility(
+            visible = { it && showAppProfileTemplates },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
@@ -385,8 +388,8 @@ fun SettingsScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = showManagerTools,
+        childPageTransition.AnimatedVisibility(
+            visible = { it && showManagerTools },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
@@ -438,8 +441,8 @@ fun SettingsScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = showAboutPage,
+        childPageTransition.AnimatedVisibility(
+            visible = { it && showAboutPage },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
@@ -484,8 +487,8 @@ fun SettingsScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = showOpenSourceLicenses,
+        childPageTransition.AnimatedVisibility(
+            visible = { it && showOpenSourceLicenses },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +

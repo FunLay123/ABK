@@ -459,10 +459,9 @@ private fun AbkMainScaffold(
             .fillMaxSize()
             .background(uiSurfaceColor(MaterialTheme.colorScheme.surface))
     ) {
-        // Fade + slide the bottom nav in sync with child detail exit. Child
-        // screens delay clearing childPageVisible until their pop animation
-        // finishes (~280 ms); use a spatial spec when the bar returns so it
-        // rises smoothly instead of popping in.
+        // Fade + slide the bottom nav in sync with child overlay exit.
+        // Overlay screens clear childPageVisible when their Transition is idle;
+        // Flash detail (NavHost) uses a short exit delay instead.
         val navProgress by animateFloatAsState(
             targetValue = if (childPageVisible) 0f else 1f,
             animationSpec = motionScheme.defaultSpatialSpec(),

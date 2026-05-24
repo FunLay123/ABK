@@ -93,6 +93,7 @@ import com.abk.kernel.data.model.RootGrantApp
 import com.abk.kernel.data.model.RootGrantProfile
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
+import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveSwitch
@@ -108,7 +109,6 @@ import kotlinx.coroutines.withContext
 private const val ROOT_AUTH_BACK_VISUAL_EXPONENT = 1.8f
 private const val ROOT_AUTH_BACK_SCALE_DELTA = 0.09f
 private const val ROOT_AUTH_BACK_SCRIM_ALPHA = 0.32f
-private const val ROOT_AUTH_DETAIL_EXIT_DELAY_MS = 280L
 private val ROOT_AUTH_BACK_MAX_OFFSET = 56.dp
 private val ROOT_AUTH_BACK_MAX_CORNER = 32.dp
 
@@ -151,6 +151,11 @@ fun RootAuthorizationScreen(
             state.rootGrantApps.firstOrNull { it.packageName == packageName }
         }
     }
+    val detailPageVisible = selectedApp != null
+    val detailPageTransition = rememberChildPageOverlayTransition(
+        visible = detailPageVisible,
+        label = "root-auth-detail"
+    )
     val canLeaveDetail = state.rootGrantSavingPackage == null
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
@@ -159,10 +164,9 @@ fun RootAuthorizationScreen(
     }
 
     ObserveChildPageVisibility(
-        visible = selectedApp != null,
+        transition = detailPageTransition,
         onVisibleChange = onDetailPageVisibleChange,
-        exitDelayMs = ROOT_AUTH_DETAIL_EXIT_DELAY_MS,
-        onAfterExitDelay = { detailBackProgress = 0f }
+        onAfterExitAnimation = { detailBackProgress = 0f }
     )
 
     DisposableEffect(Unit) {
@@ -314,8 +318,8 @@ fun RootAuthorizationScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = selectedApp != null,
+        detailPageTransition.AnimatedVisibility(
+            visible = { it },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()),
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()),
             modifier = childPageModifier
@@ -327,8 +331,8 @@ fun RootAuthorizationScreen(
             )
         }
 
-        AnimatedVisibility(
-            visible = selectedApp != null,
+        detailPageTransition.AnimatedVisibility(
+            visible = { it },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +

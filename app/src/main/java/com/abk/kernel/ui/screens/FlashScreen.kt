@@ -159,6 +159,7 @@ import com.abk.kernel.utils.FlashFilterWorkflowState
 import com.abk.kernel.utils.FlashWorkflowFilter
 import com.abk.kernel.utils.WorkflowPrimary
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
+import com.abk.kernel.ui.components.CHILD_PAGE_NAV_EXIT_DELAY_MS
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
@@ -180,7 +181,6 @@ private const val FLASH_DETAIL_BACK_SCALE_DELTA = 0.09f
 private const val FLASH_DETAIL_BACK_SCRIM_ALPHA = 0.32f
 private val FLASH_DETAIL_BACK_MAX_OFFSET = 56.dp
 private val FLASH_DETAIL_BACK_MAX_CORNER = 32.dp
-private const val FLASH_DETAIL_PAGE_EXIT_DELAY_MS = 280L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -404,7 +404,7 @@ fun FlashScreen(
     ObserveChildPageVisibility(
         visible = flashDetailRouteActive,
         onVisibleChange = onDetailPageVisibleChange,
-        exitDelayMs = FLASH_DETAIL_PAGE_EXIT_DELAY_MS
+        exitDelayMs = CHILD_PAGE_NAV_EXIT_DELAY_MS
     )
 
     LaunchedEffect(flashDetailRouteActive) {

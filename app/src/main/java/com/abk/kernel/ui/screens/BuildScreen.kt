@@ -68,6 +68,7 @@ import com.abk.kernel.data.model.isManagerBuild
 import com.abk.kernel.data.model.isManagerDevBuild
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
+import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -92,7 +93,6 @@ import kotlinx.coroutines.launch
 private const val BUILD_PLAN_BACK_VISUAL_EXPONENT = 1.8f
 private const val BUILD_PLAN_BACK_SCALE_DELTA = 0.09f
 private const val BUILD_PLAN_BACK_SCRIM_ALPHA = 0.32f
-private const val BUILD_PLAN_PAGE_EXIT_DELAY_MS = 280L
 private const val CATALOG_MODULE_REMOVE_DELAY_MS = 260L
 private val BUILD_PLAN_BACK_MAX_OFFSET = 56.dp
 private val BUILD_PLAN_BACK_MAX_CORNER = 32.dp
@@ -181,6 +181,10 @@ fun BuildScreen(
         groupBuildCustomExternalModules(config.customExternalModules, catalogModuleByUrl)
     }
     val childPageVisible = showPlanLibraryPage || showBuildQueuePage
+    val childPageTransition = rememberChildPageOverlayTransition(
+        visible = childPageVisible,
+        label = "build-child-page"
+    )
     val activeBuild = state.buildStatus in listOf(BuildStatus.QUEUED, BuildStatus.IN_PROGRESS)
     val pendingQueueCount = state.buildQueue.count { it.status == BuildQueueItemStatus.PENDING }
     val activeQueueCount = state.buildQueue.count {
@@ -213,10 +217,9 @@ fun BuildScreen(
     }
 
     ObserveChildPageVisibility(
-        visible = childPageVisible,
+        transition = childPageTransition,
         onVisibleChange = onPlanPageVisibleChange,
-        exitDelayMs = BUILD_PLAN_PAGE_EXIT_DELAY_MS,
-        onAfterExitDelay = { planBackProgress = 0f }
+        onAfterExitAnimation = { planBackProgress = 0f }
     )
 
     DisposableEffect(Unit) {
@@ -1287,8 +1290,8 @@ fun BuildScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = childPageVisible,
+        childPageTransition.AnimatedVisibility(
+            visible = { it },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()),
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()),
             modifier = childPageModifier
@@ -1300,8 +1303,8 @@ fun BuildScreen(
             )
         }
 
-        AnimatedVisibility(
-            visible = childPageVisible,
+        childPageTransition.AnimatedVisibility(
+            visible = { it },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +

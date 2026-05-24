@@ -1,5 +1,7 @@
 package com.abk.kernel.ui.components
 
+import androidx.compose.animation.core.Transition
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -8,40 +10,85 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 
-/** Default exit delay aligned with child-page slide/fade transitions. */
-const val CHILD_PAGE_EXIT_DELAY_MS = 280L
+/**
+ * Fallback exit delay for child pages driven by Navigation Compose (NavHost),
+ * where overlay [androidx.compose.animation.AnimatedVisibility] is not used and
+ * [Transition.isIdle] is unavailable on the parent.
+ */
+const val CHILD_PAGE_NAV_EXIT_DELAY_MS = 280L
+
+@Deprecated(
+    message = "Use CHILD_PAGE_NAV_EXIT_DELAY_MS for NavHost-driven child pages",
+    replaceWith = ReplaceWith("CHILD_PAGE_NAV_EXIT_DELAY_MS")
+)
+const val CHILD_PAGE_EXIT_DELAY_MS = CHILD_PAGE_NAV_EXIT_DELAY_MS
 
 /**
- * Keeps the bottom navigation bar in sync with overlay child pages.
+ * Shared [Transition] for overlay child pages. Hoists enter/exit into one
+ * [updateTransition] so [ObserveChildPageVisibility] can wait for
+ * [Transition.isIdle] instead of a fixed delay.
+ */
+@Composable
+fun rememberChildPageOverlayTransition(
+    visible: Boolean,
+    label: String = "child-page-overlay"
+): Transition<Boolean> = updateTransition(targetState = visible, label = label)
+
+/**
+ * Syncs bottom navigation with overlay child pages that use
+ * [rememberChildPageOverlayTransition] and [Transition.AnimatedVisibility].
  *
- * - On first entry, optionally delays [onVisibleChange](true) so the bottom nav
- *   stays visible while the child page enter transition runs.
- * - On exit, delays [onVisibleChange](false) so the nav can rise after the child
- *   page pop transition.
- * - When [visible] becomes false without a prior child page, clears immediately
- *   (tab open) without playing the rise animation.
+ * Hides the nav when the overlay opens; shows it again only after exit
+ * animations finish ([Transition.isIdle] and [Transition.currentState] is false).
+ */
+@Composable
+fun ObserveChildPageVisibility(
+    transition: Transition<Boolean>,
+    onVisibleChange: (Boolean) -> Unit,
+    onAfterExitAnimation: () -> Unit = {}
+) {
+    var wasOverlayVisible by remember { mutableStateOf(false) }
+    val target = transition.targetState
+    val exitSettled = !target && transition.isIdle && !transition.currentState
+
+    LaunchedEffect(target, transition.isIdle, transition.currentState) {
+        when {
+            target -> {
+                wasOverlayVisible = true
+                onVisibleChange(true)
+            }
+            wasOverlayVisible && exitSettled -> {
+                wasOverlayVisible = false
+                onAfterExitAnimation()
+                onVisibleChange(false)
+            }
+            !wasOverlayVisible -> onVisibleChange(false)
+        }
+    }
+}
+
+/**
+ * Syncs bottom navigation with NavHost detail routes (no shared overlay transition).
  */
 @Composable
 fun ObserveChildPageVisibility(
     visible: Boolean,
     onVisibleChange: (Boolean) -> Unit,
-    enterDelayMs: Long = CHILD_PAGE_EXIT_DELAY_MS,
-    exitDelayMs: Long = CHILD_PAGE_EXIT_DELAY_MS,
-    onAfterExitDelay: () -> Unit = {}
+    exitDelayMs: Long = CHILD_PAGE_NAV_EXIT_DELAY_MS,
+    onAfterExitAnimation: () -> Unit = {}
 ) {
     var childWasVisible by remember { mutableStateOf(false) }
     LaunchedEffect(visible) {
         if (visible) {
-            if (!childWasVisible && enterDelayMs > 0L) {
-                delay(enterDelayMs)
-            }
             childWasVisible = true
             onVisibleChange(true)
         } else {
             if (childWasVisible) {
-                delay(exitDelayMs)
+                if (exitDelayMs > 0L) {
+                    delay(exitDelayMs)
+                }
                 childWasVisible = false
-                onAfterExitDelay()
+                onAfterExitAnimation()
             }
             onVisibleChange(false)
         }

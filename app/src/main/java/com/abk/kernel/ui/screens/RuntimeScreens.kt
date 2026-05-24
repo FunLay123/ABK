@@ -67,6 +67,7 @@ import com.abk.kernel.data.model.AbkRuntimeModule
 import com.abk.kernel.data.model.AbkRuntimeStatus
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
+import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.ui.components.ExpressiveSwitch
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -87,7 +88,6 @@ import kotlinx.coroutines.withContext
 private const val RUNTIME_PATCH_BACK_VISUAL_EXPONENT = 1.8f
 private const val RUNTIME_PATCH_BACK_SCALE_DELTA = 0.09f
 private const val RUNTIME_PATCH_BACK_SCRIM_ALPHA = 0.32f
-private const val RUNTIME_PATCH_PAGE_EXIT_DELAY_MS = 280L
 private val RUNTIME_PATCH_BACK_MAX_OFFSET = 56.dp
 private val RUNTIME_PATCH_BACK_MAX_CORNER = 32.dp
 
@@ -101,6 +101,10 @@ fun RuntimeHomeScreen(
     val state by vm.uiState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var showManagerPatchPage by rememberSaveable { mutableStateOf(false) }
+    val managerPatchPageTransition = rememberChildPageOverlayTransition(
+        visible = showManagerPatchPage,
+        label = "runtime-manager-patch"
+    )
     var managerPatchBackProgress by remember { mutableFloatStateOf(0f) }
     var managerPatchBackEnabled by remember { mutableStateOf(true) }
     val motionScheme = MaterialTheme.motionScheme
@@ -123,10 +127,9 @@ fun RuntimeHomeScreen(
     }
 
     ObserveChildPageVisibility(
-        visible = showManagerPatchPage,
+        transition = managerPatchPageTransition,
         onVisibleChange = onManagerPatchPageVisibleChange,
-        exitDelayMs = RUNTIME_PATCH_PAGE_EXIT_DELAY_MS,
-        onAfterExitDelay = {
+        onAfterExitAnimation = {
             managerPatchBackProgress = 0f
             managerPatchBackEnabled = true
         }
@@ -214,8 +217,8 @@ fun RuntimeHomeScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = showManagerPatchPage,
+        managerPatchPageTransition.AnimatedVisibility(
+            visible = { it },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()),
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()),
             modifier = childPageModifier
@@ -227,8 +230,8 @@ fun RuntimeHomeScreen(
             )
         }
 
-        AnimatedVisibility(
-            visible = showManagerPatchPage,
+        managerPatchPageTransition.AnimatedVisibility(
+            visible = { it },
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
