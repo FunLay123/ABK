@@ -248,7 +248,7 @@ fun FlashScreen(
                 val isActive = run?.isActiveFlashRun() == true
                 isActive || group.shouldAppearInWorkflowList(run)
             }
-            .sortedWith(compareByDescending<WorkflowArtifactGroup> { it.runNumber }.thenByDescending { it.runId })
+            .sortedForWorkflowDisplay(recentRunById)
     }
     var filter by rememberSaveable(stateSaver = FlashFilterSaver) { mutableStateOf(FlashFilter()) }
     // rememberSaveable survives rotation/savedInstanceState but not process
@@ -2889,10 +2889,7 @@ private fun buildWorkflowGroups(
             cachedHasSusfsModuleArtifact = remoteTypes.any { it == ArtifactType.SUSFS_MODULE } ||
                 filteredLocal.any { it.type == ArtifactType.SUSFS_MODULE }
         )
-    }.sortedWith(
-        compareByDescending<WorkflowArtifactGroup> { it.runNumber }
-            .thenByDescending { it.runId }
-    )
+    }.sortedForWorkflowDisplay(runs)
 }
 
 private fun shouldHideManagerCertArtifact(runTitle: String, artifactName: String): Boolean {
@@ -2920,6 +2917,15 @@ private data class WorkflowArtifactGroup(
 
 private fun WorkflowRun.isActiveFlashRun(): Boolean =
     status in setOf("queued", "waiting", "requested", "pending", "in_progress")
+
+private fun List<WorkflowArtifactGroup>.sortedForWorkflowDisplay(
+    runs: Map<Long, WorkflowRun>
+): List<WorkflowArtifactGroup> = sortedWith(
+    compareByDescending<WorkflowArtifactGroup> { runs[it.runId]?.isActiveFlashRun() == true }
+        .thenByDescending { it.runCreatedAt }
+        .thenByDescending { it.runId }
+        .thenByDescending { it.runNumber }
+)
 
 private fun artifactIcon(type: ArtifactType) = when (type) {
     ArtifactType.KERNEL_PACKAGE -> Icons.Default.Inventory2
