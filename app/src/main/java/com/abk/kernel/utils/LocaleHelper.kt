@@ -55,7 +55,8 @@ object LocaleHelper {
         cachedLanguage = language
         val locale = localeForLanguage(language)
         if (appContext == null) {
-            earlyContext = wrap(context.applicationContext, locale)
+            // applicationContext is null during Application.attachBaseContext — use base context.
+            earlyContext = wrap(context, locale)
         }
         return wrap(context, locale)
     }
