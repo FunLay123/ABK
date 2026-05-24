@@ -631,9 +631,31 @@ fun WorkflowRun.isManagerBuild(): Boolean {
     return lower.hasManagerBuildSignal()
 }
 
-/** Dev manager workflow (e.g. Build ABK App Dev). Uses [name] only — not [displayTitle]. */
+/**
+ * Dev manager workflow (e.g. Build ABK App Dev). Uses workflow [name] only — not
+ * [WorkflowRun.displayTitle]. Avoids bare `"dev" in text` so "device" does not match.
+ */
 fun WorkflowRun.isManagerDevBuild(): Boolean =
-    "dev" in name.orEmpty().lowercase()
+    workflowNameIndicatesManagerDev(name.orEmpty())
+
+/** Same rules as [WorkflowRun.isManagerDevBuild] for artifact [runTitle] when [WorkflowRun] is missing. */
+fun workflowNameIndicatesManagerDev(workflowName: String): Boolean {
+    val n = workflowName.lowercase().trim()
+    if (n.isBlank()) return false
+    if (MANAGER_DEV_WORKFLOW_NAME_MARKERS.any { it in n }) return true
+    return MANAGER_DEV_NAME_TOKEN.containsMatchIn(n)
+}
+
+private val MANAGER_DEV_WORKFLOW_NAME_MARKERS = listOf(
+    "abk app dev",
+    "abk-app-dev",
+    "build abk app dev",
+    "build-app-dev",
+    "build app dev"
+)
+
+private val MANAGER_DEV_NAME_TOKEN =
+    Regex("""(^|[\s_.-])dev($|[\s_.-]|\.apk)""", RegexOption.IGNORE_CASE)
 
 private fun String.hasManagerBuildSignal(): Boolean =
     "abk app" in this || "abk-app" in this ||

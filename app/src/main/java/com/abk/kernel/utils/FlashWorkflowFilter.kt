@@ -5,6 +5,7 @@ import com.abk.kernel.data.model.WorkflowRun
 import com.abk.kernel.data.model.isKernelBuild
 import com.abk.kernel.data.model.isManagerBuild
 import com.abk.kernel.data.model.isManagerDevBuild
+import com.abk.kernel.data.model.workflowNameIndicatesManagerDev
 
 enum class FlashFilterKernelKind { ResuKisu, SukiSu, Official, None }
 
@@ -50,16 +51,15 @@ object FlashWorkflowFilter {
         localArtifactNames: List<String>,
         summary: BuildParameterSummary?
     ): FlashFilterManagerKind? {
-        val workflowName = (run?.name ?: runTitle).orEmpty().lowercase()
         val hasDevArtifact = (remoteArtifactNames + localArtifactNames).any(::artifactNameIndicatesManagerDev)
         val fallbackRunTitleIsManager = run == null && runTitle.titleLooksLikeManager()
         val runIsManagerWorkflow = run?.isManagerBuild() == true || fallbackRunTitleIsManager
         if (runIsManagerWorkflow) {
             val branch = summary?.ksuBranch.orEmpty()
-            val isDev = run?.isManagerDevBuild()
-                ?: ("dev" in workflowName)
-                || hasDevArtifact
-                || ksuBranchIndicatesDev(branch)
+            val isDev = when (run) {
+                null -> workflowNameIndicatesManagerDev(runTitle)
+                else -> run.isManagerDevBuild()
+            } || hasDevArtifact || ksuBranchIndicatesDev(branch)
             return if (isDev) FlashFilterManagerKind.Dev else FlashFilterManagerKind.Release
         }
         if (summary == null && !hasDevArtifact) return null
@@ -109,6 +109,17 @@ object FlashWorkflowFilter {
         }
     }
 
+    /**
+     * Kernel sub-filters (ReSukiSU / SukiSu / …) need a resolved [FlashFilterKernelKind].
+     *
+     * While a run is [FlashFilterWorkflowState.Running] and [kernelKind] is still null
+     * (no log summary yet, or dispatch config not linked), we show it under any active
+     * kind filter so the list does not go empty mid-build. Once [kernelKind] is known
+     * (queue [KernelBuildConfig] or parsed summary), non-matching kinds are hidden even
+     * if GitHub status is still in_progress — e.g. SukiSu build disappears when only
+     * ReSukiSU is selected. That flicker is intentional: strict filter beats hiding
+     * the active run entirely.
+     */
     private fun matchesKernelKindFilter(
         filter: FlashFilter,
         kernelKind: FlashFilterKernelKind?,
@@ -117,8 +128,6 @@ object FlashWorkflowFilter {
         if (!filter.kernelEnabled) return false
         if (filter.kernelKinds.isEmpty()) return true
         if (kernelKind != null) return kernelKind in filter.kernelKinds
-        // In-progress kernel run before summary/variant is known — keep it visible
-        // so the list does not empty out while the build is still running.
         return workflowState == FlashFilterWorkflowState.Running
     }
 
