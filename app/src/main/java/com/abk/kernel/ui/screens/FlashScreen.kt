@@ -151,6 +151,7 @@ import com.abk.kernel.data.model.PREBUILT_GKI_RUN_ID
 import com.abk.kernel.data.model.PrebuiltGkiAsset
 import com.abk.kernel.data.model.PrebuiltGkiRelease
 import com.abk.kernel.data.model.WorkflowRun
+import com.abk.kernel.data.model.isManagerBuild
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
@@ -3257,9 +3258,12 @@ private fun WorkflowArtifactGroup.managerKind(
     val hasDevName = remote.any { it.name.lowercase().contains("dev") } ||
         local.any { it.name.lowercase().contains("dev") }
     val runName = ((run?.name ?: "") + " " + (run?.displayTitle ?: "") + " " + runTitle).lowercase()
-    val runIsManagerWorkflow = "abk app" in runName || "abk-app" in runName ||
-        "build app" in runName || "build-app" in runName ||
-        "manager" in runName || "管理器" in runName || "getmanager" in runName
+    val fallbackRunTitleIsManager = run == null && (
+        "abk app" in runName || "abk-app" in runName ||
+            "build app" in runName || "build-app" in runName ||
+            "manager" in runName || "管理器" in runName || "getmanager" in runName
+        )
+    val runIsManagerWorkflow = run?.isManagerBuild() == true || fallbackRunTitleIsManager
     // When the run is identifiably a manager workflow, commit to a kind: an
     // explicit "dev" marker (in name, artifact filename, or branch) means Dev,
     // otherwise it's the Release counterpart. Returning null here previously

@@ -595,19 +595,17 @@ enum class BuildStatus {
  * activity even when other workflows (e.g. manager builds) are running.
  */
 fun WorkflowRun.isKernelBuild(): Boolean {
+    val workflowName = name.orEmpty().lowercase()
     val lower = "${name.orEmpty()} ${displayTitle.orEmpty()}".lowercase()
+    if (lower.hasUtilityWorkflowSignal()) return false
+    // The workflow name is more reliable than displayTitle, which can contain
+    // user/commit text from a different build type.
+    if (workflowName.hasManagerBuildSignal()) return false
+    if (workflowName.hasKernelBuildSignal()) return true
     // Negative signals: app / manager / certificate / utility workflows.
-    if ("abk app" in lower || "abk-app" in lower ||
-        "build app" in lower || "build-app" in lower ||
-        "debug apk" in lower ||
-        "manager" in lower || "ksu manager" in lower || "sukisu manager" in lower ||
-        "getmanager" in lower || "get manager" in lower ||
-        "管理器" in lower ||
-        "certificate" in lower || "证书" in lower ||
-        "emergency" in lower || "auto trigger" in lower
-    ) return false
+    if (lower.hasManagerBuildSignal()) return false
     // Positive signals: kernel build.
-    if ("kernel" in lower || "内核" in lower) return true
+    if (lower.hasKernelBuildSignal()) return true
     // Unknown — be conservative and exclude it from the kernel-only tile.
     return false
 }
@@ -619,16 +617,29 @@ fun WorkflowRun.isKernelBuild(): Boolean {
  * runs that bundle a manager APK are still classified as kernel.
  */
 fun WorkflowRun.isManagerBuild(): Boolean {
+    val workflowName = name.orEmpty().lowercase()
     val lower = "${name.orEmpty()} ${displayTitle.orEmpty()}".lowercase()
+    if (lower.hasUtilityWorkflowSignal()) return false
+    // The GitHub run display title can contain kernel parameters from the
+    // triggering commit/title. The workflow name is the primary classifier.
+    if (workflowName.hasManagerBuildSignal()) return true
+    if (workflowName.hasKernelBuildSignal()) return false
     // Kernel workflows often bundle a manager APK but are not manager-primary.
-    if ("kernel" in lower || "内核" in lower) return false
-    if ("certificate" in lower || "证书" in lower ||
-        "emergency" in lower || "auto trigger" in lower
-    ) return false
-    return "abk app" in lower || "abk-app" in lower ||
-        "build app" in lower || "build-app" in lower ||
-        "debug apk" in lower ||
-        "manager" in lower || "ksu manager" in lower || "sukisu manager" in lower ||
-        "getmanager" in lower || "get manager" in lower ||
-        "管理器" in lower
+    if (lower.hasKernelBuildSignal()) return false
+    return lower.hasManagerBuildSignal()
 }
+
+private fun String.hasManagerBuildSignal(): Boolean =
+    "abk app" in this || "abk-app" in this ||
+        "build app" in this || "build-app" in this ||
+        "debug apk" in this ||
+        "manager" in this || "ksu manager" in this || "sukisu manager" in this ||
+        "getmanager" in this || "get manager" in this ||
+        "管理器" in this
+
+private fun String.hasKernelBuildSignal(): Boolean =
+    "kernel" in this || "内核" in this
+
+private fun String.hasUtilityWorkflowSignal(): Boolean =
+    "certificate" in this || "证书" in this ||
+        "emergency" in this || "auto trigger" in this

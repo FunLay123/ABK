@@ -64,6 +64,7 @@ import com.abk.kernel.data.model.KSU_VARIANT_SUKISU
 import com.abk.kernel.data.model.ModuleCatalogItem
 import com.abk.kernel.data.model.ModuleCatalogRepository
 import com.abk.kernel.data.model.WorkflowRun
+import com.abk.kernel.data.model.isManagerBuild
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
@@ -2478,14 +2479,11 @@ private fun buildRunChipsForStatus(
 
 private fun buildRunChipLabel(run: WorkflowRun, item: BuildQueueItem?): String {
     val runLabel = if (run.runNumber > 0) "#${run.runNumber}" else "#${run.id}"
-    val combined = listOf(run.displayTitle, run.name)
-        .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
-        .joinToString(" ")
-        .lowercase()
-    val isManagerLike = listOf("abk app", "abk-app", "build app", "manager", "管理器", "getmanager")
-        .any { it in combined }
-    val isKernelLike = "kernel" in combined || "内核" in combined
-    if (isManagerLike && !isKernelLike) {
+    if (run.isManagerBuild()) {
+        val combined = listOf(run.displayTitle, run.name)
+            .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
+            .joinToString(" ")
+            .lowercase()
         val isDev = "dev" in combined
         return if (isDev) "Manager Dev" else "Manager"
     }
