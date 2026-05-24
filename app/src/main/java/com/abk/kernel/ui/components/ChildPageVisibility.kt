@@ -14,21 +14,27 @@ const val CHILD_PAGE_EXIT_DELAY_MS = 280L
 /**
  * Keeps the bottom navigation bar in sync with overlay child pages.
  *
- * - Shows the bar immediately when [visible] becomes false on first composition
+ * - On first entry, optionally delays [onVisibleChange](true) so the bottom nav
+ *   stays visible while the child page enter transition runs.
+ * - On exit, delays [onVisibleChange](false) so the nav can rise after the child
+ *   page pop transition.
+ * - When [visible] becomes false without a prior child page, clears immediately
  *   (tab open) without playing the rise animation.
- * - Delays hiding the bar only when leaving a child page that was actually shown,
- *   so the nav can animate back in after the page exit transition.
  */
 @Composable
 fun ObserveChildPageVisibility(
     visible: Boolean,
     onVisibleChange: (Boolean) -> Unit,
+    enterDelayMs: Long = 0L,
     exitDelayMs: Long = CHILD_PAGE_EXIT_DELAY_MS,
     onAfterExitDelay: () -> Unit = {}
 ) {
     var childWasVisible by remember { mutableStateOf(false) }
     LaunchedEffect(visible) {
         if (visible) {
+            if (!childWasVisible && enterDelayMs > 0L) {
+                delay(enterDelayMs)
+            }
             childWasVisible = true
             onVisibleChange(true)
         } else {

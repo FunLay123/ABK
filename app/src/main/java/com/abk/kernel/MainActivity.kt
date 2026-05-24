@@ -467,11 +467,7 @@ private fun AbkMainScaffold(
         // rises smoothly instead of popping in.
         val navProgress by animateFloatAsState(
             targetValue = if (childPageVisible) 0f else 1f,
-            animationSpec = if (childPageVisible) {
-                motionScheme.fastSpatialSpec()
-            } else {
-                motionScheme.defaultSpatialSpec()
-            },
+            animationSpec = motionScheme.defaultSpatialSpec(),
             label = "bottom-nav-progress"
         )
         Box(

@@ -198,6 +198,7 @@ fun FlashScreen(
     // NavHost has no back-stack entry for a frame on first composition — treat
     // null as the list route so we do not flash childPageVisible on tab open.
     val flashDetailRouteActive = isFlashDetailRoute(currentBackStackEntry?.destination?.route)
+    var navigatingToFlashDetail by remember { mutableStateOf(false) }
     var selectedRunId by remember { mutableStateOf<Long?>(null) }
     var selectedPrebuiltReleaseId by remember { mutableStateOf<Long?>(null) }
     var selectedItem by remember { mutableStateOf<DownloadedArtifact?>(null) }
@@ -403,11 +404,26 @@ fun FlashScreen(
     ObserveChildPageVisibility(
         visible = flashDetailRouteActive,
         onVisibleChange = onDetailPageVisibleChange,
+        enterDelayMs = FLASH_DETAIL_PAGE_EXIT_DELAY_MS,
         exitDelayMs = FLASH_DETAIL_PAGE_EXIT_DELAY_MS
     )
 
+    LaunchedEffect(flashDetailRouteActive) {
+        if (flashDetailRouteActive) navigatingToFlashDetail = false
+    }
+
+    BackHandler(enabled = navigatingToFlashDetail) {
+        navigatingToFlashDetail = false
+        if (flashDetailRouteActive) {
+            navController.popBackStack()
+        }
+    }
+
     DisposableEffect(Unit) {
-        onDispose { onDetailPageVisibleChange(false) }
+        onDispose {
+            navigatingToFlashDetail = false
+            onDetailPageVisibleChange(false)
+        }
     }
 
     LaunchedEffect(state.forkRepo?.fullName) {
@@ -836,10 +852,7 @@ fun FlashScreen(
                                         onClick = {
                                             selectedRunId = group.runId
                                             selectedPrebuiltReleaseId = null
-                                            // Set before navigate so the first predictive-back
-                                            // gesture cannot reach MainActivity's exit handler
-                                            // while LaunchedEffect(flashDetailRouteActive) is pending.
-                                            onDetailPageVisibleChange(true)
+                                            navigatingToFlashDetail = true
                                             navController.navigate(flashWorkflowRoute(group.runId))
                                         },
                                         onShowParameters = { parameterTarget = group },
@@ -912,7 +925,7 @@ fun FlashScreen(
                                             onClick = {
                                                 selectedPrebuiltReleaseId = release.id
                                                 selectedRunId = null
-                                                onDetailPageVisibleChange(true)
+                                                navigatingToFlashDetail = true
                                                 navController.navigate(flashPrebuiltRoute(release.id))
                                             }
                                         )
@@ -1005,7 +1018,6 @@ fun FlashScreen(
                 LaunchedEffect(routeRunId) {
                     selectedRunId = routeRunId
                     selectedPrebuiltReleaseId = null
-                    onDetailPageVisibleChange(true)
                 }
                 val activeRun = recentRunById[routeRunId]?.takeIf { it.isActiveFlashRun() }
                 val isCancellingThis = routeRunId in state.cancellingWorkflowRunIds
@@ -1184,7 +1196,6 @@ fun FlashScreen(
                 LaunchedEffect(releaseId) {
                     selectedPrebuiltReleaseId = releaseId
                     selectedRunId = null
-                    onDetailPageVisibleChange(true)
                 }
                 LaunchedEffect(release?.id, state.prebuiltGkiEnabled, state.isLoggedIn) {
                     if (release != null && state.prebuiltGkiEnabled && state.isLoggedIn) {
