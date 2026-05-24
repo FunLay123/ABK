@@ -625,6 +625,9 @@
     <string name="download_directory_not_directory">Download directory is not a folder: %1$s</string>
     <string name="download_directory_not_writable">Download directory is not writable: %1$s</string>
     <string name="download_directory_create_failed">Could not create download directory: %1$s</string>
+    <string name="download_http_failed">Download request failed (HTTP %1$d)</string>
+    <string name="download_empty_response">Download response was empty</string>
+    <string name="download_unknown_error">Download failed</string>
     <string name="settings_download_mirror">Download mirror</string>
     <string name="settings_download_mirror_desc">Leave empty to connect directly to GitHub. If set, artifacts mirror to releases before download.</string>
 

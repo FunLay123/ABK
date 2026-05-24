@@ -625,6 +625,9 @@
     <string name="download_directory_not_directory">下载目录不是文件夹：%1$s</string>
     <string name="download_directory_not_writable">下载目录不可写：%1$s</string>
     <string name="download_directory_create_failed">无法创建下载目录：%1$s</string>
+    <string name="download_http_failed">下载请求失败 (HTTP %1$d)</string>
+    <string name="download_empty_response">下载响应为空</string>
+    <string name="download_unknown_error">下载失败</string>
     <string name="settings_download_mirror">下载镜像站</string>
     <string name="settings_download_mirror_desc">留空直连 GitHub；填写后会先镜像到 Release 再下载</string>
 

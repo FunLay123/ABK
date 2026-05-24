@@ -140,55 +140,62 @@ object DownloadUtils {
                 }
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext DownloadResult()
-
-            val body = response.body ?: return@withContext DownloadResult()
-            val totalBytes = artifact.sizeInBytes.coerceAtLeast(1L)
-
-            val runDir = File(downloadsRoot, runFolderName(run)).apply { mkdirs() }
-            val zipFile = File(runDir, "${artifact.name}.zip")
-
-            body.byteStream().use { input ->
-                FileOutputStream(zipFile).use { output ->
-                    val buffer = ByteArray(8 * 1024)
-                    var downloaded = 0L
-                    var bytes: Int
-                    while (input.read(buffer).also { bytes = it } != -1) {
-                        output.write(buffer, 0, bytes)
-                        downloaded += bytes
-                        val pct = (downloaded * 100 / totalBytes).toInt().coerceIn(0, 100)
-                        onProgress(pct)
-                    }
-                }
-            }
-
-            // Unzip into named folder
-            val outDir = File(runDir, safeFileName(artifact.name))
-            if (outDir.exists()) outDir.deleteRecursively()
-            outDir.mkdirs()
-            unzip(zipFile, outDir)
-            zipFile.delete()
-
-            DownloadResult(
-                artifacts = collectCandidateFiles(outDir).mapIndexed { index, file ->
-                    val type = classifyDownloadedFile(file)
-                    DownloadedArtifact(
-                        id = artifact.id * 1000 + index + 1,
-                        name = file.name,
-                        filePath = file.absolutePath,
-                        type = type,
-                        sizeBytes = file.length(),
-                        runId = run?.id ?: -1L,
-                        runTitle = run?.displayTitle ?: run?.name ?: run?.let { "#${it.runNumber}" }
-                            ?: context.getString(R.string.workflow_unlinked),
-                        runNumber = run?.runNumber ?: 0,
-                        category = type.toArtifactCategory()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext DownloadResult(
+                        errorMessage = downloadHttpErrorMessage(context, response.code)
                     )
                 }
-            )
+                val body = response.body
+                    ?: return@withContext DownloadResult(
+                        errorMessage = context.getString(R.string.download_empty_response)
+                    )
+                val totalBytes = artifact.sizeInBytes.coerceAtLeast(1L)
+
+                val runDir = File(downloadsRoot, runFolderName(run)).apply { mkdirs() }
+                val zipFile = File(runDir, "${artifact.name}.zip")
+
+                body.byteStream().use { input ->
+                    FileOutputStream(zipFile).use { output ->
+                        val buffer = ByteArray(8 * 1024)
+                        var downloaded = 0L
+                        var bytes: Int
+                        while (input.read(buffer).also { bytes = it } != -1) {
+                            output.write(buffer, 0, bytes)
+                            downloaded += bytes
+                            val pct = (downloaded * 100 / totalBytes).toInt().coerceIn(0, 100)
+                            onProgress(pct)
+                        }
+                    }
+                }
+
+                // Unzip into named folder
+                val outDir = File(runDir, safeFileName(artifact.name))
+                if (outDir.exists()) outDir.deleteRecursively()
+                outDir.mkdirs()
+                unzip(zipFile, outDir)
+                zipFile.delete()
+
+                DownloadResult(
+                    artifacts = collectCandidateFiles(outDir).mapIndexed { index, file ->
+                        val type = classifyDownloadedFile(file)
+                        DownloadedArtifact(
+                            id = artifact.id * 1000 + index + 1,
+                            name = file.name,
+                            filePath = file.absolutePath,
+                            type = type,
+                            sizeBytes = file.length(),
+                            runId = run?.id ?: -1L,
+                            runTitle = run?.displayTitle ?: run?.name ?: run?.let { "#${it.runNumber}" }
+                                ?: context.getString(R.string.workflow_unlinked),
+                            runNumber = run?.runNumber ?: 0,
+                            category = type.toArtifactCategory()
+                        )
+                    }
+                )
+            }
         } catch (e: Exception) {
-            DownloadResult()
+            DownloadResult(errorMessage = downloadExceptionMessage(context, e))
         }
     }
 
@@ -218,65 +225,72 @@ object DownloadUtils {
                 }
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext DownloadResult()
-
-            val body = response.body ?: return@withContext DownloadResult()
-            val totalBytes = when {
-                sizeBytes > 0L -> sizeBytes
-                body.contentLength() > 0L -> body.contentLength()
-                else -> 1L
-            }
-
-            val assetDir = File(downloadsRoot, "prebuilt-gki/${safeFileName(name)}").apply {
-                if (exists()) deleteRecursively()
-                mkdirs()
-            }
-            val file = File(assetDir, safeFileName(name))
-
-            body.byteStream().use { input ->
-                FileOutputStream(file).use { output ->
-                    val buffer = ByteArray(8 * 1024)
-                    var downloaded = 0L
-                    var bytes: Int
-                    while (input.read(buffer).also { bytes = it } != -1) {
-                        output.write(buffer, 0, bytes)
-                        downloaded += bytes
-                        val pct = (downloaded * 100 / totalBytes).toInt().coerceIn(0, 100)
-                        onProgress(pct)
-                    }
-                }
-            }
-
-            val byName = classifyDownloadedFile(file)
-            val files = if (file.extension.equals("zip", ignoreCase = true) && byName in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.OTHER)) {
-                val outDir = File(assetDir, "extracted")
-                outDir.mkdirs()
-                unzip(file, outDir)
-                file.delete()
-                collectCandidateFiles(outDir)
-            } else {
-                listOf(file)
-            }
-
-            DownloadResult(
-                artifacts = files.mapIndexed { index, candidate ->
-                    val type = classifyDownloadedFile(candidate)
-                    DownloadedArtifact(
-                        id = runId * 1000 + index.toLong() + 1L,
-                        name = candidate.name,
-                        filePath = candidate.absolutePath,
-                        type = type,
-                        sizeBytes = candidate.length(),
-                        runId = runId,
-                        runTitle = runTitle,
-                        runNumber = 0,
-                        category = type.toArtifactCategory()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext DownloadResult(
+                        errorMessage = downloadHttpErrorMessage(context, response.code)
                     )
                 }
-            )
+                val body = response.body
+                    ?: return@withContext DownloadResult(
+                        errorMessage = context.getString(R.string.download_empty_response)
+                    )
+                val totalBytes = when {
+                    sizeBytes > 0L -> sizeBytes
+                    body.contentLength() > 0L -> body.contentLength()
+                    else -> 1L
+                }
+
+                val assetDir = File(downloadsRoot, "prebuilt-gki/${safeFileName(name)}").apply {
+                    if (exists()) deleteRecursively()
+                    mkdirs()
+                }
+                val file = File(assetDir, safeFileName(name))
+
+                body.byteStream().use { input ->
+                    FileOutputStream(file).use { output ->
+                        val buffer = ByteArray(8 * 1024)
+                        var downloaded = 0L
+                        var bytes: Int
+                        while (input.read(buffer).also { bytes = it } != -1) {
+                            output.write(buffer, 0, bytes)
+                            downloaded += bytes
+                            val pct = (downloaded * 100 / totalBytes).toInt().coerceIn(0, 100)
+                            onProgress(pct)
+                        }
+                    }
+                }
+
+                val byName = classifyDownloadedFile(file)
+                val files = if (file.extension.equals("zip", ignoreCase = true) && byName in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.OTHER)) {
+                    val outDir = File(assetDir, "extracted")
+                    outDir.mkdirs()
+                    unzip(file, outDir)
+                    file.delete()
+                    collectCandidateFiles(outDir)
+                } else {
+                    listOf(file)
+                }
+
+                DownloadResult(
+                    artifacts = files.mapIndexed { index, candidate ->
+                        val type = classifyDownloadedFile(candidate)
+                        DownloadedArtifact(
+                            id = runId * 1000 + index.toLong() + 1L,
+                            name = candidate.name,
+                            filePath = candidate.absolutePath,
+                            type = type,
+                            sizeBytes = candidate.length(),
+                            runId = runId,
+                            runTitle = runTitle,
+                            runNumber = 0,
+                            category = type.toArtifactCategory()
+                        )
+                    }
+                )
+            }
         } catch (e: Exception) {
-            DownloadResult()
+            DownloadResult(errorMessage = downloadExceptionMessage(context, e))
         }
     }
 
@@ -302,6 +316,13 @@ object DownloadUtils {
         }
         return directory.takeIf { it.isDirectory && it.canWrite() }
     }
+
+    private fun downloadHttpErrorMessage(context: Context, code: Int): String =
+        context.getString(R.string.download_http_failed, code)
+
+    private fun downloadExceptionMessage(context: Context, error: Throwable): String =
+        error.message?.takeIf { it.isNotBlank() }
+            ?: context.getString(R.string.download_unknown_error)
 
     private fun downloadDirectoryErrorMessage(context: Context, downloadDirectoryPath: String?): String {
         val normalizedPath = DownloadDirectoryUtils.normalizeDirectoryPath(downloadDirectoryPath)
