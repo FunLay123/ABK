@@ -531,6 +531,8 @@ data class BuildQueueItem(
     val config: KernelBuildConfig = KernelBuildConfig(),
     val createdAt: Long = 0L,
     val status: BuildQueueItemStatus = BuildQueueItemStatus.PENDING,
+    /** GitHub workflow id for the dispatched YAML; used to link runs without stealing another slot. */
+    val workflowId: Long = 0L,
     val runId: Long = 0L,
     val runNumber: Int = 0,
     val error: String? = null

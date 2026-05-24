@@ -1492,7 +1492,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 updateBuildQueueItem(next.id) {
-                    it.copy(status = BuildQueueItemStatus.DISPATCHING, error = null)
+                    it.copy(
+                        status = BuildQueueItemStatus.DISPATCHING,
+                        workflowId = wfId,
+                        error = null
+                    )
                 }
                 _uiState.update {
                     it.copy(
@@ -1576,6 +1580,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             updateBuildQueueItem(id) {
                                 it.copy(
                                     status = BuildQueueItemStatus.RUNNING,
+                                    workflowId = workflowId,
                                     runId = run.id,
                                     runNumber = run.runNumber,
                                     error = null
@@ -3703,15 +3708,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun attachRunToActiveQueueItem(run: WorkflowRun) {
-        val current = _uiState.value.buildQueue
-        val target = current.firstOrNull { it.runId == run.id }
-            ?: current.firstOrNull {
-                it.status in setOf(BuildQueueItemStatus.DISPATCHING, BuildQueueItemStatus.RUNNING)
-            }
-            ?: return
+        val target = findBuildQueueItemForRun(_uiState.value.buildQueue, run) ?: return
         updateBuildQueueItem(target.id) {
             it.copy(
                 status = BuildQueueItemStatus.RUNNING,
+                workflowId = run.workflowId.takeIf { id -> id > 0L } ?: it.workflowId,
                 runId = run.id,
                 runNumber = run.runNumber,
                 error = null
@@ -3904,6 +3905,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             config = normalized,
             createdAt = createdAt,
             status = status,
+            workflowId = item.workflowId.coerceAtLeast(0L),
             runId = item.runId.coerceAtLeast(0L),
             runNumber = item.runNumber.coerceAtLeast(0),
             error = item.error?.takeIf { it.isNotBlank() }
@@ -5024,6 +5026,37 @@ private fun workflowFileFor(config: KernelBuildConfig): String =
     } else {
         KERNEL_WORKFLOW_FILE
     }
+
+/**
+ * Picks the queue slot that owns [run]. Never reuses another item's RUNNING
+ * row when it already has a different runId (kernel still going + new run).
+ */
+internal fun findBuildQueueItemForRun(
+    queue: List<BuildQueueItem>,
+    run: WorkflowRun
+): BuildQueueItem? {
+    queue.firstOrNull { it.runId == run.id }?.let { return it }
+    if (run.workflowId <= 0L) return null
+
+    val active = queue.filter { item ->
+        item.status in BUILD_QUEUE_ATTACH_STATUSES &&
+            (item.runId <= 0L || item.runId == run.id) &&
+            (item.workflowId <= 0L || item.workflowId == run.workflowId)
+    }
+    active.firstOrNull {
+        it.status == BuildQueueItemStatus.DISPATCHING && it.runId <= 0L
+    }?.let { return it }
+
+    val unlinked = active.filter { it.runId <= 0L }
+    if (unlinked.size == 1) return unlinked.single()
+
+    return null
+}
+
+private val BUILD_QUEUE_ATTACH_STATUSES = setOf(
+    BuildQueueItemStatus.DISPATCHING,
+    BuildQueueItemStatus.RUNNING
+)
 
 private fun workflowActionsUrl(owner: String, repoName: String, workflowFile: String = KERNEL_WORKFLOW_FILE): String =
     "https://github.com/$owner/$repoName/actions/workflows/$workflowFile"
