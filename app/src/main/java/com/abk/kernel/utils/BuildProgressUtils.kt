@@ -173,7 +173,11 @@ object BuildProgressUtils {
         val entries = activeRuns.map { run ->
             val desc = descriptors[run.id]
             when {
-                desc?.isManager == true -> if (desc.managerIsDev) "Manager Dev" else "Manager"
+                desc?.isManager == true -> buildString {
+                    append(runDisplayLabel(run))
+                    append(' ')
+                    append(if (desc.managerIsDev) "Manager Dev" else "Manager")
+                }
                 desc != null && desc.kernelLabel.isNotBlank() -> buildString {
                     append(runDisplayLabel(run))
                     if (desc.ksuVariant.isNotBlank()) append(' ').append(desc.ksuVariant)

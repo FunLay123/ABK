@@ -2457,7 +2457,7 @@ private data class BuildRunChip(
  * Compact "#65 SukiSU SUSFS 6.6.89-android15-2025-06" chips for the Build
  * tab progress card. Mirrors the descriptor logic that the merged-progress
  * text uses, but renders separate UI tiles rather than concatenated text.
- * Manager-only runs become "Manager" / "Manager Dev" chips.
+ * Manager-only runs become "#42 Manager" / "#42 Manager Dev" chips.
  */
 private fun buildRunChipsForStatus(
     activeRuns: List<WorkflowRun>,
@@ -2481,7 +2481,11 @@ private fun buildRunChipsForStatus(
 private fun buildRunChipLabel(run: WorkflowRun, item: BuildQueueItem?): String {
     val runLabel = if (run.runNumber > 0) "#${run.runNumber}" else "#${run.id}"
     if (run.isManagerBuild()) {
-        return if (run.isManagerDevBuild()) "Manager Dev" else "Manager"
+        return buildString {
+            append(runLabel)
+            append(' ')
+            append(if (run.isManagerDevBuild()) "Manager Dev" else "Manager")
+        }
     }
     val cfg = item?.config
     val variant = cfg?.kernelsuVariant?.takeIf { it != KSU_VARIANT_NONE }.orEmpty()
