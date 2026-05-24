@@ -197,14 +197,12 @@ fun BuildScreen(
 
     fun openPlanLibraryPage() {
         planBackProgress = 0f
-        onPlanPageVisibleChange(true)
         showBuildQueuePage = false
         showPlanLibraryPage = true
     }
 
     fun openBuildQueuePage() {
         planBackProgress = 0f
-        onPlanPageVisibleChange(true)
         showPlanLibraryPage = false
         showBuildQueuePage = true
     }

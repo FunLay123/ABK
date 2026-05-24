@@ -25,7 +25,7 @@ const val CHILD_PAGE_EXIT_DELAY_MS = 280L
 fun ObserveChildPageVisibility(
     visible: Boolean,
     onVisibleChange: (Boolean) -> Unit,
-    enterDelayMs: Long = 0L,
+    enterDelayMs: Long = CHILD_PAGE_EXIT_DELAY_MS,
     exitDelayMs: Long = CHILD_PAGE_EXIT_DELAY_MS,
     onAfterExitDelay: () -> Unit = {}
 ) {

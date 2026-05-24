@@ -404,7 +404,6 @@ fun FlashScreen(
     ObserveChildPageVisibility(
         visible = flashDetailRouteActive,
         onVisibleChange = onDetailPageVisibleChange,
-        enterDelayMs = FLASH_DETAIL_PAGE_EXIT_DELAY_MS,
         exitDelayMs = FLASH_DETAIL_PAGE_EXIT_DELAY_MS
     )
 

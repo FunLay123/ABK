@@ -135,7 +135,6 @@ fun SettingsScreen(
 
     fun openThemeSettings() {
         themeBackProgress = 0f
-        onThemePageVisibleChange(true)
         showAppProfileTemplates = false
         showManagerTools = false
         showAboutPage = false
@@ -149,7 +148,6 @@ fun SettingsScreen(
 
     fun openAppProfileTemplates() {
         themeBackProgress = 0f
-        onThemePageVisibleChange(true)
         showThemeSettings = false
         showManagerTools = false
         showAboutPage = false
@@ -160,7 +158,6 @@ fun SettingsScreen(
 
     fun openManagerTools() {
         themeBackProgress = 0f
-        onThemePageVisibleChange(true)
         showThemeSettings = false
         showAppProfileTemplates = false
         showAboutPage = false
@@ -171,7 +168,6 @@ fun SettingsScreen(
 
     fun openAboutPage() {
         themeBackProgress = 0f
-        onThemePageVisibleChange(true)
         showThemeSettings = false
         showAppProfileTemplates = false
         showManagerTools = false
@@ -181,7 +177,6 @@ fun SettingsScreen(
 
     fun openOpenSourceLicenses() {
         themeBackProgress = 0f
-        onThemePageVisibleChange(true)
         showThemeSettings = false
         showAppProfileTemplates = false
         showManagerTools = false

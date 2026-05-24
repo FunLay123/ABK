@@ -106,7 +106,6 @@ fun ModuleRepositoryScreen(
 
     fun openRepositorySettings() {
         repositoryBackProgress = 0f
-        onRepositoryPageVisibleChange(true)
         showRepositorySettings = true
     }
 

@@ -307,7 +307,6 @@ fun RootAuthorizationScreen(
                         anySaving = state.rootGrantSavingPackage != null,
                         onToggle = { allowed -> vm.setRootGrantAllowed(app.packageName, allowed) },
                         onOpen = {
-                            onDetailPageVisibleChange(true)
                             selectedPackage = app.packageName
                         }
                     )

@@ -201,7 +201,6 @@ fun RuntimeHomeScreen(
                     onOpenManagerPatch = {
                         managerPatchBackProgress = 0f
                         managerPatchBackEnabled = true
-                        onManagerPatchPageVisibleChange(true)
                         showManagerPatchPage = true
                     }
                 )
