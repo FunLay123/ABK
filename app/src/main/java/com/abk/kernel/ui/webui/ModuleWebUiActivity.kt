@@ -43,7 +43,7 @@ class ModuleWebUiActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (moduleId.isBlank()) {
+        if (!RootUtils.isSafeModuleIdForPath(moduleId)) {
             Toast.makeText(this, getString(R.string.runtime_module_unavailable), Toast.LENGTH_SHORT).show()
             finish()
             return
