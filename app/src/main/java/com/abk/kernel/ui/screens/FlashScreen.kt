@@ -2496,10 +2496,11 @@ private fun BuildDurationChip(
     } else {
         "%02d:%02d".format(m, s)
     }
+    val chipAccent = MaterialTheme.colorScheme.primary
     Surface(
         shape = RoundedCornerShape(50),
-        color = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer),
-        contentColor = MaterialTheme.colorScheme.onSurface
+        color = uiSurfaceColor(chipAccent.copy(alpha = 0.14f)),
+        contentColor = chipAccent
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -2509,7 +2510,8 @@ private fun BuildDurationChip(
             Icon(
                 Icons.Default.Schedule,
                 contentDescription = null,
-                modifier = Modifier.size(14.dp)
+                modifier = Modifier.size(14.dp),
+                tint = chipAccent
             )
             Text(
                 text = formatted,
