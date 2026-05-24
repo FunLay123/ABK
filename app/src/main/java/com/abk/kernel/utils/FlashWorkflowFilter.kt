@@ -90,11 +90,7 @@ object FlashWorkflowFilter {
             if (workflowState == null || workflowState !in filter.workflowStates) return false
         }
         return when (primary) {
-            WorkflowPrimary.Kernel -> {
-                if (!filter.kernelEnabled) return false
-                if (filter.kernelKinds.isEmpty()) return true
-                kernelKind != null && kernelKind in filter.kernelKinds
-            }
+            WorkflowPrimary.Kernel -> matchesKernelKindFilter(filter, kernelKind, workflowState)
             WorkflowPrimary.Manager -> {
                 if (!filter.managerEnabled) return false
                 if (filter.managerKinds.isEmpty()) return true
@@ -102,10 +98,22 @@ object FlashWorkflowFilter {
             }
             WorkflowPrimary.Unknown -> {
                 if (!filter.kernelEnabled) return false
-                if (filter.kernelKinds.isEmpty()) return true
-                kernelKind != null && kernelKind in filter.kernelKinds
+                matchesKernelKindFilter(filter, kernelKind, workflowState)
             }
         }
+    }
+
+    private fun matchesKernelKindFilter(
+        filter: FlashFilter,
+        kernelKind: FlashFilterKernelKind?,
+        workflowState: FlashFilterWorkflowState?
+    ): Boolean {
+        if (!filter.kernelEnabled) return false
+        if (filter.kernelKinds.isEmpty()) return true
+        if (kernelKind != null) return kernelKind in filter.kernelKinds
+        // In-progress kernel run before summary/variant is known — keep it visible
+        // so the list does not empty out while the build is still running.
+        return workflowState == FlashFilterWorkflowState.Running
     }
 
     /** Pending queue config applies only to kernel-primary active runs still linking. */

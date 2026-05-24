@@ -304,7 +304,8 @@ fun FlashScreen(
         filter,
         state.buildParameterSummaries,
         recentRunById,
-        dispatchedVariantByRunId
+        dispatchedVariantByRunId,
+        linkingDispatchedConfig
     ) {
         value = withContext(Dispatchers.Default) {
             allWorkflowGroups.filter { group ->
@@ -316,9 +317,17 @@ fun FlashScreen(
                     hasKernelArtifact = group.hasKernelArtifact(),
                     hasManagerArtifact = group.hasManagerArtifact()
                 )
+                val dispatchedVariantFallback = dispatchedVariantByRunId[group.runId]
+                    ?: if (run?.isActiveFlashRun() == true &&
+                        FlashWorkflowFilter.shouldUsePendingDispatchedConfig(run, group.hasKernelArtifact())
+                    ) {
+                        linkingDispatchedConfig?.kernelsuVariant
+                    } else {
+                        null
+                    }
                 val kKind = FlashWorkflowFilter.kernelKind(
                     summary = summary,
-                    fallbackVariant = dispatchedVariantByRunId[group.runId]
+                    fallbackVariant = dispatchedVariantFallback
                 )
                 val mKind = FlashWorkflowFilter.managerKind(
                     run = run,
