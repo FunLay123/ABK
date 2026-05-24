@@ -232,6 +232,7 @@ fun FlashScreen(
                     runTitle = run.displayTitle?.ifBlank { null } ?: run.name.orEmpty(),
                     runNumber = run.runNumber,
                     runCreatedAt = run.createdAt,
+                    runUpdatedAt = run.updatedAt,
                     remote = emptyList(),
                     local = emptyList(),
                     categories = emptySet(),
@@ -2315,7 +2316,7 @@ private fun BuildingWorkflowDetail(
                     ) {
                         CategoryHeader(category)
                         Spacer(Modifier.weight(1f))
-                        BuildElapsedChip(createdAt = run.createdAt)
+                        BuildDurationChip(createdAt = run.createdAt)
                     }
                 } else {
                     CategoryHeader(category)
@@ -2356,29 +2357,34 @@ private fun BuildingWorkflowDetail(
 }
 
 /**
- * Real-time build elapsed-time chip. Re-uses the run's GitHub-side
- * `created_at` (ISO-8601 UTC) so the duration matches what the workflow
- * page shows in the browser — i.e. it ticks even if the device was offline
- * during the early phase of the build. Re-renders every second while the
- * detail is visible.
+ * Workflow duration chip.
+ * Running workflows tick in real time from `created_at`.
+ * Completed workflows freeze to `updated_at - created_at` so the same timer
+ * can be reused on the finished detail screen.
  */
 @Composable
-private fun BuildElapsedChip(createdAt: String) {
-    val startMillis = remember(createdAt) {
-        runCatching {
-            if (createdAt.isBlank()) 0L
-            else java.time.Instant.parse(createdAt).toEpochMilli()
-        }.getOrDefault(0L)
-    }
+private fun BuildDurationChip(
+    createdAt: String,
+    finishedAt: String? = null,
+    live: Boolean = finishedAt.isNullOrBlank()
+) {
+    val startMillis = remember(createdAt) { parseIsoMillis(createdAt) }
     if (startMillis <= 0L) return
-    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(startMillis) {
-        while (true) {
-            nowMillis = System.currentTimeMillis()
-            delay(1000L)
+    val endMillis = remember(finishedAt) { parseIsoMillis(finishedAt.orEmpty()) }
+    val isFinished = !live && endMillis > startMillis
+    if (!live && !isFinished) return
+    var currentMillis by remember(startMillis, endMillis) {
+        mutableStateOf(if (isFinished) endMillis else System.currentTimeMillis())
+    }
+    LaunchedEffect(startMillis, endMillis) {
+        if (!isFinished) {
+            while (true) {
+                currentMillis = System.currentTimeMillis()
+                delay(1000L)
+            }
         }
     }
-    val elapsedSec = ((nowMillis - startMillis) / 1000L).coerceAtLeast(0L)
+    val elapsedSec = ((currentMillis - startMillis) / 1000L).coerceAtLeast(0L)
     val h = elapsedSec / 3600
     val m = (elapsedSec % 3600) / 60
     val s = elapsedSec % 60
@@ -2389,8 +2395,8 @@ private fun BuildElapsedChip(createdAt: String) {
     }
     Surface(
         shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        color = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer),
+        contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -2410,6 +2416,10 @@ private fun BuildElapsedChip(createdAt: String) {
         }
     }
 }
+
+private fun parseIsoMillis(value: String): Long = runCatching {
+    if (value.isBlank()) 0L else java.time.Instant.parse(value).toEpochMilli()
+}.getOrDefault(0L)
 
 @Composable
 private fun CategoryProgressCard(progress: BuildProgress?) {
@@ -2493,6 +2503,11 @@ private fun WorkflowDetailHeader(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
+            )
+            BuildDurationChip(
+                createdAt = group.runCreatedAt,
+                finishedAt = group.runUpdatedAt,
+                live = false
             )
             IconButton(onClick = onShowParameters) {
                 Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.flash_parameter_details))
@@ -2865,6 +2880,7 @@ private fun buildWorkflowGroups(
         val runCreatedAt = runs[runId]?.createdAt
             ?: firstRemote?.runCreatedAt
             ?: ""
+        val runUpdatedAt = runs[runId]?.updatedAt.orEmpty()
         val remoteTypes = filteredRemote.map { DownloadUtils.classifyArtifact(it.name) }
         val remoteCategories = remoteTypes.mapNotNull(DownloadUtils::classifyCategory).toSet()
         val localCategories = filteredLocal.map { it.category }.toSet()
@@ -2874,6 +2890,7 @@ private fun buildWorkflowGroups(
             runTitle = runTitle,
             runNumber = firstRemote?.runNumber ?: firstLocal?.runNumber ?: 0,
             runCreatedAt = runCreatedAt,
+            runUpdatedAt = runUpdatedAt,
             remote = filteredRemote,
             local = filteredLocal,
             categories = categories,
@@ -2905,6 +2922,7 @@ private data class WorkflowArtifactGroup(
     val runTitle: String,
     val runNumber: Int,
     val runCreatedAt: String,
+    val runUpdatedAt: String,
     val remote: List<BuildArtifact>,
     val local: List<DownloadedArtifact>,
     val categories: Set<ArtifactCategory>,
