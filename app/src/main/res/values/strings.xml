@@ -903,6 +903,10 @@
     <string name="vm_workflow_cancel_requested">已请求取消工作流</string>
     <string name="vm_workflow_cancel_failed">取消工作流失败: %1$s</string>
     <string name="vm_workflow_cancel_timeout">取消请求超时，重试次数已用尽</string>
+    <string name="vm_workflow_cancel_attempt_timeout">请求超时</string>
+    <string name="vm_workflow_cancel_attempt_failed">请求失败</string>
+    <string name="vm_workflow_cancel_retrying">取消失败（%1$s），正在重试 %2$d/%3$d…</string>
+    <string name="vm_workflow_cancel_confirm_timeout">已发送取消请求，但 GitHub 长时间未确认完成，请刷新最近构建。</string>
     <string name="vm_prebuilt_gki_label">预编译 GKI</string>
     <string name="vm_prebuilt_gki_release_failed">获取预编译 GKI Release 失败: %1$s</string>
     <string name="vm_prebuilt_gki_assets_failed">获取 %1$s 资产失败: %2$s</string>

@@ -50,6 +50,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -80,6 +81,8 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.abk.kernel.ui.components.AbkSnackbarHost
+import com.abk.kernel.ui.components.showAbkSnackbar
 import com.abk.kernel.ui.screens.AuthGateScreen
 import com.abk.kernel.ui.screens.BuildScreen
 import com.abk.kernel.ui.screens.FlashScreen
@@ -357,6 +360,16 @@ private fun AbkMainScaffold(
         AbkTab.RuntimeHome -> managerPatchPageVisible
         else -> false
     }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.snackbarMessage, state.snackbarLongDuration, state.error) {
+        val message = state.snackbarMessage ?: state.error ?: return@LaunchedEffect
+        val longDuration =
+            (state.snackbarMessage != null && state.snackbarLongDuration) || state.error != null
+        snackbarHostState.showAbkSnackbar(message = message, longDuration = longDuration)
+        if (state.snackbarMessage != null) vm.clearSnackbar()
+        if (state.error != null) vm.clearError()
+    }
 
     LaunchedEffect(pendingModuleInstallUri) {
         if (!pendingModuleInstallUri.isNullOrBlank()) {
@@ -598,6 +611,15 @@ private fun AbkMainScaffold(
                 }
             }
         }
+        AbkSnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(
+                    bottom = with(density) { (bottomBarHeightPx * navProgress).toDp() } + 10.dp
+                )
+                .zIndex(4f)
+        )
     }
 }
 

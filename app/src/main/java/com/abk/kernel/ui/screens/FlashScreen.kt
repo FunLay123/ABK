@@ -611,20 +611,6 @@ fun FlashScreen(
         )
     }
 
-    state.error?.let { error ->
-        AlertDialog(
-            onDismissRequest = { vm.clearError() },
-            icon = { Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(stringResource(R.string.flash_operation_failed)) },
-            text = { Text(error) },
-            confirmButton = {
-                TextButton(onClick = { vm.clearError() }) {
-                    Text(stringResource(R.string.flash_got_it))
-                }
-            }
-        )
-    }
-
     deleteFileTarget?.let { item ->
         AlertDialog(
             onDismissRequest = { deleteFileTarget = null },

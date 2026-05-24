@@ -1285,22 +1285,6 @@ fun BuildScreen(
                 )
             }
 
-            // Error
-            state.error?.let { err ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                ) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.width(8.dp))
-                        Text(err, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { vm.clearError() }) {
-                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close_error), tint = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
-            }
-
             Spacer(Modifier.height(80.dp + outerPadding.calculateBottomPadding()))
             }
         }

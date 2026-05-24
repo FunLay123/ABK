@@ -73,6 +73,8 @@ data class MainUiState(
     val showSyncDialog: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null,
+    val snackbarMessage: String? = null,
+    val snackbarLongDuration: Boolean = false,
     // Device-flow OAuth
     val deviceCode: String? = null,
     val userCode: String? = null,
@@ -1746,10 +1748,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(
                     cancellingWorkflowRunIds = it.cancellingWorkflowRunIds + runId,
-                    error = null
+                    error = null,
+                    snackbarMessage = null
                 )
             }
-            when (val result = cancelWorkflowRunWithRetry(owner, repoName, runId)) {
+            when (
+                val result = cancelWorkflowRunWithRetry(
+                    owner = owner,
+                    repoName = repoName,
+                    runId = runId,
+                    onRetrying = { attempt, maxAttempts, reason ->
+                        showSnackbar(
+                            message = text(
+                                R.string.vm_workflow_cancel_retrying,
+                                reason,
+                                attempt,
+                                maxAttempts
+                            ),
+                            longDuration = false
+                        )
+                    }
+                )
+            ) {
                 is Result.Success -> {
                     syncBuildQueueWithRunId(runId, BuildQueueItemStatus.CANCELLED)
                     _uiState.update {
@@ -1775,12 +1795,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     pollCancellationCompletion(owner, repoName, runId)
                 }
                 is Result.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            cancellingWorkflowRunIds = it.cancellingWorkflowRunIds - runId,
-                            error = text(R.string.vm_workflow_cancel_failed, result.message)
-                        )
-                    }
+                    _uiState.update { it.copy(cancellingWorkflowRunIds = it.cancellingWorkflowRunIds - runId) }
+                    showSnackbar(
+                        message = text(R.string.vm_workflow_cancel_failed, result.message),
+                        longDuration = true
+                    )
                 }
                 Result.Loading -> {
                     _uiState.update { it.copy(cancellingWorkflowRunIds = it.cancellingWorkflowRunIds - runId) }
@@ -1804,7 +1823,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runId: Long,
         maxAttempts: Int = 4,
         perAttemptTimeoutMs: Long = 10_000L,
-        backoffMs: Long = 2_500L
+        backoffMs: Long = 2_500L,
+        onRetrying: suspend (attempt: Int, maxAttempts: Int, reason: String) -> Unit = { _, _, _ -> }
     ): Result<Unit> {
         var lastError: Result.Error? = null
         repeat(maxAttempts) { attempt ->
@@ -1826,13 +1846,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         401, 403 -> return result
                     }
                 }
-                Result.Loading, null -> {
-                    // Timeout or pending — fall through to retry.
-                }
+                Result.Loading, null -> Unit
             }
-            if (attempt < maxAttempts - 1) delay(backoffMs)
+            if (attempt < maxAttempts - 1) {
+                onRetrying(attempt + 1, maxAttempts, describeCancelAttemptFailure(result))
+                val retryDelayMs = when ((result as? Result.Error)?.code) {
+                    408, in 500..599 -> backoffMs * 2
+                    else -> backoffMs
+                }
+                delay(retryDelayMs)
+            }
         }
         return lastError ?: Result.Error(text(R.string.vm_workflow_cancel_timeout), code = 0)
+    }
+
+    private fun describeCancelAttemptFailure(result: Result<Unit>?): String = when (result) {
+        is Result.Error -> when {
+            result.code > 0 -> "HTTP ${result.code}"
+            !result.message.isNullOrBlank() -> result.message
+            else -> text(R.string.vm_workflow_cancel_attempt_failed)
+        }
+        else -> text(R.string.vm_workflow_cancel_attempt_timeout)
     }
 
     // Polls the cancelled run every few seconds for ~2 minutes so the cancel
@@ -1844,6 +1878,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runId: Long
     ) {
         delay(CANCEL_COMPLETION_POLL_INITIAL_DELAY_MS)
+        var lastPollError: String? = null
         repeat(CANCEL_COMPLETION_POLL_MAX_ATTEMPTS) {
             if (runId !in _uiState.value.cancellingWorkflowRunIds) return
             when (val r = github.getWorkflowRun(owner, repoName, runId)) {
@@ -1861,13 +1896,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         return
                     }
                 }
-                else -> {}
+                is Result.Error -> lastPollError = r.message
+                Result.Loading -> Unit
             }
             delay(CANCEL_COMPLETION_POLL_INTERVAL_MS)
         }
         _uiState.update { state ->
             state.copy(cancellingWorkflowRunIds = state.cancellingWorkflowRunIds - runId)
         }
+        val timeoutMessage = lastPollError?.let { pollError ->
+            "${text(R.string.vm_workflow_cancel_confirm_timeout)} ($pollError)"
+        } ?: text(R.string.vm_workflow_cancel_confirm_timeout)
+        showSnackbar(message = timeoutMessage, longDuration = true)
     }
 
     fun loadArtifacts(runId: Long, autoDownload: Boolean = false) {
@@ -4056,6 +4096,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     fun clearError() = _uiState.update { it.copy(error = null) }
+
+    fun showSnackbar(message: String, longDuration: Boolean = false) {
+        if (message.isBlank()) return
+        _uiState.update {
+            it.copy(
+                snackbarMessage = message,
+                snackbarLongDuration = longDuration
+            )
+        }
+    }
+
+    fun clearSnackbar() = _uiState.update {
+        it.copy(snackbarMessage = null, snackbarLongDuration = false)
+    }
 
     fun clearCustomExternalModuleError() = _uiState.update { it.copy(customExternalModuleError = null) }
 
