@@ -1835,7 +1835,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return lastError ?: Result.Error(text(R.string.vm_workflow_cancel_timeout), code = 0)
     }
 
-    // Polls the cancelled run every few seconds for ~1 minute so the cancel
+    // Polls the cancelled run every few seconds for ~2 minutes so the cancel
     // spinner clears as soon as GitHub flips the status to "completed",
     // without waiting for the background BuildMonitorService's slower tick.
     private suspend fun pollCancellationCompletion(
@@ -1843,8 +1843,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repoName: String,
         runId: Long
     ) {
-        delay(2_000)
-        repeat(12) {
+        delay(CANCEL_COMPLETION_POLL_INITIAL_DELAY_MS)
+        repeat(CANCEL_COMPLETION_POLL_MAX_ATTEMPTS) {
             if (runId !in _uiState.value.cancellingWorkflowRunIds) return
             when (val r = github.getWorkflowRun(owner, repoName, runId)) {
                 is Result.Success -> {
@@ -1863,7 +1863,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 else -> {}
             }
-            delay(5_000)
+            delay(CANCEL_COMPLETION_POLL_INTERVAL_MS)
         }
         _uiState.update { state ->
             state.copy(cancellingWorkflowRunIds = state.cancellingWorkflowRunIds - runId)
@@ -5060,6 +5060,9 @@ private fun workflowActionsUrl(owner: String, repoName: String, workflowFile: St
     "https://github.com/$owner/$repoName/actions/workflows/$workflowFile"
 private const val MIRROR_WORKFLOW_MAX_POLLS = 40
 private const val MIRROR_RELEASE_ASSET_MAX_POLLS = 6
+private const val CANCEL_COMPLETION_POLL_INITIAL_DELAY_MS = 2_000L
+private const val CANCEL_COMPLETION_POLL_INTERVAL_MS = 5_000L
+private const val CANCEL_COMPLETION_POLL_MAX_ATTEMPTS = 24
 
 private fun normalizeMirrorBaseUrl(url: String): String {
     val trimmed = url.trim()
