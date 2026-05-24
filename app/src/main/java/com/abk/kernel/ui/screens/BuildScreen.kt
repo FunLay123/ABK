@@ -2478,7 +2478,10 @@ private fun buildRunChipsForStatus(
 
 private fun buildRunChipLabel(run: WorkflowRun, item: BuildQueueItem?): String {
     val runLabel = if (run.runNumber > 0) "#${run.runNumber}" else "#${run.id}"
-    val combined = ((run.name ?: "") + " " + (run.displayTitle ?: "")).lowercase()
+    val combined = listOf(run.displayTitle, run.name)
+        .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
+        .joinToString(" ")
+        .lowercase()
     val isManagerLike = listOf("abk app", "abk-app", "build app", "manager", "管理器", "getmanager")
         .any { it in combined }
     val isKernelLike = "kernel" in combined || "内核" in combined
@@ -2497,7 +2500,24 @@ private fun buildRunChipLabel(run: WorkflowRun, item: BuildQueueItem?): String {
         if (variant.isNotBlank()) append(' ').append(variant)
         if (susfs) append(" SUSFS")
         if (kernelLabel.isNotBlank()) append(' ').append(kernelLabel)
+        if (variant.isBlank() && !susfs && kernelLabel.isBlank()) {
+            runChipTitleFallback(run, runLabel)?.let { append(' ').append(it) }
+        }
     }
+}
+
+private fun runChipTitleFallback(run: WorkflowRun, runLabel: String): String? {
+    val disallowed = setOf(runLabel, "#${run.id}")
+    return listOf(run.displayTitle, run.name)
+        .asSequence()
+        .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
+        .map { title ->
+            title.removePrefix(runLabel)
+                .removePrefix("#${run.id}")
+                .trimStart(' ', '-', ':', '·', ',', '#')
+                .trim()
+        }
+        .firstOrNull { title -> title.isNotBlank() && title !in disallowed }
 }
 
 @Composable
