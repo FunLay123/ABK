@@ -13,7 +13,7 @@ import kotlinx.coroutines.delay
 /**
  * Fallback exit delay for child pages driven by Navigation Compose (NavHost),
  * where overlay [androidx.compose.animation.AnimatedVisibility] is not used and
- * [Transition.isIdle] is unavailable on the parent.
+ * [Transition.currentState] == [Transition.targetState] on the parent is unavailable.
  */
 const val CHILD_PAGE_NAV_EXIT_DELAY_MS = 280L
 
@@ -25,8 +25,8 @@ const val CHILD_PAGE_EXIT_DELAY_MS = CHILD_PAGE_NAV_EXIT_DELAY_MS
 
 /**
  * Shared [Transition] for overlay child pages. Hoists enter/exit into one
- * [updateTransition] so [ObserveChildPageVisibility] can wait for
- * [Transition.isIdle] instead of a fixed delay.
+ * [updateTransition] so [ObserveChildPageVisibility] can wait for the transition to
+ * settle ([Transition.currentState] == [Transition.targetState]) instead of a fixed delay.
  */
 @Composable
 fun rememberChildPageOverlayTransition(
@@ -39,7 +39,7 @@ fun rememberChildPageOverlayTransition(
  * [rememberChildPageOverlayTransition] and [Transition.AnimatedVisibility].
  *
  * Hides the nav when the overlay opens; shows it again only after exit
- * animations finish ([Transition.isIdle] and [Transition.currentState] is false).
+ * animations finish (currentState equals targetState and currentState is false).
  */
 @Composable
 fun ObserveChildPageVisibility(
@@ -49,9 +49,11 @@ fun ObserveChildPageVisibility(
 ) {
     var wasOverlayVisible by remember { mutableStateOf(false) }
     val target = transition.targetState
-    val exitSettled = !target && transition.isIdle && !transition.currentState
+    val current = transition.currentState
+    val isTransitionIdle = current == target
+    val exitSettled = !target && isTransitionIdle && !current
 
-    LaunchedEffect(target, transition.isIdle, transition.currentState) {
+    LaunchedEffect(target, isTransitionIdle, current) {
         when {
             target -> {
                 wasOverlayVisible = true
