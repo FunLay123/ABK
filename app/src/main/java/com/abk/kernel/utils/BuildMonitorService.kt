@@ -93,7 +93,7 @@ class BuildMonitorService : Service() {
             github.updateToken(token)
 
             try {
-                while (isActive) {
+                while (coroutineContext.isActive) {
                     val result = github.getWorkflowRun(owner, repo, runId)
                     if (result is Result.Success) {
                         val run = result.data

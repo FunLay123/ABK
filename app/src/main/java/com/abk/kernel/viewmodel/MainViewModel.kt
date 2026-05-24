@@ -1732,7 +1732,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         stopForegroundWorkflowRefresh()
         foregroundWorkflowRefreshJob = viewModelScope.launch {
             loadRecentRuns(showRefreshIndicator = false, lightweight = true)
-            while (isActive) {
+            while (coroutineContext.isActive) {
                 delay(intervalMs)
                 if (!appInForeground || !_uiState.value.workflowForegroundRefreshEnabled) break
                 val current = _uiState.value
