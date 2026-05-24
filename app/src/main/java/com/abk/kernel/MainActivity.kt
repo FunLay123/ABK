@@ -445,17 +445,18 @@ private fun AbkMainScaffold(
             .fillMaxSize()
             .background(uiSurfaceColor(MaterialTheme.colorScheme.surface))
     ) {
-        // Smooth fade for the bottom nav when a child detail page covers it.
-        // Previously we just flipped zIndex 0↔2 on dispose, which created a
-        // visible "nav disappears then reappears" pop because the dispose
-        // fires after the slide-out animation completes. Keep the zIndex
-        // flip (it's correct for hit-testing — invisible nav at z=2 would
-        // otherwise eat touches at the bottom of the detail page) AND
-        // animate alpha so the visual transition is smooth instead of abrupt.
-        val navAlpha by animateFloatAsState(
+        // Fade + slide the bottom nav in sync with child detail exit. Child
+        // screens delay clearing childPageVisible until their pop animation
+        // finishes (~280 ms); use a spatial spec when the bar returns so it
+        // rises smoothly instead of popping in.
+        val navProgress by animateFloatAsState(
             targetValue = if (childPageVisible) 0f else 1f,
-            animationSpec = motionScheme.fastEffectsSpec(),
-            label = "bottom-nav-alpha"
+            animationSpec = if (childPageVisible) {
+                motionScheme.fastSpatialSpec()
+            } else {
+                motionScheme.defaultSpatialSpec()
+            },
+            label = "bottom-nav-progress"
         )
         Box(
             modifier = Modifier
@@ -463,7 +464,10 @@ private fun AbkMainScaffold(
                 .align(Alignment.BottomCenter)
                 .onSizeChanged { bottomBarHeightPx = it.height }
                 .zIndex(if (childPageVisible) 0f else 2f)
-                .graphicsLayer { alpha = navAlpha }
+                .graphicsLayer {
+                    alpha = navProgress
+                    translationY = (1f - navProgress) * bottomBarHeightPx
+                }
         ) {
             NavigationBar(
                 containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer),

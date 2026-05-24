@@ -133,6 +133,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.AsyncImage
@@ -178,6 +179,7 @@ private const val FLASH_DETAIL_BACK_SCALE_DELTA = 0.09f
 private const val FLASH_DETAIL_BACK_SCRIM_ALPHA = 0.32f
 private val FLASH_DETAIL_BACK_MAX_OFFSET = 56.dp
 private val FLASH_DETAIL_BACK_MAX_CORNER = 32.dp
+private const val FLASH_DETAIL_PAGE_EXIT_DELAY_MS = 280L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -191,6 +193,8 @@ fun FlashScreen(
     val scope = rememberCoroutineScope()
     var activeContentTab by rememberSaveable { mutableStateOf(FlashContentTab.Workflows) }
     val navController = rememberNavController()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val flashDetailRouteActive = currentBackStackEntry?.destination?.route != FLASH_ROUTE_LIST
     var selectedRunId by remember { mutableStateOf<Long?>(null) }
     var selectedPrebuiltReleaseId by remember { mutableStateOf<Long?>(null) }
     var selectedItem by remember { mutableStateOf<DownloadedArtifact?>(null) }
@@ -391,6 +395,19 @@ fun FlashScreen(
             popUpTo(FLASH_ROUTE_LIST) { inclusive = false }
             launchSingleTop = true
         }
+    }
+
+    LaunchedEffect(flashDetailRouteActive) {
+        if (flashDetailRouteActive) {
+            onDetailPageVisibleChange(true)
+        } else {
+            delay(FLASH_DETAIL_PAGE_EXIT_DELAY_MS)
+            onDetailPageVisibleChange(false)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { onDetailPageVisibleChange(false) }
     }
 
     LaunchedEffect(state.forkRepo?.fullName) {
@@ -1020,7 +1037,6 @@ fun FlashScreen(
                     backgroundUri = state.customBackgroundUri,
                     backgroundImageEnabled = state.backgroundImageEnabled,
                     onBack = ::returnToWorkflowList,
-                    onVisibleChange = onDetailPageVisibleChange,
                     backgroundContent = { FlashListContent() }
                 ) {
                     Crossfade(targetState = showBuilding, label = "flash-detail-build-state") { isBuilding ->
@@ -1188,7 +1204,6 @@ fun FlashScreen(
                     backgroundUri = state.customBackgroundUri,
                     backgroundImageEnabled = state.backgroundImageEnabled,
                     onBack = ::returnToPrebuiltReleaseList,
-                    onVisibleChange = onDetailPageVisibleChange,
                     backgroundContent = { FlashListContent() }
                 ) {
                     LazyColumn(
@@ -1282,7 +1297,6 @@ private fun FlashDetailBackSurface(
     backgroundUri: String?,
     backgroundImageEnabled: Boolean,
     onBack: () -> Unit,
-    onVisibleChange: (Boolean) -> Unit,
     backgroundContent: @Composable () -> Unit,
     content: @Composable () -> Unit
 ) {
@@ -1299,11 +1313,6 @@ private fun FlashDetailBackSurface(
     val density = LocalDensity.current
     val backOffsetPx = with(density) { FLASH_DETAIL_BACK_MAX_OFFSET.toPx() }
     val backCorner = with(density) { (FLASH_DETAIL_BACK_MAX_CORNER.toPx() * visualBackProgress).toDp() }
-
-    DisposableEffect(Unit) {
-        onVisibleChange(true)
-        onDispose { onVisibleChange(false) }
-    }
 
     PredictiveBackHandler(enabled = predictiveBackEnabled) { progress ->
         try {
