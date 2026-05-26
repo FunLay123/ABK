@@ -25,6 +25,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -37,25 +38,71 @@ import kotlinx.coroutines.launch
 const val CHILD_PAGE_BACK_VISUAL_EXPONENT = 1.8f
 const val CHILD_PAGE_BACK_SCALE_DELTA = 0.09f
 const val CHILD_PAGE_BACK_SCRIM_ALPHA = 0.32f
+const val CHILD_PAGE_DISMISS_PEEK_FRACTION = 0.30f
 val CHILD_PAGE_BACK_MAX_OFFSET = 56.dp
 val CHILD_PAGE_BACK_MAX_CORNER = 32.dp
 
+private fun peekAmount(dismissProgress: Float, predictiveBackEnabled: Boolean): Float {
+    if (!predictiveBackEnabled) {
+        return dismissProgress.coerceIn(0f, 1f)
+    }
+    return (dismissProgress / CHILD_PAGE_DISMISS_PEEK_FRACTION).coerceIn(0f, 1f)
+}
+
+private fun visualProgressFor(dismissProgress: Float, predictiveBackEnabled: Boolean): Float {
+    return peekAmount(dismissProgress, predictiveBackEnabled).pow(CHILD_PAGE_BACK_VISUAL_EXPONENT)
+}
+
+private fun translationXFor(
+    dismissProgress: Float,
+    predictiveBackEnabled: Boolean,
+    peekPx: Float,
+    screenWidthPx: Float,
+): Float {
+    if (!predictiveBackEnabled) {
+        return peekPx * dismissProgress.coerceIn(0f, 1f).pow(CHILD_PAGE_BACK_VISUAL_EXPONENT)
+    }
+    if (dismissProgress <= CHILD_PAGE_DISMISS_PEEK_FRACTION) {
+        return peekPx * visualProgressFor(dismissProgress, predictiveBackEnabled = true)
+    }
+    val slideT = (
+        (dismissProgress - CHILD_PAGE_DISMISS_PEEK_FRACTION) /
+            (1f - CHILD_PAGE_DISMISS_PEEK_FRACTION)
+        ).coerceIn(0f, 1f)
+    // Let MotionScheme.defaultSpatialSpec() provide the easing curve; avoid stacking
+    // a legacy FastOutSlowIn curve on top of the expressive spatial spring.
+    return peekPx + (screenWidthPx - peekPx) * slideT
+}
+
+private fun scrimAlphaFor(dismissProgress: Float, predictiveBackEnabled: Boolean): Float {
+    if (!predictiveBackEnabled) {
+        return CHILD_PAGE_BACK_SCRIM_ALPHA * visualProgressFor(dismissProgress, predictiveBackEnabled = false)
+    }
+    if (dismissProgress <= CHILD_PAGE_DISMISS_PEEK_FRACTION) {
+        return CHILD_PAGE_BACK_SCRIM_ALPHA * visualProgressFor(dismissProgress, predictiveBackEnabled = true)
+    }
+    val fadeT = (
+        (dismissProgress - CHILD_PAGE_DISMISS_PEEK_FRACTION) /
+            (1f - CHILD_PAGE_DISMISS_PEEK_FRACTION)
+        ).coerceIn(0f, 1f)
+    return CHILD_PAGE_BACK_SCRIM_ALPHA * (1f - fadeT)
+}
+
 @Stable
 class ChildPageBackController internal constructor(
+    internal val translationXPx: Float,
     internal val visualProgress: Float,
-    internal val backOffsetPx: Float,
     internal val backCorner: Dp,
+    internal val scrimAlpha: Float,
     private val requestDismissInternal: () -> Unit,
     private val resetProgressInternal: () -> Unit,
 ) {
-    val scrimAlpha: Float get() = CHILD_PAGE_BACK_SCRIM_ALPHA * visualProgress
-
     fun requestDismiss() = requestDismissInternal.invoke()
 
     fun resetProgress() = resetProgressInternal.invoke()
 
     fun backTransformModifier(): Modifier = Modifier.graphicsLayer {
-        translationX = backOffsetPx * visualProgress
+        translationX = translationXPx
         scaleX = 1f - CHILD_PAGE_BACK_SCALE_DELTA * visualProgress
         scaleY = 1f - CHILD_PAGE_BACK_SCALE_DELTA * visualProgress
         alpha = 1f - 0.06f * visualProgress
@@ -86,9 +133,6 @@ fun rememberChildPageBackController(
         if (current < 1f) {
             animatable.animateTo(1f, spatialSpec)
         }
-        // Keep peek transform through the parent exit transition (slide/fade).
-        // Reset via resetProgress() after exit settles — snapping here caused a
-        // visible jump when NavHost/AnimatedVisibility took over the motion.
         onBack()
     }
 
@@ -111,11 +155,13 @@ fun rememberChildPageBackController(
     PredictiveBackHandler(enabled = enabled && predictiveBackEnabled) { progress ->
         try {
             progress.collect { backEvent ->
-                animatable.snapTo(backEvent.progress.coerceIn(0f, 1f))
+                val gestureProgress = backEvent.progress.coerceIn(0f, 1f)
+                animatable.snapTo(gestureProgress * CHILD_PAGE_DISMISS_PEEK_FRACTION)
             }
             animateToDismissed()
-        } catch (_: CancellationException) {
+        } catch (e: CancellationException) {
             animateCancel()
+            throw e
         }
     }
 
@@ -123,15 +169,26 @@ fun rememberChildPageBackController(
         launchDismiss()
     }
 
-    val visualProgress = animatable.value.coerceIn(0f, 1f).pow(CHILD_PAGE_BACK_VISUAL_EXPONENT)
+    val dismissProgress = animatable.value.coerceIn(0f, 1f)
+    val visualProgress = visualProgressFor(dismissProgress, predictiveBackEnabled)
     val density = LocalDensity.current
-    val backOffsetPx = with(density) { CHILD_PAGE_BACK_MAX_OFFSET.toPx() }
+    val configuration = LocalConfiguration.current
+    val peekPx = with(density) { CHILD_PAGE_BACK_MAX_OFFSET.toPx() }
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+    val translationXPx = translationXFor(
+        dismissProgress = dismissProgress,
+        predictiveBackEnabled = predictiveBackEnabled,
+        peekPx = peekPx,
+        screenWidthPx = screenWidthPx,
+    )
     val backCorner = with(density) { (CHILD_PAGE_BACK_MAX_CORNER.toPx() * visualProgress).toDp() }
+    val scrimAlpha = scrimAlphaFor(dismissProgress, predictiveBackEnabled)
 
     return ChildPageBackController(
+        translationXPx = translationXPx,
         visualProgress = visualProgress,
-        backOffsetPx = backOffsetPx,
         backCorner = backCorner,
+        scrimAlpha = scrimAlpha,
         requestDismissInternal = ::launchDismiss,
         resetProgressInternal = { scope.launch { animatable.snapTo(0f) } },
     )
@@ -152,18 +209,28 @@ fun childPageOverlayEnterTransition(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
+fun childPageScrimExitTransition(
+    predictiveBackEnabled: Boolean,
+    motionScheme: MotionScheme = MaterialTheme.motionScheme,
+): ExitTransition =
+    if (predictiveBackEnabled) {
+        ExitTransition.None
+    } else {
+        fadeOut(animationSpec = motionScheme.fastEffectsSpec())
+    }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
 fun childPageOverlayExitTransition(
     predictiveBackEnabled: Boolean,
     motionScheme: MotionScheme = MaterialTheme.motionScheme,
 ): ExitTransition =
-    fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-        slideOutHorizontally(
-            animationSpec = if (predictiveBackEnabled) {
-                motionScheme.defaultSpatialSpec()
-            } else {
-                motionScheme.fastSpatialSpec()
-            },
-        ) { width -> width }
+    if (predictiveBackEnabled) {
+        ExitTransition.None
+    } else {
+        fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
+            slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width }
+    }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

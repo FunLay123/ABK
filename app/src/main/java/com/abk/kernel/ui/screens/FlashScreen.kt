@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -986,8 +987,7 @@ fun FlashScreen(
             },
             popExitTransition = {
                 if (state.predictiveBackEnabled) {
-                    fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                        slideOutHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width }
+                    ExitTransition.None
                 } else {
                     navExit(forward = false)
                 }
