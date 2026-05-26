@@ -72,7 +72,7 @@ fun rememberChildPageBackController(
     onBack: () -> Unit,
 ): ChildPageBackController {
     val motionScheme = MaterialTheme.motionScheme
-    val spatialSpec = if (predictiveBackEnabled) {
+    val spatialSpec: AnimationSpec<Float> = if (predictiveBackEnabled) {
         motionScheme.defaultSpatialSpec()
     } else {
         motionScheme.fastSpatialSpec()
@@ -156,7 +156,7 @@ fun childPageOverlayExitTransition(
     predictiveBackEnabled: Boolean,
     motionScheme: MotionScheme = MaterialTheme.motionScheme,
 ): ExitTransition {
-    val slideSpec = if (predictiveBackEnabled) {
+    val slideSpec: AnimationSpec<Int> = if (predictiveBackEnabled) {
         motionScheme.defaultSpatialSpec()
     } else {
         motionScheme.fastSpatialSpec()
