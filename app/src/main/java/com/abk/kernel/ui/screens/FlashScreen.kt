@@ -987,7 +987,7 @@ fun FlashScreen(
             popExitTransition = {
                 if (state.predictiveBackEnabled) {
                     fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                        slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width }
+                        slideOutHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width }
                 } else {
                     navExit(forward = false)
                 }

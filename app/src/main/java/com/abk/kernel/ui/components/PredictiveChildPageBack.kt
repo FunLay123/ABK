@@ -72,7 +72,11 @@ fun rememberChildPageBackController(
     onBack: () -> Unit,
 ): ChildPageBackController {
     val motionScheme = MaterialTheme.motionScheme
-    val spatialSpec = motionScheme.fastSpatialSpec<Float>()
+    val spatialSpec = if (predictiveBackEnabled) {
+        motionScheme.defaultSpatialSpec()
+    } else {
+        motionScheme.fastSpatialSpec()
+    }
     val animatable = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     val dismissJobs = remember { mutableSetOf<Job>() }
@@ -82,8 +86,10 @@ fun rememberChildPageBackController(
         if (current < 1f) {
             animatable.animateTo(1f, spatialSpec)
         }
+        // Keep peek transform through the parent exit transition (slide/fade).
+        // Reset via resetProgress() after exit settles — snapping here caused a
+        // visible jump when NavHost/AnimatedVisibility took over the motion.
         onBack()
-        animatable.snapTo(0f)
     }
 
     suspend fun animateCancel() {
@@ -149,13 +155,15 @@ fun childPageOverlayEnterTransition(
 fun childPageOverlayExitTransition(
     predictiveBackEnabled: Boolean,
     motionScheme: MotionScheme = MaterialTheme.motionScheme,
-): ExitTransition =
-    if (predictiveBackEnabled) {
-        fadeOut(animationSpec = motionScheme.fastEffectsSpec())
+): ExitTransition {
+    val slideSpec = if (predictiveBackEnabled) {
+        motionScheme.defaultSpatialSpec()
     } else {
-        fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-            slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width }
+        motionScheme.fastSpatialSpec()
     }
+    return fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
+        slideOutHorizontally(animationSpec = slideSpec) { width -> width }
+}
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
