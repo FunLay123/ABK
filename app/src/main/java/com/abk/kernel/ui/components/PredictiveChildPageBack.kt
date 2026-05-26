@@ -155,15 +155,15 @@ fun childPageOverlayEnterTransition(
 fun childPageOverlayExitTransition(
     predictiveBackEnabled: Boolean,
     motionScheme: MotionScheme = MaterialTheme.motionScheme,
-): ExitTransition {
-    val slideSpec: AnimationSpec<Int> = if (predictiveBackEnabled) {
-        motionScheme.defaultSpatialSpec()
-    } else {
-        motionScheme.fastSpatialSpec()
-    }
-    return fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-        slideOutHorizontally(animationSpec = slideSpec) { width -> width }
-}
+): ExitTransition =
+    fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
+        slideOutHorizontally(
+            animationSpec = if (predictiveBackEnabled) {
+                motionScheme.defaultSpatialSpec()
+            } else {
+                motionScheme.fastSpatialSpec()
+            },
+        ) { width -> width }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
