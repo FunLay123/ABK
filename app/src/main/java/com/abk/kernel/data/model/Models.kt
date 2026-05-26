@@ -596,6 +596,9 @@ enum class BuildStatus {
  * Used by the Status screen "Last build" tile so it reflects only kernel-build
  * activity even when other workflows (e.g. manager builds) are running.
  */
+fun WorkflowRun.isFailedFlashRun(): Boolean =
+    status == "completed" && conclusion == "failure"
+
 fun WorkflowRun.isKernelBuild(): Boolean {
     val workflowName = name.orEmpty().lowercase()
     val lower = "${name.orEmpty()} ${displayTitle.orEmpty()}".lowercase()

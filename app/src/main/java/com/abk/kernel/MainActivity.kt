@@ -474,8 +474,9 @@ private fun AbkMainScaffold(
                 .onSizeChanged { bottomBarHeightPx = it.height }
                 .zIndex(if (childPageVisible) 0f else 2f)
                 .graphicsLayer {
-                    alpha = navProgress
-                    translationY = (1f - navProgress) * bottomBarHeightPx
+                    val hidden = 1f - navProgress
+                    translationY = hidden * bottomBarHeightPx
+                    alpha = 1f - (hidden * 0.15f)
                 }
         ) {
             NavigationBar(

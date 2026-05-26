@@ -2,6 +2,8 @@
 
 package com.abk.kernel.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -74,8 +76,11 @@ import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -117,6 +122,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -151,7 +166,10 @@ import com.abk.kernel.data.model.KernelSupport
 import com.abk.kernel.data.model.PREBUILT_GKI_RUN_ID
 import com.abk.kernel.data.model.PrebuiltGkiAsset
 import com.abk.kernel.data.model.PrebuiltGkiRelease
+import com.abk.kernel.data.model.WorkflowJob
 import com.abk.kernel.data.model.WorkflowRun
+import com.abk.kernel.data.model.WorkflowStep
+import com.abk.kernel.data.model.isFailedFlashRun
 import com.abk.kernel.utils.FlashFilter
 import com.abk.kernel.utils.FlashFilterKernelKind
 import com.abk.kernel.utils.FlashFilterManagerKind
@@ -229,31 +247,30 @@ fun FlashScreen(
     val workflowGroups = remember(remoteArtifacts, workflowDownloadedArtifacts, unlinkedWorkflowTitle, recentRunById) {
         buildWorkflowGroups(remoteArtifacts, workflowDownloadedArtifacts, unlinkedWorkflowTitle, recentRunById)
     }
-    val allWorkflowGroups = remember(workflowGroups, state.recentRuns, recentRunById) {
+    val allWorkflowGroups = remember(workflowGroups, state.recentRuns, state.dismissedFailedRunIds, recentRunById) {
         val activeRunIds = state.recentRuns.filter { it.isActiveFlashRun() }.map { it.id }.toSet()
         val extraGroups = activeRunIds
             .filter { id -> workflowGroups.none { it.runId == id } }
             .mapNotNull { id ->
                 val run = recentRunById[id] ?: return@mapNotNull null
-                WorkflowArtifactGroup(
-                    runId = run.id,
-                    runTitle = run.displayTitle?.ifBlank { null } ?: run.name.orEmpty(),
-                    runNumber = run.runNumber,
-                    runCreatedAt = run.createdAt,
-                    runUpdatedAt = run.updatedAt,
-                    remote = emptyList(),
-                    local = emptyList(),
-                    categories = emptySet(),
-                    cachedHasRemoteManagerArtifact = false,
-                    cachedHasManagerArtifact = false,
-                    cachedHasKernelArtifact = false,
-                    cachedHasRemoteKernelArtifact = false,
-                    cachedHasSusfsModuleArtifact = false
-                )
+                emptyWorkflowGroupFor(run, unlinkedWorkflowTitle)
             }
-        (workflowGroups + extraGroups)
+        val failedRunIds = state.recentRuns
+            .filter { it.isFailedFlashRun() && it.id !in state.dismissedFailedRunIds }
+            .map { it.id }
+            .toSet()
+        val extraFailedGroups = failedRunIds
+            .filter { id -> workflowGroups.none { it.runId == id } && id !in activeRunIds }
+            .mapNotNull { id ->
+                val run = recentRunById[id] ?: return@mapNotNull null
+                emptyWorkflowGroupFor(run, unlinkedWorkflowTitle)
+            }
+        (workflowGroups + extraGroups + extraFailedGroups)
             .filter { group ->
                 val run = recentRunById[group.runId]
+                if (run?.isFailedFlashRun() == true && group.runId in state.dismissedFailedRunIds) {
+                    return@filter false
+                }
                 val isActive = run?.isActiveFlashRun() == true
                 isActive || group.shouldAppearInWorkflowList(run)
             }
@@ -833,6 +850,7 @@ fun FlashScreen(
                                         hasKernelArtifact = group.hasKernelArtifact(),
                                         hasManagerArtifact = group.hasManagerArtifact()
                                     ) == WorkflowPrimary.Manager
+                                    val failedGhost = run?.isFailedFlashRun() == true
                                     WorkflowRunCard(
                                         group = group,
                                         summary = state.buildParameterSummaries[group.runId],
@@ -840,6 +858,7 @@ fun FlashScreen(
                                         dispatchedKernelVariant = dispatchedConfig?.kernelsuVariant,
                                         dispatchedSusfsEnabled = dispatchedConfig?.let { !it.cancelSusfs },
                                         active = active,
+                                        failedGhost = failedGhost,
                                         cancelling = group.runId in state.cancellingWorkflowRunIds,
                                         onClick = {
                                             selectedRunId = group.runId
@@ -849,8 +868,12 @@ fun FlashScreen(
                                         },
                                         onShowParameters = { parameterTarget = group },
                                         onDelete = {
-                                            deleteWorkflowTarget = group
-                                            deleteRemoteWorkflowRun = false
+                                            if (failedGhost) {
+                                                vm.dismissFailedWorkflow(group.runId)
+                                            } else {
+                                                deleteWorkflowTarget = group
+                                                deleteRemoteWorkflowRun = false
+                                            }
                                         },
                                         onCancel = { vm.cancelWorkflowRun(group.runId) }
                                     )
@@ -1010,6 +1033,7 @@ fun FlashScreen(
                     selectedRunId = routeRunId
                     selectedPrebuiltReleaseId = null
                 }
+                val failedRun = recentRunById[routeRunId]?.takeIf { it.isFailedFlashRun() }
                 val activeRun = recentRunById[routeRunId]?.takeIf { it.isActiveFlashRun() }
                 val isCancellingThis = routeRunId in state.cancellingWorkflowRunIds
                 // Single FlashDetailBackSurface with a Crossfade inside — so
@@ -1034,6 +1058,23 @@ fun FlashScreen(
                     onBack = ::returnToWorkflowList,
                     backgroundContent = { FlashListContent() }
                 ) { dismiss ->
+                    if (failedRun != null) {
+                        LaunchedEffect(routeRunId) {
+                            vm.loadWorkflowJobs(routeRunId)
+                            vm.loadFailedRunLogExcerpt(routeRunId)
+                        }
+                        FailedWorkflowDetail(
+                            run = failedRun,
+                            jobs = state.workflowJobsByRunId[routeRunId],
+                            jobsLoading = routeRunId in state.workflowJobsLoading,
+                            jobsError = state.workflowJobsErrors[routeRunId],
+                            logExcerpt = state.failedRunLogExcerpts[routeRunId],
+                            logLoading = routeRunId in state.failedRunLogLoading,
+                            onBack = dismiss,
+                            onOpenGitHub = { openGithubRun(context, failedRun.htmlUrl) },
+                            onRetryJobs = { vm.loadWorkflowJobs(routeRunId, force = true) },
+                        )
+                    } else {
                     Crossfade(targetState = showBuilding, label = "flash-detail-build-state") { isBuilding ->
                         if (isBuilding && buildingRun != null) {
                             BuildingWorkflowDetail(
@@ -1155,7 +1196,8 @@ fun FlashScreen(
                             }
                         }
                     }
-                        }
+                    }
+                }
                     }
                 }
             }
@@ -2173,6 +2215,7 @@ private fun WorkflowRunCard(
     dispatchedKernelVariant: String?,
     dispatchedSusfsEnabled: Boolean?,
     active: Boolean,
+    failedGhost: Boolean,
     cancelling: Boolean,
     onClick: () -> Unit,
     onShowParameters: () -> Unit,
@@ -2201,13 +2244,21 @@ private fun WorkflowRunCard(
         false
     }
     val dateLabel = group.runCreatedAt.take(10)
+    val colorScheme = MaterialTheme.colorScheme
+    val cardContainer = when {
+        failedGhost -> uiSurfaceColor(lerp(colorScheme.surfaceContainer, colorScheme.errorContainer, 0.48f))
+        else -> uiSurfaceColor(colorScheme.surfaceContainer)
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer)
-        )
+        colors = CardDefaults.cardColors(containerColor = cardContainer),
+        border = if (failedGhost) {
+            BorderStroke(1.dp, colorScheme.error.copy(alpha = 0.28f))
+        } else {
+            null
+        },
     ) {
         Column(
             modifier = Modifier
@@ -2221,11 +2272,18 @@ private fun WorkflowRunCard(
                     LoadingIndicator(
                         modifier = Modifier.size(22.dp)
                     )
+                } else if (failedGhost) {
+                    Icon(
+                        Icons.Default.Error,
+                        null,
+                        tint = colorScheme.error,
+                        modifier = Modifier.size(22.dp)
+                    )
                 } else {
                     Icon(
                         Icons.Default.FolderSpecial,
                         null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = colorScheme.primary,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -2254,7 +2312,7 @@ private fun WorkflowRunCard(
                 // exist while the build is still running — hide the button until
                 // the run has actually finished so users don't tap into an
                 // empty/loading dialog.
-                if (!active) {
+                if (!active && !failedGhost) {
                     IconButton(onClick = onShowParameters) {
                         Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.flash_parameter_details))
                     }
@@ -2280,7 +2338,15 @@ private fun WorkflowRunCard(
                     }
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.flash_delete_workflow))
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = if (failedGhost) {
+                            stringResource(R.string.flash_dismiss_failed)
+                        } else {
+                            stringResource(R.string.flash_delete_workflow)
+                        },
+                        tint = if (failedGhost) Color.White else colorScheme.onSurfaceVariant
+                    )
                 }
             }
             Row(
@@ -2289,6 +2355,12 @@ private fun WorkflowRunCard(
             ) {
                 // Kernel kind chip only renders once we know the variant —
                 // otherwise it would always say "None" for in-progress builds.
+                if (failedGhost) {
+                    ExpressiveStatusChip(
+                        label = stringResource(R.string.flash_build_failed_chip),
+                        color = colorScheme.error
+                    )
+                }
                 if (kernelKind != null) {
                     ExpressiveStatusChip(
                         label = stringResource(kernelKind.shortLabelRes()),
@@ -2301,10 +2373,265 @@ private fun WorkflowRunCard(
                 if (susfsOn) {
                     ExpressiveStatusChip(label = stringResource(R.string.flash_chip_susfs), color = MaterialTheme.colorScheme.primary)
                 }
-                ExpressiveStatusChip(label = stringResource(R.string.flash_source_artifacts_count, sourceCount), color = MaterialTheme.colorScheme.primary)
-                ExpressiveStatusChip(label = stringResource(R.string.flash_downloaded_count, downloadedCount), color = MaterialTheme.colorScheme.secondary)
-                categories.forEach {
-                    ExpressiveStatusChip(label = stringResource(it.labelRes()), color = MaterialTheme.colorScheme.surfaceTint)
+                if (!failedGhost) {
+                    ExpressiveStatusChip(label = stringResource(R.string.flash_source_artifacts_count, sourceCount), color = MaterialTheme.colorScheme.primary)
+                    ExpressiveStatusChip(label = stringResource(R.string.flash_downloaded_count, downloadedCount), color = MaterialTheme.colorScheme.secondary)
+                    categories.forEach {
+                        ExpressiveStatusChip(label = stringResource(it.labelRes()), color = MaterialTheme.colorScheme.surfaceTint)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun openGithubRun(context: Context, url: String) {
+    if (url.isBlank()) return
+    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+}
+
+private fun flattenFailedWorkflowSteps(jobs: List<WorkflowJob>): List<WorkflowStep> =
+    jobs.flatMap { job ->
+        val jobSteps = job.steps.orEmpty()
+        if (jobSteps.isEmpty()) {
+            listOf(
+                WorkflowStep(
+                    name = job.name,
+                    status = job.status,
+                    conclusion = job.conclusion,
+                    number = 0,
+                )
+            )
+        } else {
+            jobSteps
+        }
+    }
+
+@Composable
+private fun FailedWorkflowDetail(
+    run: WorkflowRun,
+    jobs: List<WorkflowJob>?,
+    jobsLoading: Boolean,
+    jobsError: String?,
+    logExcerpt: String?,
+    logLoading: Boolean,
+    onBack: () -> Unit,
+    onOpenGitHub: () -> Unit,
+    onRetryJobs: () -> Unit,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val steps = remember(jobs) { jobs?.let(::flattenFailedWorkflowSteps).orEmpty() }
+    val failureIndex = remember(steps) { steps.indexOfFirst { it.conclusion == "failure" } }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = AbkScreenHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 32.dp)
+    ) {
+        item {
+            ExpressiveSectionCard(
+                title = stringResource(
+                    R.string.flash_workflow_label,
+                    if (run.runNumber > 0) "#${run.runNumber}" else "#${run.id}"
+                ),
+                subtitle = run.displayTitle ?: run.name.orEmpty(),
+                icon = Icons.Default.Error
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = stringResource(R.string.flash_back)
+                        )
+                    }
+                    AssistChip(
+                        onClick = {},
+                        enabled = false,
+                        label = { Text(stringResource(R.string.flash_conclusion_failure)) },
+                        colors = AssistChipDefaults.assistChipColors(
+                            disabledContainerColor = colorScheme.errorContainer,
+                            disabledLabelColor = colorScheme.onErrorContainer,
+                        ),
+                        border = AssistChipDefaults.assistChipBorder(
+                            enabled = false,
+                            borderColor = colorScheme.error.copy(alpha = 0.35f),
+                        ),
+                    )
+                    Text(
+                        text = stringResource(R.string.flash_failed_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+
+        item {
+            ExpressiveSectionCard(
+                title = stringResource(R.string.flash_failed_step_list_title),
+                icon = Icons.Default.RunCircle
+            ) {
+                when {
+                    jobsLoading -> LoadingRow(stringResource(R.string.flash_loading_steps))
+                    jobsError != null -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = stringResource(R.string.flash_steps_load_error),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colorScheme.error,
+                            )
+                            TextButton(onClick = onRetryJobs) {
+                                Text(stringResource(R.string.retry))
+                            }
+                        }
+                    }
+                    steps.isEmpty() -> {
+                        Text(
+                            text = stringResource(R.string.flash_failed_subtitle),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    else -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            steps.forEachIndexed { index, step ->
+                                FailedWorkflowStepRow(
+                                    step = step,
+                                    failed = index == failureIndex,
+                                    muted = failureIndex >= 0 && index > failureIndex,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            ExpressiveSectionCard(
+                title = stringResource(R.string.flash_log_excerpt),
+                icon = Icons.Default.Terminal
+            ) {
+                when {
+                    logLoading -> LoadingRow(stringResource(R.string.flash_loading_steps))
+                    else -> {
+                        val excerpt = logExcerpt?.takeIf { it.isNotBlank() }
+                            ?: "Process completed with exit code 1"
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = uiSurfaceColor(colorScheme.surfaceContainerHighest),
+                        ) {
+                            Text(
+                                text = excerpt,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 140.dp)
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(12.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            FilledTonalButton(
+                onClick = onOpenGitHub,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(28.dp),
+            ) {
+                Icon(Icons.Default.RunCircle, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.flash_open_github_actions))
+            }
+        }
+    }
+}
+
+@Composable
+private fun FailedWorkflowStepRow(
+    step: WorkflowStep,
+    failed: Boolean,
+    muted: Boolean,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val alpha = if (muted) 0.45f else 1f
+    val rowBackground = when {
+        failed -> uiSurfaceColor(lerp(colorScheme.surfaceContainer, colorScheme.errorContainer, 0.55f))
+        else -> uiSurfaceColor(colorScheme.surfaceContainerHighest)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { this.alpha = alpha }
+            .background(
+                color = rowBackground,
+                shape = RoundedCornerShape(10.dp),
+            )
+            .then(
+                if (failed) {
+                    Modifier.padding(start = 0.dp)
+                } else {
+                    Modifier
+                }
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (failed) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(36.dp)
+                    .background(colorScheme.error, RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
+            )
+        }
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = when {
+                    failed -> Icons.Default.Cancel
+                    step.conclusion == "success" || step.status == "completed" -> Icons.Default.CheckCircle
+                    else -> Icons.Default.Schedule
+                },
+                contentDescription = null,
+                tint = when {
+                    failed -> colorScheme.error
+                    step.conclusion == "success" || step.status == "completed" -> colorScheme.onSurfaceVariant
+                    else -> colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                },
+                modifier = Modifier.size(16.dp),
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = step.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = if (failed) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (failed) colorScheme.onErrorContainer else colorScheme.onSurface,
+                )
+                if (failed && !step.conclusion.isNullOrBlank()) {
+                    Text(
+                        text = step.conclusion.orEmpty(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colorScheme.error,
+                    )
                 }
             }
         }
@@ -2454,11 +2781,34 @@ private fun BuildDurationChip(
         "%02d:%02d".format(m, s)
     }
     val chipAccent = MaterialTheme.colorScheme.primary
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = uiSurfaceColor(chipAccent.copy(alpha = 0.14f)),
-        contentColor = chipAccent
-    ) {
+    val chipShape = RoundedCornerShape(50)
+    val liveTransition = if (live) rememberInfiniteTransition(label = "chip-shimmer") else null
+    val rotation by if (liveTransition != null) {
+        liveTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 180f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "sand-rotate",
+        )
+    } else {
+        remember { mutableFloatStateOf(0f) }
+    }
+    val shift by if (liveTransition != null) {
+        liveTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2000, easing = LinearEasing),
+            ),
+            label = "shift",
+        )
+    } else {
+        remember { mutableFloatStateOf(0f) }
+    }
+    val chipContent: @Composable () -> Unit = {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -2467,7 +2817,15 @@ private fun BuildDurationChip(
             Icon(
                 Icons.Default.Schedule,
                 contentDescription = null,
-                modifier = Modifier.size(14.dp),
+                modifier = Modifier
+                    .size(14.dp)
+                    .then(
+                        if (live) {
+                            Modifier.graphicsLayer { rotationZ = rotation }
+                        } else {
+                            Modifier
+                        }
+                    ),
                 tint = chipAccent
             )
             Text(
@@ -2475,6 +2833,31 @@ private fun BuildDurationChip(
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold
             )
+        }
+    }
+    if (live) {
+        val base = chipAccent.copy(alpha = 0.14f)
+        val brush = Brush.linearGradient(
+            colors = listOf(base, chipAccent.copy(alpha = 0.28f), base),
+            start = Offset(x = shift * 200f - 100f, y = 0f),
+            end = Offset(x = shift * 200f + 100f, y = 0f),
+        )
+        Surface(
+            shape = chipShape,
+            color = Color.Transparent,
+            contentColor = chipAccent,
+        ) {
+            Box(Modifier.background(brush)) {
+                chipContent()
+            }
+        }
+    } else {
+        Surface(
+            shape = chipShape,
+            color = uiSurfaceColor(chipAccent.copy(alpha = 0.14f)),
+            contentColor = chipAccent,
+        ) {
+            chipContent()
         }
     }
 }
@@ -2951,6 +3334,30 @@ private fun FlashTerminalDialog(
     )
 }
 
+private fun emptyWorkflowGroupFor(
+    run: WorkflowRun,
+    unlinkedWorkflowTitle: String,
+): WorkflowArtifactGroup {
+    val runTitle = run.displayTitle?.ifBlank { null }
+        ?: run.name?.ifBlank { null }
+        ?: unlinkedWorkflowTitle
+    return WorkflowArtifactGroup(
+        runId = run.id,
+        runTitle = runTitle,
+        runNumber = run.runNumber,
+        runCreatedAt = run.createdAt,
+        runUpdatedAt = run.updatedAt,
+        remote = emptyList(),
+        local = emptyList(),
+        categories = emptySet(),
+        cachedHasRemoteManagerArtifact = false,
+        cachedHasManagerArtifact = false,
+        cachedHasKernelArtifact = false,
+        cachedHasRemoteKernelArtifact = false,
+        cachedHasSusfsModuleArtifact = false,
+    )
+}
+
 private fun buildWorkflowGroups(
     remoteArtifacts: List<BuildArtifact>,
     downloadedArtifacts: List<DownloadedArtifact>,
@@ -3319,7 +3726,7 @@ private fun WorkflowArtifactGroup.shouldAppearInWorkflowList(run: WorkflowRun?):
             hasManagerArtifact = hasManagerArtifact()
         )
     ) {
-        WorkflowPrimary.Kernel -> hasRemoteKernelArtifact()
+        WorkflowPrimary.Kernel -> hasRemoteKernelArtifact() || run?.isFailedFlashRun() == true
         else -> true
     }
 

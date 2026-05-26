@@ -324,6 +324,15 @@
     <string name="flash_refresh_artifacts">Refresh build artifacts online</string>
     <string name="flash_filter_title">Filter</string>
     <string name="flash_chip_building">Building</string>
+    <string name="flash_build_failed_chip">Build failed</string>
+    <string name="flash_dismiss_failed">Remove from list</string>
+    <string name="flash_open_github_actions">Open GitHub Actions</string>
+    <string name="flash_failed_step_list_title">Build steps</string>
+    <string name="flash_log_excerpt">Log excerpt</string>
+    <string name="flash_failed_subtitle">The workflow finished with an error on GitHub.</string>
+    <string name="flash_loading_steps">Loading build steps…</string>
+    <string name="flash_steps_load_error">Could not load build steps</string>
+    <string name="flash_conclusion_failure">failure</string>
     <string name="flash_chip_kernel_kind">Kernel: %1$s</string>
     <string name="flash_chip_susfs">SUSFS</string>
     <string name="flash_chip_kernel_unknown">?</string>

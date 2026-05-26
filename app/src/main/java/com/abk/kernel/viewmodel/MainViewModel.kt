@@ -119,6 +119,12 @@ data class MainUiState(
     val buildParameterSummaries: Map<Long, BuildParameterSummary> = emptyMap(),
     val loadingBuildParameterRunIds: Set<Long> = emptySet(),
     val buildParameterErrors: Map<Long, String> = emptyMap(),
+    val dismissedFailedRunIds: Set<Long> = emptySet(),
+    val workflowJobsByRunId: Map<Long, List<com.abk.kernel.data.model.WorkflowJob>> = emptyMap(),
+    val workflowJobsLoading: Set<Long> = emptySet(),
+    val workflowJobsErrors: Map<Long, String> = emptyMap(),
+    val failedRunLogExcerpts: Map<Long, String> = emptyMap(),
+    val failedRunLogLoading: Set<Long> = emptySet(),
     // Download
     val downloadedArtifacts: List<DownloadedArtifact> = emptyList(),
     val artifacts: List<BuildArtifact> = emptyList(),
@@ -2256,6 +2262,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (it.deletingWorkflowRunId == runId) it.copy(deletingWorkflowRunId = null) else it
                 }
             }
+        }
+    }
+
+    fun dismissFailedWorkflow(runId: Long) {
+        if (runId <= 0L) return
+        _uiState.update { state ->
+            state.copy(dismissedFailedRunIds = state.dismissedFailedRunIds + runId)
+        }
+    }
+
+    fun loadWorkflowJobs(runId: Long, force: Boolean = false) {
+        if (runId <= 0L) return
+        val current = _uiState.value
+        if (!force && current.workflowJobsByRunId.containsKey(runId)) return
+        if (runId in current.workflowJobsLoading) return
+        val username = current.user?.login ?: return
+        val repoName = current.forkRepo?.name ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update {
+                it.copy(
+                    workflowJobsLoading = it.workflowJobsLoading + runId,
+                    workflowJobsErrors = it.workflowJobsErrors - runId,
+                )
+            }
+            when (val result = github.listRunJobs(username, repoName, runId)) {
+                is Result.Success -> {
+                    _uiState.update {
+                        it.copy(workflowJobsByRunId = it.workflowJobsByRunId + (runId to result.data))
+                    }
+                }
+                is Result.Error -> {
+                    _uiState.update {
+                        it.copy(workflowJobsErrors = it.workflowJobsErrors + (runId to result.message))
+                    }
+                }
+                Result.Loading -> Unit
+            }
+            _uiState.update { it.copy(workflowJobsLoading = it.workflowJobsLoading - runId) }
+        }
+    }
+
+    fun loadFailedRunLogExcerpt(runId: Long, force: Boolean = false) {
+        if (runId <= 0L) return
+        val current = _uiState.value
+        if (!force && current.failedRunLogExcerpts.containsKey(runId)) return
+        if (runId in current.failedRunLogLoading) return
+        val username = current.user?.login ?: return
+        val repoName = current.forkRepo?.name ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(failedRunLogLoading = it.failedRunLogLoading + runId) }
+            val excerpt = when (val result = github.downloadRunLogs(username, repoName, runId)) {
+                is Result.Success -> {
+                    result.data.lines().takeLast(8).joinToString("\n").take(600)
+                }
+                is Result.Error -> ""
+                Result.Loading -> ""
+            }
+            if (excerpt.isNotBlank()) {
+                _uiState.update {
+                    it.copy(failedRunLogExcerpts = it.failedRunLogExcerpts + (runId to excerpt))
+                }
+            }
+            _uiState.update { it.copy(failedRunLogLoading = it.failedRunLogLoading - runId) }
         }
     }
 

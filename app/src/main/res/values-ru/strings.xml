@@ -306,6 +306,15 @@
     <string name="flash_refresh_artifacts">Обновить артефакты сборки</string>
     <string name="flash_filter_title">Фильтр</string>
     <string name="flash_chip_building">Сборка идёт</string>
+    <string name="flash_build_failed_chip">Ошибка сборки</string>
+    <string name="flash_dismiss_failed">Убрать из списка</string>
+    <string name="flash_open_github_actions">Открыть GitHub Actions</string>
+    <string name="flash_failed_step_list_title">Шаги сборки</string>
+    <string name="flash_log_excerpt">Фрагмент лога</string>
+    <string name="flash_failed_subtitle">Workflow завершился с ошибкой на GitHub.</string>
+    <string name="flash_loading_steps">Загрузка шагов сборки…</string>
+    <string name="flash_steps_load_error">Не удалось загрузить шаги сборки</string>
+    <string name="flash_conclusion_failure">failure</string>
     <string name="flash_chip_kernel_kind">Ядро: %1$s</string>
     <string name="flash_chip_susfs">SUSFS</string>
     <string name="flash_chip_kernel_unknown">?</string>
