@@ -1253,6 +1253,7 @@ fun FlashScreen(
                     }
                     }
                 }
+                }
             }
             composable(
                 route = FLASH_ROUTE_PREBUILT,
