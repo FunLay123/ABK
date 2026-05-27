@@ -10,11 +10,12 @@ import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -46,6 +47,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -97,9 +99,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -109,7 +111,6 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -141,10 +142,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import com.abk.kernel.ui.components.BuildDurationClockIcon
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -152,6 +154,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -187,7 +190,11 @@ import com.abk.kernel.utils.WorkflowPrimary
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.CHILD_PAGE_NAV_EXIT_DELAY_MS
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
+import com.abk.kernel.ui.components.childPageOverlayEnterTransition
+import com.abk.kernel.ui.components.childPageOverlayExitTransition
+import com.abk.kernel.ui.components.childPageScrimExitTransition
 import com.abk.kernel.ui.components.rememberChildPageBackController
+import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -251,6 +258,17 @@ fun FlashScreen(
         }
     }
     var ghostFailedSheetRunId by remember { mutableStateOf<Long?>(null) }
+    val ghostFailedVisible = ghostFailedSheetRunId != null
+    val ghostFailedPageTransition = rememberChildPageOverlayTransition(
+        visible = ghostFailedVisible,
+        label = "flash-failed-workflow",
+    )
+    val closeGhostFailedWorkflow: () -> Unit = { ghostFailedSheetRunId = null }
+    val ghostFailedPageBack = rememberChildPageBackController(
+        enabled = ghostFailedVisible,
+        predictiveBackEnabled = state.predictiveBackEnabled,
+        onBack = closeGhostFailedWorkflow,
+    )
     val flashListScrollState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val unlinkedWorkflowTitle = stringResource(R.string.workflow_unlinked)
     val recentRunById = remember(state.recentRuns, state.sessionGhostFailedRuns) {
@@ -425,8 +443,18 @@ fun FlashScreen(
 
     ObserveChildPageVisibility(
         visible = flashDetailRouteActive,
-        onVisibleChange = onDetailPageVisibleChange,
+        onVisibleChange = { detailVisible ->
+            onDetailPageVisibleChange(detailVisible || ghostFailedPageTransition.currentState)
+        },
         exitDelayMs = CHILD_PAGE_NAV_EXIT_DELAY_MS
+    )
+
+    ObserveChildPageVisibility(
+        transition = ghostFailedPageTransition,
+        onVisibleChange = { failedVisible ->
+            onDetailPageVisibleChange(flashDetailRouteActive || failedVisible)
+        },
+        onAfterExitAnimation = { ghostFailedPageBack.resetProgress() },
     )
 
     LaunchedEffect(flashDetailRouteActive) {
@@ -772,35 +800,8 @@ fun FlashScreen(
         )
     }
 
-    ghostFailedSheetRunId?.let { sheetRunId ->
-        val ghostRun = state.sessionGhostFailedRuns[sheetRunId] ?: recentRunById[sheetRunId]
-        if (ghostRun != null) {
-            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            LaunchedEffect(sheetRunId) {
-                vm.loadWorkflowJobs(sheetRunId)
-                vm.loadFailedRunLogExcerpt(sheetRunId)
-            }
-            ModalBottomSheet(
-                onDismissRequest = { ghostFailedSheetRunId = null },
-                sheetState = sheetState,
-            ) {
-                Box(Modifier.heightIn(max = 640.dp)) {
-                    FailedWorkflowDetail(
-                    run = ghostRun,
-                    jobs = state.workflowJobsByRunId[sheetRunId],
-                    jobsLoading = sheetRunId in state.workflowJobsLoading,
-                    jobsError = state.workflowJobsErrors[sheetRunId],
-                    logExcerpt = state.failedRunLogExcerpts[sheetRunId],
-                    logLoading = sheetRunId in state.failedRunLogLoading,
-                    onBack = { ghostFailedSheetRunId = null },
-                    onOpenGitHub = { openGithubRun(context, ghostRun.htmlUrl) },
-                    onRetryJobs = { vm.loadWorkflowJobs(sheetRunId, force = true) },
-                    )
-                }
-            }
-        } else {
-            ghostFailedSheetRunId = null
-        }
+    BackHandler(enabled = ghostFailedVisible) {
+        ghostFailedPageBack.requestDismiss()
     }
 
     @Composable
@@ -908,6 +909,7 @@ fun FlashScreen(
                                         cancelling = group.runId in state.cancellingWorkflowRunIds,
                                         onClick = {
                                             if (failedGhost) {
+                                                ghostFailedPageBack.resetProgress()
                                                 ghostFailedSheetRunId = group.runId
                                             } else {
                                                 selectedRunId = group.runId
@@ -1044,7 +1046,29 @@ fun FlashScreen(
         fadeOut(animationSpec = motionScheme.fastEffectsSpec())
     }
 
-    Box(Modifier.fillMaxSize()) {
+    val ghostFailedRunId = ghostFailedSheetRunId
+    val ghostFailedRun = ghostFailedRunId?.let { id ->
+        state.sessionGhostFailedRuns[id] ?: recentRunById[id]
+    }
+    LaunchedEffect(ghostFailedRunId, ghostFailedRun) {
+        if (ghostFailedRunId != null && ghostFailedRun == null) {
+            ghostFailedSheetRunId = null
+        }
+    }
+    LaunchedEffect(ghostFailedRunId) {
+        val runId = ghostFailedRunId ?: return@LaunchedEffect
+        vm.loadWorkflowJobs(runId)
+        vm.loadFailedRunLogExcerpt(runId)
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val childPageTopInset = outerPadding.calculateTopPadding()
+        val childPageBottomInset = outerPadding.calculateBottomPadding()
+        val childPageModifier = Modifier
+            .fillMaxWidth()
+            .height(maxHeight + childPageTopInset + childPageBottomInset)
+            .offset(y = -childPageTopInset)
+
         NavHost(
             navController = navController,
             startDestination = FLASH_ROUTE_LIST,
@@ -1098,6 +1122,15 @@ fun FlashScreen(
                     ?: if (keepBuildingForCancel) recentRunById[routeRunId] else null
                 val showBuilding = buildingRun != null &&
                     (activeRun != null || isCancellingThis)
+                LaunchedEffect(routeRunId, showBuilding) {
+                    if (!showBuilding) return@LaunchedEffect
+                    vm.refreshWorkflowArtifacts(routeRunId)
+                    while (true) {
+                        delay(20_000)
+                        if (recentRunById[routeRunId]?.isActiveFlashRun() != true) break
+                        vm.refreshWorkflowArtifacts(routeRunId)
+                    }
+                }
                 FlashDetailBackSurface(
                     predictiveBackEnabled = state.predictiveBackEnabled,
                     outerPadding = outerPadding,
@@ -1351,6 +1384,52 @@ fun FlashScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+
+        ghostFailedPageTransition.AnimatedVisibility(
+            visible = { it },
+            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()),
+            exit = childPageScrimExitTransition(state.predictiveBackEnabled, motionScheme),
+            modifier = childPageModifier,
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = ghostFailedPageBack.scrimAlpha))
+            )
+        }
+
+        ghostFailedPageTransition.AnimatedVisibility(
+            visible = { it },
+            enter = childPageOverlayEnterTransition(state.predictiveBackEnabled, motionScheme),
+            exit = childPageOverlayExitTransition(state.predictiveBackEnabled, motionScheme),
+            modifier = childPageModifier,
+        ) {
+            val run = ghostFailedRun
+            val runId = ghostFailedRunId
+            if (run != null && runId != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(ghostFailedPageBack.backTransformModifier())
+                ) {
+                    FlashDetailPageBackground(
+                        backgroundUri = state.customBackgroundUri,
+                        backgroundImageEnabled = state.backgroundImageEnabled,
+                    )
+                    FailedWorkflowDetail(
+                        run = run,
+                        jobs = state.workflowJobsByRunId[runId],
+                        jobsLoading = runId in state.workflowJobsLoading,
+                        jobsError = state.workflowJobsErrors[runId],
+                        logExcerpt = state.failedRunLogExcerpts[runId],
+                        logLoading = runId in state.failedRunLogLoading,
+                        onBack = ghostFailedPageBack::requestDismiss,
+                        onOpenGitHub = { openGithubRun(context, run.htmlUrl) },
+                        onRetryJobs = { vm.loadWorkflowJobs(runId, force = true) },
+                    )
                 }
             }
         }
@@ -2442,6 +2521,83 @@ private fun flattenFailedWorkflowSteps(jobs: List<WorkflowJob>): List<WorkflowSt
         }
     }
 
+private val BuildErrorLogMaxHeight = 525.dp
+
+private fun buildErrorLogNestedScrollConnection(scrollState: ScrollState): NestedScrollConnection =
+    object : NestedScrollConnection {
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+            if (source == NestedScrollSource.SideEffect) return Offset.Zero
+            val delta = available.y
+            if (delta == 0f) return Offset.Zero
+            val current = scrollState.value
+            val max = scrollState.maxValue
+            return when {
+                delta > 0f && current > 0 -> {
+                    val consumed = scrollState.dispatchRawDelta(-delta)
+                    Offset(0f, available.y - consumed)
+                }
+                delta > 0f && current == 0 -> Offset(0f, delta)
+                delta < 0f && current < max -> {
+                    val consumed = scrollState.dispatchRawDelta(-delta)
+                    Offset(0f, available.y - consumed)
+                }
+                else -> Offset.Zero
+            }
+        }
+
+        override fun onPostScroll(
+            consumed: Offset,
+            available: Offset,
+            source: NestedScrollSource,
+        ): Offset {
+            if (source == NestedScrollSource.SideEffect) return Offset.Zero
+            val delta = available.y
+            if (delta == 0f) return Offset.Zero
+            val current = scrollState.value
+            val max = scrollState.maxValue
+            return when {
+                delta > 0f && current > 0 -> {
+                    val consumedByChild = scrollState.dispatchRawDelta(-delta)
+                    Offset(0f, available.y - consumedByChild)
+                }
+                delta > 0f && current == 0 -> Offset(0f, delta)
+                delta < 0f && current < max -> {
+                    val consumedByChild = scrollState.dispatchRawDelta(-delta)
+                    Offset(0f, available.y - consumedByChild)
+                }
+                else -> Offset.Zero
+            }
+        }
+    }
+
+@Composable
+private fun BuildErrorLogPanel(text: String) {
+    val colorScheme = MaterialTheme.colorScheme
+    val logScrollState = rememberScrollState()
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = BuildErrorLogMaxHeight)
+            .nestedScroll(buildErrorLogNestedScrollConnection(logScrollState)),
+        shape = RoundedCornerShape(12.dp),
+        color = uiSurfaceColor(colorScheme.surfaceContainerHighest),
+    ) {
+        SelectionContainer {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = BuildErrorLogMaxHeight)
+                    .verticalScroll(logScrollState)
+                    .padding(12.dp),
+            )
+        }
+    }
+}
+
 @Composable
 private fun FailedWorkflowDetail(
     run: WorkflowRun,
@@ -2549,7 +2705,6 @@ private fun FailedWorkflowDetail(
         }
 
         item {
-            val errorContext = LocalContext.current
             ExpressiveSectionCard(
                 title = stringResource(R.string.flash_build_error),
                 icon = Icons.Default.Terminal
@@ -2559,54 +2714,7 @@ private fun FailedWorkflowDetail(
                     else -> {
                         val excerpt = logExcerpt?.takeIf { it.isNotBlank() }
                             ?: stringResource(R.string.flash_build_error_unavailable)
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
-                            ) {
-                                if (!logExcerpt.isNullOrBlank()) {
-                                    IconButton(
-                                        onClick = {
-                                            val clipboard = errorContext.getSystemService(
-                                                Context.CLIPBOARD_SERVICE
-                                            ) as ClipboardManager
-                                            clipboard.setPrimaryClip(
-                                                ClipData.newPlainText("build-error", excerpt)
-                                            )
-                                            Toast.makeText(
-                                                errorContext,
-                                                errorContext.getString(R.string.flash_copy_error_done),
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
-                                    ) {
-                                        Icon(
-                                            Icons.Default.ContentCopy,
-                                            contentDescription = stringResource(R.string.flash_copy_path),
-                                        )
-                                    }
-                                }
-                            }
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                color = uiSurfaceColor(colorScheme.surfaceContainerHighest),
-                            ) {
-                                SelectionContainer {
-                                    Text(
-                                        text = excerpt,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = colorScheme.onSurfaceVariant,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(max = 210.dp)
-                                            .verticalScroll(rememberScrollState())
-                                            .padding(12.dp),
-                                    )
-                                }
-                            }
-                        }
+                        BuildErrorLogPanel(text = excerpt)
                     }
                 }
             }
@@ -2976,9 +3084,12 @@ private fun BuildDurationChip(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             if (live) {
-                BuildDurationClockIcon(
-                    rotationDegrees = rotation,
-                    tint = chipAccent,
+                CircularProgressIndicator(
+                    progress = { rotation / 360f },
+                    modifier = Modifier.size(12.dp),
+                    color = chipAccent,
+                    trackColor = chipAccent.copy(alpha = 0.22f),
+                    strokeWidth = 2.dp,
                 )
             } else {
                 Icon(

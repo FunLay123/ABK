@@ -11,7 +11,7 @@ object FailureLogExtractor {
         "build failed",
     )
 
-    fun extract(raw: String, maxChars: Int = 900): String {
+    fun extract(raw: String, maxChars: Int = 2_250): String {
         if (raw.isBlank()) return ""
         val lines = raw.lines()
         val hitIndexes = lines.indices.filter { index ->

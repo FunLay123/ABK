@@ -210,6 +210,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var foregroundWorkflowRefreshIntervalSec =
         PreferencesRepository.DEFAULT_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC
     private var appInForeground = false
+    private val lastArtifactRefreshAt = mutableMapOf<Long, Long>()
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -268,6 +269,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 syncBuildQueueWithRun(run, bs)
+                if (bs == BuildStatus.IN_PROGRESS) {
+                    maybeLoadArtifactsWhileRunning(run.id)
+                }
                 if (bs == BuildStatus.SUCCESS) {
                     loadArtifacts(run.id, autoDownload = true)
                 }
@@ -1688,8 +1692,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         if (!lightweight) {
                             autoMonitorRunningCustomBuild(username, repoName, r.data)
-                            refreshArtifactsForRuns(username, repoName, r.data)
                         }
+                        refreshArtifactsForRuns(
+                            username,
+                            repoName,
+                            r.data,
+                            includeCompleted = !lightweight,
+                        )
                     }
                     else -> {}
                 }
@@ -2011,6 +2020,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "${text(R.string.vm_workflow_cancel_confirm_timeout)} ($pollError)"
         } ?: text(R.string.vm_workflow_cancel_confirm_timeout)
         showSnackbar(message = timeoutMessage, longDuration = true)
+    }
+
+    fun refreshWorkflowArtifacts(runId: Long) {
+        loadArtifacts(runId, autoDownload = false)
+    }
+
+    private fun maybeLoadArtifactsWhileRunning(runId: Long) {
+        if (runId <= 0L) return
+        val now = System.currentTimeMillis()
+        val last = lastArtifactRefreshAt[runId] ?: 0L
+        if (now - last < ACTIVE_RUN_ARTIFACT_REFRESH_MS) return
+        lastArtifactRefreshAt[runId] = now
+        loadArtifacts(runId, autoDownload = false)
     }
 
     fun loadArtifacts(runId: Long, autoDownload: Boolean = false) {
@@ -2671,16 +2693,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun refreshArtifactsForRuns(
         owner: String,
         repoName: String,
-        runs: List<WorkflowRun>
+        runs: List<WorkflowRun>,
+        includeCompleted: Boolean = true,
     ) {
-        val completedRuns = runs
-            .filter { it.status == "completed" }
+        val activeStatuses = setOf("queued", "waiting", "requested", "pending", "in_progress")
+        val runsToRefresh = runs
+            .filter { run ->
+                run.status in activeStatuses || (includeCompleted && run.status == "completed")
+            }
             .take(MAX_REMOTE_ARTIFACT_RUNS)
-        if (completedRuns.isEmpty()) return
+        if (runsToRefresh.isEmpty()) return
 
         val existingArtifacts = _uiState.value.artifacts
         val (merged, pendingRunId) = withContext(Dispatchers.IO) {
-            val collected = completedRuns.flatMap { run ->
+            val collected = runsToRefresh.flatMap { run ->
                 when (val artifacts = github.listArtifacts(owner, repoName, run.id)) {
                     is Result.Success -> artifacts.data.map { it.withRun(run) }
                     else -> emptyList()
@@ -2692,7 +2718,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         _uiState.update { it.copy(artifacts = merged) }
 
-        if (pendingRunId > 0L && completedRuns.any { it.id == pendingRunId }) {
+        if (pendingRunId > 0L && runsToRefresh.any { it.id == pendingRunId }) {
             maybeAutoDownloadRun(
                 pendingRunId,
                 merged.filter { it.runId == pendingRunId },
@@ -5313,6 +5339,7 @@ private fun workflowActionsUrl(owner: String, repoName: String, workflowFile: St
     "https://github.com/$owner/$repoName/actions/workflows/$workflowFile"
 private const val MIRROR_WORKFLOW_MAX_POLLS = 40
 private const val MIRROR_RELEASE_ASSET_MAX_POLLS = 6
+private const val ACTIVE_RUN_ARTIFACT_REFRESH_MS = 20_000L
 private const val CANCEL_COMPLETION_POLL_INITIAL_DELAY_MS = 2_000L
 private const val CANCEL_COMPLETION_POLL_INTERVAL_MS = 5_000L
 private const val CANCEL_COMPLETION_POLL_MAX_ATTEMPTS = 24
