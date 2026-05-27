@@ -99,7 +99,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -155,6 +154,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -193,8 +193,10 @@ import com.abk.kernel.ui.components.ObserveChildPageVisibility
 import com.abk.kernel.ui.components.childPageOverlayEnterTransition
 import com.abk.kernel.ui.components.childPageOverlayExitTransition
 import com.abk.kernel.ui.components.childPageScrimExitTransition
+import com.abk.kernel.ui.components.LiveDurationScheduleIcon
 import com.abk.kernel.ui.components.rememberChildPageBackController
 import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
+import com.abk.kernel.utils.FailureLogExtractor
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -2523,49 +2525,36 @@ private fun flattenFailedWorkflowSteps(jobs: List<WorkflowJob>): List<WorkflowSt
 
 private val BuildErrorLogMaxHeight = 525.dp
 
-private fun buildErrorLogNestedScrollConnection(scrollState: ScrollState): NestedScrollConnection =
-    object : NestedScrollConnection {
-        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-            if (source == NestedScrollSource.SideEffect) return Offset.Zero
-            val delta = available.y
-            if (delta == 0f) return Offset.Zero
-            val current = scrollState.value
-            val max = scrollState.maxValue
-            return when {
-                delta > 0f && current > 0 -> {
-                    val consumed = scrollState.dispatchRawDelta(-delta)
-                    Offset(0f, available.y - consumed)
+@Composable
+private fun rememberBuildErrorLogEdgeLock(scrollState: ScrollState): NestedScrollConnection =
+    remember(scrollState) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
+                val atTop = scrollState.value == 0
+                val atBottom = scrollState.value >= scrollState.maxValue
+                return when {
+                    atTop && available.y > 0f -> Offset(0f, available.y)
+                    atBottom && available.y < 0f -> Offset(0f, available.y)
+                    else -> Offset.Zero
                 }
-                delta > 0f && current == 0 -> Offset(0f, delta)
-                delta < 0f && current < max -> {
-                    val consumed = scrollState.dispatchRawDelta(-delta)
-                    Offset(0f, available.y - consumed)
-                }
-                else -> Offset.Zero
             }
-        }
 
-        override fun onPostScroll(
-            consumed: Offset,
-            available: Offset,
-            source: NestedScrollSource,
-        ): Offset {
-            if (source == NestedScrollSource.SideEffect) return Offset.Zero
-            val delta = available.y
-            if (delta == 0f) return Offset.Zero
-            val current = scrollState.value
-            val max = scrollState.maxValue
-            return when {
-                delta > 0f && current > 0 -> {
-                    val consumedByChild = scrollState.dispatchRawDelta(-delta)
-                    Offset(0f, available.y - consumedByChild)
+            override suspend fun onPostFling(
+                consumed: Velocity,
+                available: Velocity,
+            ): Velocity {
+                val atTop = scrollState.value == 0
+                val atBottom = scrollState.value >= scrollState.maxValue
+                return when {
+                    atTop && available.y > 0f -> available
+                    atBottom && available.y < 0f -> available
+                    else -> Velocity.Zero
                 }
-                delta > 0f && current == 0 -> Offset(0f, delta)
-                delta < 0f && current < max -> {
-                    val consumedByChild = scrollState.dispatchRawDelta(-delta)
-                    Offset(0f, available.y - consumedByChild)
-                }
-                else -> Offset.Zero
             }
         }
     }
@@ -2573,24 +2562,25 @@ private fun buildErrorLogNestedScrollConnection(scrollState: ScrollState): Neste
 @Composable
 private fun BuildErrorLogPanel(text: String) {
     val colorScheme = MaterialTheme.colorScheme
+    val displayText = remember(text) { FailureLogExtractor.sanitizeForDisplay(text) }
     val logScrollState = rememberScrollState()
+    val edgeLock = rememberBuildErrorLogEdgeLock(logScrollState)
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = BuildErrorLogMaxHeight)
-            .nestedScroll(buildErrorLogNestedScrollConnection(logScrollState)),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         color = uiSurfaceColor(colorScheme.surfaceContainerHighest),
     ) {
         SelectionContainer {
             Text(
-                text = text,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
+                text = displayText,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFeatureSettings = "tnum,lnum",
+                ),
                 color = colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = BuildErrorLogMaxHeight)
+                    .nestedScroll(edgeLock)
                     .verticalScroll(logScrollState)
                     .padding(12.dp),
             )
@@ -3084,12 +3074,9 @@ private fun BuildDurationChip(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             if (live) {
-                CircularProgressIndicator(
-                    progress = { rotation / 360f },
-                    modifier = Modifier.size(12.dp),
-                    color = chipAccent,
-                    trackColor = chipAccent.copy(alpha = 0.22f),
-                    strokeWidth = 2.dp,
+                LiveDurationScheduleIcon(
+                    rotationDegrees = rotation,
+                    tint = chipAccent,
                 )
             } else {
                 Icon(
