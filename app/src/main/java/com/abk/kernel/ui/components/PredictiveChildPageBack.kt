@@ -6,7 +6,6 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -39,33 +38,15 @@ import kotlinx.coroutines.launch
 const val CHILD_PAGE_BACK_VISUAL_EXPONENT = 1.8f
 const val CHILD_PAGE_BACK_SCALE_DELTA = 0.09f
 const val CHILD_PAGE_BACK_SCRIM_ALPHA = 0.32f
-const val CHILD_PAGE_DISMISS_PEEK_MS = 220L
-const val CHILD_PAGE_DISMISS_HOLD_MS = 120L
-const val CHILD_PAGE_DISMISS_SLIDE_MS = 480L
-const val CHILD_PAGE_DISMISS_PEEK_FRACTION = 0.28f
-private const val CHILD_PAGE_DISMISS_HOLD_END = 0.36f
+const val CHILD_PAGE_DISMISS_PEEK_FRACTION = 0.30f
 val CHILD_PAGE_BACK_MAX_OFFSET = 56.dp
 val CHILD_PAGE_BACK_MAX_CORNER = 32.dp
-
-private fun predictiveDismissSpec(): AnimationSpec<Float> = keyframes {
-    durationMillis = (CHILD_PAGE_DISMISS_PEEK_MS + CHILD_PAGE_DISMISS_HOLD_MS + CHILD_PAGE_DISMISS_SLIDE_MS).toInt()
-    0f at 0
-    CHILD_PAGE_DISMISS_PEEK_FRACTION at CHILD_PAGE_DISMISS_PEEK_MS.toInt()
-    CHILD_PAGE_DISMISS_PEEK_FRACTION at (CHILD_PAGE_DISMISS_PEEK_MS + CHILD_PAGE_DISMISS_HOLD_MS).toInt()
-    1f at durationMillis
-}
 
 private fun peekAmount(dismissProgress: Float, predictiveBackEnabled: Boolean): Float {
     if (!predictiveBackEnabled) {
         return dismissProgress.coerceIn(0f, 1f)
     }
-    if (dismissProgress <= CHILD_PAGE_DISMISS_PEEK_FRACTION) {
-        return (dismissProgress / CHILD_PAGE_DISMISS_PEEK_FRACTION).coerceIn(0f, 1f)
-    }
-    if (dismissProgress <= CHILD_PAGE_DISMISS_HOLD_END) {
-        return 1f
-    }
-    return 1f
+    return (dismissProgress / CHILD_PAGE_DISMISS_PEEK_FRACTION).coerceIn(0f, 1f)
 }
 
 private fun visualProgressFor(dismissProgress: Float, predictiveBackEnabled: Boolean): Float {
@@ -84,12 +65,9 @@ private fun translationXFor(
     if (dismissProgress <= CHILD_PAGE_DISMISS_PEEK_FRACTION) {
         return peekPx * visualProgressFor(dismissProgress, predictiveBackEnabled = true)
     }
-    if (dismissProgress <= CHILD_PAGE_DISMISS_HOLD_END) {
-        return peekPx * visualProgressFor(CHILD_PAGE_DISMISS_PEEK_FRACTION, predictiveBackEnabled = true)
-    }
     val slideT = (
-        (dismissProgress - CHILD_PAGE_DISMISS_HOLD_END) /
-            (1f - CHILD_PAGE_DISMISS_HOLD_END)
+        (dismissProgress - CHILD_PAGE_DISMISS_PEEK_FRACTION) /
+            (1f - CHILD_PAGE_DISMISS_PEEK_FRACTION)
         ).coerceIn(0f, 1f)
     return peekPx + (screenWidthPx - peekPx) * slideT
 }
@@ -101,12 +79,9 @@ private fun scrimAlphaFor(dismissProgress: Float, predictiveBackEnabled: Boolean
     if (dismissProgress <= CHILD_PAGE_DISMISS_PEEK_FRACTION) {
         return CHILD_PAGE_BACK_SCRIM_ALPHA * visualProgressFor(dismissProgress, predictiveBackEnabled = true)
     }
-    if (dismissProgress <= CHILD_PAGE_DISMISS_HOLD_END) {
-        return CHILD_PAGE_BACK_SCRIM_ALPHA
-    }
     val fadeT = (
-        (dismissProgress - CHILD_PAGE_DISMISS_HOLD_END) /
-            (1f - CHILD_PAGE_DISMISS_HOLD_END)
+        (dismissProgress - CHILD_PAGE_DISMISS_PEEK_FRACTION) /
+            (1f - CHILD_PAGE_DISMISS_PEEK_FRACTION)
         ).coerceIn(0f, 1f)
     return CHILD_PAGE_BACK_SCRIM_ALPHA * (1f - fadeT)
 }
@@ -147,11 +122,6 @@ fun rememberChildPageBackController(
     } else {
         motionScheme.fastSpatialSpec()
     }
-    val dismissSpec: AnimationSpec<Float> = if (predictiveBackEnabled) {
-        predictiveDismissSpec()
-    } else {
-        spatialSpec
-    }
     val animatable = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     val dismissJobs = remember { mutableSetOf<Job>() }
@@ -159,7 +129,7 @@ fun rememberChildPageBackController(
     suspend fun animateToDismissed() {
         val current = animatable.value.coerceIn(0f, 1f)
         if (current < 1f) {
-            animatable.animateTo(1f, dismissSpec)
+            animatable.animateTo(1f, spatialSpec)
         }
         onBack()
     }

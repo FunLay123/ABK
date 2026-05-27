@@ -120,6 +120,8 @@ data class MainUiState(
     val loadingBuildParameterRunIds: Set<Long> = emptySet(),
     val buildParameterErrors: Map<Long, String> = emptyMap(),
     val dismissedFailedRunIds: Set<Long> = emptySet(),
+    /** In-session only: failed runs surfaced as ghost cards (not from GitHub list fetch). */
+    val sessionGhostFailedRuns: Map<Long, WorkflowRun> = emptyMap(),
     val workflowJobsByRunId: Map<Long, List<com.abk.kernel.data.model.WorkflowJob>> = emptyMap(),
     val workflowJobsLoading: Set<Long> = emptySet(),
     val workflowJobsErrors: Map<Long, String> = emptyMap(),
@@ -4957,7 +4959,7 @@ private fun MainUiState.withBuildRunDisplay(
         fallbackRun = if (run.isManagerBuild()) run else managerCurrentRun,
         fallbackStatus = if (run.isManagerBuild()) status else managerBuildStatus
     )
-    return copy(
+    val withDisplay = copy(
         buildStatus = display.status,
         currentRun = display.currentRun,
         buildProgress = display.progress,
@@ -4971,6 +4973,11 @@ private fun MainUiState.withBuildRunDisplay(
         managerCurrentRun = managerDisplay.currentRun,
         managerActiveBuildRuns = managerActive
     )
+    return if (status == BuildStatus.FAILURE && run.isFailedFlashRun() && run.id !in dismissedFailedRunIds) {
+        withDisplay.copy(sessionGhostFailedRuns = withDisplay.sessionGhostFailedRuns + (run.id to run))
+    } else {
+        withDisplay
+    }
 }
 
 private fun MainUiState.withoutActiveBuildRun(

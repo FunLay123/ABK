@@ -43,7 +43,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -96,6 +98,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -105,6 +108,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -129,7 +133,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -152,6 +158,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.AsyncImage
+import com.abk.kernel.debug.DebugSessionLog
 import com.abk.kernel.R
 import com.abk.kernel.data.model.ArtifactCategory
 import com.abk.kernel.data.model.ArtifactType
@@ -242,12 +249,16 @@ fun FlashScreen(
             state.downloadedArtifacts
         }
     }
+    var ghostFailedSheetRunId by remember { mutableStateOf<Long?>(null) }
+    val flashListScrollState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val unlinkedWorkflowTitle = stringResource(R.string.workflow_unlinked)
-    val recentRunById = remember(state.recentRuns) { state.recentRuns.associateBy { it.id } }
+    val recentRunById = remember(state.recentRuns, state.sessionGhostFailedRuns) {
+        state.recentRuns.associateBy { it.id } + state.sessionGhostFailedRuns
+    }
     val workflowGroups = remember(remoteArtifacts, workflowDownloadedArtifacts, unlinkedWorkflowTitle, recentRunById) {
         buildWorkflowGroups(remoteArtifacts, workflowDownloadedArtifacts, unlinkedWorkflowTitle, recentRunById)
     }
-    val allWorkflowGroups = remember(workflowGroups, state.recentRuns, state.dismissedFailedRunIds, recentRunById) {
+    val allWorkflowGroups = remember(workflowGroups, state.sessionGhostFailedRuns, state.dismissedFailedRunIds, recentRunById) {
         val activeRunIds = state.recentRuns.filter { it.isActiveFlashRun() }.map { it.id }.toSet()
         val extraGroups = activeRunIds
             .filter { id -> workflowGroups.none { it.runId == id } }
@@ -255,24 +266,24 @@ fun FlashScreen(
                 val run = recentRunById[id] ?: return@mapNotNull null
                 emptyWorkflowGroupFor(run, unlinkedWorkflowTitle)
             }
-        val failedRunIds = state.recentRuns
-            .filter { it.isFailedFlashRun() && it.id !in state.dismissedFailedRunIds }
-            .map { it.id }
+        val ghostRunIds = state.sessionGhostFailedRuns.keys
+            .filter { it !in state.dismissedFailedRunIds }
             .toSet()
-        val extraFailedGroups = failedRunIds
+        val extraGhostGroups = ghostRunIds
             .filter { id -> workflowGroups.none { it.runId == id } && id !in activeRunIds }
             .mapNotNull { id ->
                 val run = recentRunById[id] ?: return@mapNotNull null
                 emptyWorkflowGroupFor(run, unlinkedWorkflowTitle)
             }
-        (workflowGroups + extraGroups + extraFailedGroups)
+        (workflowGroups + extraGroups + extraGhostGroups)
             .filter { group ->
-                val run = recentRunById[group.runId]
-                if (run?.isFailedFlashRun() == true && group.runId in state.dismissedFailedRunIds) {
+                if (group.runId in state.sessionGhostFailedRuns && group.runId in state.dismissedFailedRunIds) {
                     return@filter false
                 }
+                val run = recentRunById[group.runId]
                 val isActive = run?.isActiveFlashRun() == true
-                isActive || group.shouldAppearInWorkflowList(run)
+                val isSessionGhost = group.runId in state.sessionGhostFailedRuns
+                isActive || isSessionGhost || group.shouldAppearInWorkflowList(run)
             }
             .sortedForWorkflowDisplay(recentRunById)
     }
@@ -393,6 +404,17 @@ fun FlashScreen(
     }
 
     fun returnToWorkflowList() {
+        // #region agent log
+        DebugSessionLog.log(
+            location = "FlashScreen.kt:returnToWorkflowList",
+            message = "back to list",
+            data = mapOf(
+                "scrollIndex" to flashListScrollState.firstVisibleItemIndex,
+                "scrollOffset" to flashListScrollState.firstVisibleItemScrollOffset,
+            ),
+            hypothesisId = "H5",
+        )
+        // #endregion
         selectedRunId = null
         navController.popBackStack()
     }
@@ -759,8 +781,53 @@ fun FlashScreen(
         )
     }
 
+    ghostFailedSheetRunId?.let { sheetRunId ->
+        val ghostRun = state.sessionGhostFailedRuns[sheetRunId] ?: recentRunById[sheetRunId]
+        if (ghostRun != null) {
+            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            LaunchedEffect(sheetRunId) {
+                vm.loadWorkflowJobs(sheetRunId)
+                vm.loadFailedRunLogExcerpt(sheetRunId)
+            }
+            ModalBottomSheet(
+                onDismissRequest = { ghostFailedSheetRunId = null },
+                sheetState = sheetState,
+            ) {
+                Box(Modifier.heightIn(max = 640.dp)) {
+                    FailedWorkflowDetail(
+                    run = ghostRun,
+                    jobs = state.workflowJobsByRunId[sheetRunId],
+                    jobsLoading = sheetRunId in state.workflowJobsLoading,
+                    jobsError = state.workflowJobsErrors[sheetRunId],
+                    logExcerpt = state.failedRunLogExcerpts[sheetRunId],
+                    logLoading = sheetRunId in state.failedRunLogLoading,
+                    onBack = { ghostFailedSheetRunId = null },
+                    onOpenGitHub = { openGithubRun(context, ghostRun.htmlUrl) },
+                    onRetryJobs = { vm.loadWorkflowJobs(sheetRunId, force = true) },
+                    )
+                }
+            }
+        } else {
+            ghostFailedSheetRunId = null
+        }
+    }
+
     @Composable
-    fun FlashListContent() {
+    fun FlashListContent(listScrollState: LazyListState, listInstance: String) {
+        // #region agent log
+        LaunchedEffect(listScrollState.firstVisibleItemIndex, listScrollState.firstVisibleItemScrollOffset, listInstance) {
+            DebugSessionLog.log(
+                location = "FlashScreen.kt:FlashListContent",
+                message = "list scroll state",
+                data = mapOf(
+                    "instance" to listInstance,
+                    "index" to listScrollState.firstVisibleItemIndex,
+                    "offset" to listScrollState.firstVisibleItemScrollOffset,
+                ),
+                hypothesisId = "H1",
+            )
+        }
+        // #endregion
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
@@ -771,6 +838,7 @@ fun FlashScreen(
             }
         ) { padding ->
             LazyColumn(
+                state = listScrollState,
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize()
@@ -850,7 +918,8 @@ fun FlashScreen(
                                         hasKernelArtifact = group.hasKernelArtifact(),
                                         hasManagerArtifact = group.hasManagerArtifact()
                                     ) == WorkflowPrimary.Manager
-                                    val failedGhost = run?.isFailedFlashRun() == true
+                                    val failedGhost = group.runId in state.sessionGhostFailedRuns &&
+                                        group.runId !in state.dismissedFailedRunIds
                                     WorkflowRunCard(
                                         group = group,
                                         summary = state.buildParameterSummaries[group.runId],
@@ -861,10 +930,14 @@ fun FlashScreen(
                                         failedGhost = failedGhost,
                                         cancelling = group.runId in state.cancellingWorkflowRunIds,
                                         onClick = {
-                                            selectedRunId = group.runId
-                                            selectedPrebuiltReleaseId = null
-                                            navigatingToFlashDetail = true
-                                            navController.navigate(flashWorkflowRoute(group.runId))
+                                            if (failedGhost) {
+                                                ghostFailedSheetRunId = group.runId
+                                            } else {
+                                                selectedRunId = group.runId
+                                                selectedPrebuiltReleaseId = null
+                                                navigatingToFlashDetail = true
+                                                navController.navigate(flashWorkflowRoute(group.runId))
+                                            }
                                         },
                                         onShowParameters = { parameterTarget = group },
                                         onDelete = {
@@ -1021,7 +1094,7 @@ fun FlashScreen(
                     selectedRunId = null
                     selectedPrebuiltReleaseId = null
                 }
-                FlashListContent()
+                FlashListContent(flashListScrollState, "primary")
             }
             composable(
                 route = FLASH_ROUTE_WORKFLOW,
@@ -1033,7 +1106,6 @@ fun FlashScreen(
                     selectedRunId = routeRunId
                     selectedPrebuiltReleaseId = null
                 }
-                val failedRun = recentRunById[routeRunId]?.takeIf { it.isFailedFlashRun() }
                 val activeRun = recentRunById[routeRunId]?.takeIf { it.isActiveFlashRun() }
                 val isCancellingThis = routeRunId in state.cancellingWorkflowRunIds
                 // Single FlashDetailBackSurface with a Crossfade inside — so
@@ -1056,25 +1128,8 @@ fun FlashScreen(
                     backgroundUri = state.customBackgroundUri,
                     backgroundImageEnabled = state.backgroundImageEnabled,
                     onBack = ::returnToWorkflowList,
-                    backgroundContent = { FlashListContent() }
+                    backgroundContent = { FlashListContent(flashListScrollState, "background") }
                 ) { dismiss ->
-                    if (failedRun != null) {
-                        LaunchedEffect(routeRunId) {
-                            vm.loadWorkflowJobs(routeRunId)
-                            vm.loadFailedRunLogExcerpt(routeRunId)
-                        }
-                        FailedWorkflowDetail(
-                            run = failedRun,
-                            jobs = state.workflowJobsByRunId[routeRunId],
-                            jobsLoading = routeRunId in state.workflowJobsLoading,
-                            jobsError = state.workflowJobsErrors[routeRunId],
-                            logExcerpt = state.failedRunLogExcerpts[routeRunId],
-                            logLoading = routeRunId in state.failedRunLogLoading,
-                            onBack = dismiss,
-                            onOpenGitHub = { openGithubRun(context, failedRun.htmlUrl) },
-                            onRetryJobs = { vm.loadWorkflowJobs(routeRunId, force = true) },
-                        )
-                    } else {
                     Crossfade(targetState = showBuilding, label = "flash-detail-build-state") { isBuilding ->
                         if (isBuilding && buildingRun != null) {
                             BuildingWorkflowDetail(
@@ -1198,8 +1253,6 @@ fun FlashScreen(
                     }
                     }
                 }
-                    }
-                }
             }
             composable(
                 route = FLASH_ROUTE_PREBUILT,
@@ -1241,7 +1294,7 @@ fun FlashScreen(
                     backgroundUri = state.customBackgroundUri,
                     backgroundImageEnabled = state.backgroundImageEnabled,
                     onBack = ::returnToPrebuiltReleaseList,
-                    backgroundContent = { FlashListContent() }
+                    backgroundContent = { FlashListContent(flashListScrollState, "background") }
                 ) { dismiss ->
                     LazyColumn(
                         modifier = Modifier
@@ -2786,24 +2839,23 @@ private fun BuildDurationChip(
     val rotation by if (liveTransition != null) {
         liveTransition.animateFloat(
             initialValue = 0f,
-            targetValue = 180f,
+            targetValue = 360f,
             animationSpec = infiniteRepeatable(
-                animation = tween(600, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse,
+                animation = tween(12_000, easing = LinearEasing),
             ),
-            label = "sand-rotate",
+            label = "clock-rotate",
         )
     } else {
         remember { mutableFloatStateOf(0f) }
     }
-    val shift by if (liveTransition != null) {
+    val shimmerPhase by if (liveTransition != null) {
         liveTransition.animateFloat(
             initialValue = 0f,
             targetValue = 1f,
             animationSpec = infiniteRepeatable(
-                animation = tween(2000, easing = LinearEasing),
+                animation = tween(1400, easing = LinearEasing),
             ),
-            label = "shift",
+            label = "shimmer-phase",
         )
     } else {
         remember { mutableFloatStateOf(0f) }
@@ -2820,11 +2872,7 @@ private fun BuildDurationChip(
                 modifier = Modifier
                     .size(14.dp)
                     .then(
-                        if (live) {
-                            Modifier.graphicsLayer { rotationZ = rotation }
-                        } else {
-                            Modifier
-                        }
+                        if (live) Modifier.graphicsLayer { rotationZ = rotation } else Modifier
                     ),
                 tint = chipAccent
             )
@@ -2837,17 +2885,25 @@ private fun BuildDurationChip(
     }
     if (live) {
         val base = chipAccent.copy(alpha = 0.14f)
-        val brush = Brush.linearGradient(
-            colors = listOf(base, chipAccent.copy(alpha = 0.28f), base),
-            start = Offset(x = shift * 200f - 100f, y = 0f),
-            end = Offset(x = shift * 200f + 100f, y = 0f),
-        )
+        val highlight = chipAccent.copy(alpha = 0.28f)
         Surface(
             shape = chipShape,
             color = Color.Transparent,
             contentColor = chipAccent,
         ) {
-            Box(Modifier.background(brush)) {
+            Box(
+                Modifier.drawWithCache {
+                    val band = size.width * 1.6f
+                    val travel = size.width + band
+                    val offset = (shimmerPhase * travel) % travel - band
+                    val brush = Brush.linearGradient(
+                        colors = listOf(base, highlight, base),
+                        start = Offset(offset, 0f),
+                        end = Offset(offset + band, size.height),
+                    )
+                    onDrawBehind { drawRect(brush) }
+                }
+            ) {
                 chipContent()
             }
         }
@@ -3726,7 +3782,7 @@ private fun WorkflowArtifactGroup.shouldAppearInWorkflowList(run: WorkflowRun?):
             hasManagerArtifact = hasManagerArtifact()
         )
     ) {
-        WorkflowPrimary.Kernel -> hasRemoteKernelArtifact() || run?.isFailedFlashRun() == true
+        WorkflowPrimary.Kernel -> hasRemoteKernelArtifact()
         else -> true
     }
 
