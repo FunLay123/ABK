@@ -158,7 +158,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.AsyncImage
-import com.abk.kernel.debug.DebugSessionLog
 import com.abk.kernel.R
 import com.abk.kernel.data.model.ArtifactCategory
 import com.abk.kernel.data.model.ArtifactType
@@ -404,17 +403,6 @@ fun FlashScreen(
     }
 
     fun returnToWorkflowList() {
-        // #region agent log
-        DebugSessionLog.log(
-            location = "FlashScreen.kt:returnToWorkflowList",
-            message = "back to list",
-            data = mapOf(
-                "scrollIndex" to flashListScrollState.firstVisibleItemIndex,
-                "scrollOffset" to flashListScrollState.firstVisibleItemScrollOffset,
-            ),
-            hypothesisId = "H5",
-        )
-        // #endregion
         selectedRunId = null
         navController.popBackStack()
     }
@@ -813,21 +801,7 @@ fun FlashScreen(
     }
 
     @Composable
-    fun FlashListContent(listScrollState: LazyListState, listInstance: String) {
-        // #region agent log
-        LaunchedEffect(listScrollState.firstVisibleItemIndex, listScrollState.firstVisibleItemScrollOffset, listInstance) {
-            DebugSessionLog.log(
-                location = "FlashScreen.kt:FlashListContent",
-                message = "list scroll state",
-                data = mapOf(
-                    "instance" to listInstance,
-                    "index" to listScrollState.firstVisibleItemIndex,
-                    "offset" to listScrollState.firstVisibleItemScrollOffset,
-                ),
-                hypothesisId = "H1",
-            )
-        }
-        // #endregion
+    fun FlashListContent(listScrollState: LazyListState) {
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
@@ -1094,7 +1068,7 @@ fun FlashScreen(
                     selectedRunId = null
                     selectedPrebuiltReleaseId = null
                 }
-                FlashListContent(flashListScrollState, "primary")
+                FlashListContent(flashListScrollState)
             }
             composable(
                 route = FLASH_ROUTE_WORKFLOW,
@@ -1128,7 +1102,7 @@ fun FlashScreen(
                     backgroundUri = state.customBackgroundUri,
                     backgroundImageEnabled = state.backgroundImageEnabled,
                     onBack = ::returnToWorkflowList,
-                    backgroundContent = { FlashListContent(flashListScrollState, "background") }
+                    backgroundContent = { FlashListContent(flashListScrollState) }
                 ) { dismiss ->
                     Crossfade(targetState = showBuilding, label = "flash-detail-build-state") { isBuilding ->
                         if (isBuilding && buildingRun != null) {
@@ -1295,7 +1269,7 @@ fun FlashScreen(
                     backgroundUri = state.customBackgroundUri,
                     backgroundImageEnabled = state.backgroundImageEnabled,
                     onBack = ::returnToPrebuiltReleaseList,
-                    backgroundContent = { FlashListContent(flashListScrollState, "background") }
+                    backgroundContent = { FlashListContent(flashListScrollState) }
                 ) { dismiss ->
                     LazyColumn(
                         modifier = Modifier
