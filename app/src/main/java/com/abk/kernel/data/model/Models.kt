@@ -571,6 +571,7 @@ enum class ArtifactType {
     KERNEL_PACKAGE,
     KERNEL_IMG,
     ANYKERNEL3,
+    ABK_MANAGER,
     KSU_MANAGER,
     SUSFS_MODULE,
     OTHER
@@ -586,6 +587,7 @@ fun ArtifactType.toArtifactCategory(): ArtifactCategory = when (this) {
     ArtifactType.KERNEL_PACKAGE,
     ArtifactType.KERNEL_IMG,
     ArtifactType.ANYKERNEL3 -> ArtifactCategory.KERNEL
+    ArtifactType.ABK_MANAGER,
     ArtifactType.KSU_MANAGER -> ArtifactCategory.MANAGER
     ArtifactType.SUSFS_MODULE -> ArtifactCategory.MODULE
     ArtifactType.OTHER -> ArtifactCategory.MODULE

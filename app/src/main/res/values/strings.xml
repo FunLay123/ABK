@@ -330,6 +330,10 @@
     <string name="flash_open_github_actions">打开 GitHub Actions</string>
     <string name="flash_failed_step_list_title">构建步骤</string>
     <string name="flash_log_excerpt">日志摘要</string>
+    <string name="flash_build_error">构建错误</string>
+    <string name="flash_build_error_unavailable">无法加载构建错误日志。</string>
+    <string name="flash_copy_error_done">已复制错误信息</string>
+    <string name="flash_artifact_abk_manager">ABK 应用</string>
     <string name="flash_failed_subtitle">GitHub 上的工作流以错误结束。</string>
     <string name="flash_loading_steps">正在加载构建步骤…</string>
     <string name="flash_steps_load_error">无法加载构建步骤</string>

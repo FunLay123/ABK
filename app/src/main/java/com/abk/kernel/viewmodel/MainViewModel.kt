@@ -24,6 +24,7 @@ import com.abk.kernel.utils.BuildMonitorService
 import com.abk.kernel.utils.BuildProgressUtils
 import com.abk.kernel.utils.DownloadDirectoryUtils
 import com.abk.kernel.utils.DownloadUtils
+import com.abk.kernel.utils.FailureLogExtractor
 import com.abk.kernel.utils.NotificationUtils
 import com.abk.kernel.utils.RootUtils
 import com.google.gson.Gson
@@ -2314,12 +2315,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val repoName = current.forkRepo?.name ?: return
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(failedRunLogLoading = it.failedRunLogLoading + runId) }
-            val excerpt = when (val result = github.downloadRunLogs(username, repoName, runId)) {
-                is Result.Success -> {
-                    result.data.lines().takeLast(8).joinToString("\n").take(600)
+            val jobs = current.workflowJobsByRunId[runId]
+                ?: when (val jobsResult = github.listRunJobs(username, repoName, runId)) {
+                    is Result.Success -> jobsResult.data
+                    else -> emptyList()
                 }
-                is Result.Error -> ""
-                Result.Loading -> ""
+            val failedJob = jobs.firstOrNull { it.conclusion == "failure" }
+                ?: jobs.firstOrNull { job ->
+                    job.steps.orEmpty().any { step -> step.conclusion == "failure" }
+                }
+            var excerpt = ""
+            if (failedJob != null) {
+                when (val logsResult = github.downloadJobLogs(username, repoName, failedJob.id)) {
+                    is Result.Success -> excerpt = FailureLogExtractor.extract(logsResult.data)
+                    else -> Unit
+                }
+            }
+            if (excerpt.isBlank()) {
+                when (val runLogsResult = github.downloadRunLogs(username, repoName, runId)) {
+                    is Result.Success -> excerpt = FailureLogExtractor.extract(runLogsResult.data)
+                    else -> Unit
+                }
             }
             if (excerpt.isNotBlank()) {
                 _uiState.update {

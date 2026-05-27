@@ -47,6 +47,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -143,6 +144,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import com.abk.kernel.ui.components.BuildDurationClockIcon
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -574,6 +576,7 @@ fun FlashScreen(
                         ArtifactType.KERNEL_IMG -> RootUtils.flashImage(item.filePath, onOutput = ::appendTerminalOutput)
                         ArtifactType.ANYKERNEL3 -> RootUtils.flashAnyKernel3(context, item.filePath, ::appendTerminalOutput)
                         ArtifactType.SUSFS_MODULE -> RootUtils.installModule(item.filePath, ::appendTerminalOutput)
+                        ArtifactType.ABK_MANAGER,
                         ArtifactType.KSU_MANAGER -> RootUtils.installApk(context, item.filePath, ::appendTerminalOutput)
                         else -> RootUtils.ShellResult(false, listOf(context.getString(R.string.flash_unsupported_auto_flash)))
                     }
@@ -1094,8 +1097,7 @@ fun FlashScreen(
                 val buildingRun = activeRun
                     ?: if (keepBuildingForCancel) recentRunById[routeRunId] else null
                 val showBuilding = buildingRun != null &&
-                    (activeRun != null || isCancellingThis) &&
-                    (group == null || group.remote.isEmpty())
+                    (activeRun != null || isCancellingThis)
                 FlashDetailBackSurface(
                     predictiveBackEnabled = state.predictiveBackEnabled,
                     outerPadding = outerPadding,
@@ -1104,14 +1106,36 @@ fun FlashScreen(
                     onBack = ::returnToWorkflowList,
                     backgroundContent = { FlashListContent(flashListScrollState) }
                 ) { dismiss ->
-                    Crossfade(targetState = showBuilding, label = "flash-detail-build-state") { isBuilding ->
+                    Crossfade(
+                        targetState = showBuilding,
+                        animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                        label = "flash-detail-build-state",
+                    ) { isBuilding ->
                         if (isBuilding && buildingRun != null) {
                             BuildingWorkflowDetail(
                                 run = buildingRun,
-                                progress = if (state.currentRun?.id == routeRunId) state.buildProgress else state.buildProgressByRunId[routeRunId],
+                                group = group,
+                                progress = if (state.currentRun?.id == routeRunId) {
+                                    state.buildProgress
+                                } else {
+                                    state.buildProgressByRunId[routeRunId]
+                                },
                                 cancelling = isCancellingThis,
+                                downloadProgress = state.downloadProgress,
+                                autoDownload = state.autoDownload,
+                                pendingAutoDownloadRunId = state.pendingAutoDownloadRunId,
+                                onDownload = vm::downloadArtifact,
+                                onCopyPath = ::copyDownloadedFilePath,
+                                onInstall = ::installManager,
+                                onFlash = {
+                                    selectedItem = it
+                                    showFlashConfirm = true
+                                },
+                                onDelete = { deleteFileTarget = it },
+                                allowRootActions = rootGranted,
+                                unlinkedWorkflowTitle = unlinkedWorkflowTitle,
                                 onBack = dismiss,
-                                onCancel = { cancelConfirmRunId = routeRunId }
+                                onCancel = { cancelConfirmRunId = routeRunId },
                             )
                         } else {
                     LazyColumn(
@@ -1169,50 +1193,28 @@ fun FlashScreen(
 
                                 if (remoteInCategory.isNotEmpty() || localOnly.isNotEmpty()) {
                                     item("category-${group.runId}-${category.name}") {
-                                        CategoryHeaderWithDuration(
+                                        WorkflowCategorySection(
+                                            group = group,
                                             category = category,
                                             showDuration = category == elapsedAnchorCategory,
                                             createdAt = runCreatedAt,
                                             finishedAt = runFinishedAt,
-                                            live = false
+                                            liveDuration = false,
+                                            progress = null,
+                                            downloadProgress = state.downloadProgress,
+                                            autoDownload = state.autoDownload,
+                                            pendingAutoDownloadRunId = state.pendingAutoDownloadRunId,
+                                            onDownload = vm::downloadArtifact,
+                                            onCopyPath = ::copyDownloadedFilePath,
+                                            onInstall = ::installManager,
+                                            onFlash = {
+                                                selectedItem = it
+                                                showFlashConfirm = true
+                                            },
+                                            onDelete = { deleteFileTarget = it },
+                                            allowRootActions = rootGranted,
                                         )
                                     }
-                                }
-
-                                items(remoteInCategory, key = { "source-${it.id}" }) { artifact ->
-                                    ArtifactSourceCard(
-                                        artifact = artifact,
-                                        downloadedFiles = group.local.filter {
-                                            DownloadUtils.matchesDownloadedArtifact(it, artifact)
-                                        },
-                                        progress = state.downloadProgress[artifact.id],
-                                        autoDownloadEligible = state.autoDownload &&
-                                            state.pendingAutoDownloadRunId == artifact.runId &&
-                                            DownloadUtils.shouldAutoDownload(artifact),
-                                        onDownload = { vm.downloadArtifact(artifact) },
-                                        onCopyPath = ::copyDownloadedFilePath,
-                                        onInstall = ::installManager,
-                                        onFlash = {
-                                            selectedItem = it
-                                            showFlashConfirm = true
-                                        },
-                                        onDelete = { deleteFileTarget = it },
-                                        allowRootActions = rootGranted
-                                    )
-                                }
-
-                                items(localOnly, key = { "local-${it.filePath}" }) { artifact ->
-                                    LocalOnlyArtifactCard(
-                                        artifact = artifact,
-                                        onCopyPath = ::copyDownloadedFilePath,
-                                        onInstall = ::installManager,
-                                        onFlash = {
-                                            selectedItem = it
-                                            showFlashConfirm = true
-                                        },
-                                        onDelete = { deleteFileTarget = it },
-                                        allowRootActions = rootGranted
-                                    )
                                 }
                             }
                         } else {
@@ -2326,7 +2328,12 @@ private fun WorkflowRunCard(
                             )
                         },
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (failedGhost) {
+                            colorScheme.onErrorContainer
+                        } else {
+                            colorScheme.onSurface
+                        },
                     )
                     Text(
                         text = group.runTitle,
@@ -2542,31 +2549,63 @@ private fun FailedWorkflowDetail(
         }
 
         item {
+            val errorContext = LocalContext.current
             ExpressiveSectionCard(
-                title = stringResource(R.string.flash_log_excerpt),
+                title = stringResource(R.string.flash_build_error),
                 icon = Icons.Default.Terminal
             ) {
                 when {
                     logLoading -> LoadingRow(stringResource(R.string.flash_loading_steps))
                     else -> {
                         val excerpt = logExcerpt?.takeIf { it.isNotBlank() }
-                            ?: "Process completed with exit code 1"
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            color = uiSurfaceColor(colorScheme.surfaceContainerHighest),
-                        ) {
-                            Text(
-                                text = excerpt,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                                color = colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 140.dp)
-                                    .verticalScroll(rememberScrollState())
-                                    .padding(12.dp),
-                            )
+                            ?: stringResource(R.string.flash_build_error_unavailable)
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                            ) {
+                                if (!logExcerpt.isNullOrBlank()) {
+                                    IconButton(
+                                        onClick = {
+                                            val clipboard = errorContext.getSystemService(
+                                                Context.CLIPBOARD_SERVICE
+                                            ) as ClipboardManager
+                                            clipboard.setPrimaryClip(
+                                                ClipData.newPlainText("build-error", excerpt)
+                                            )
+                                            Toast.makeText(
+                                                errorContext,
+                                                errorContext.getString(R.string.flash_copy_error_done),
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                    ) {
+                                        Icon(
+                                            Icons.Default.ContentCopy,
+                                            contentDescription = stringResource(R.string.flash_copy_path),
+                                        )
+                                    }
+                                }
+                            }
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                color = uiSurfaceColor(colorScheme.surfaceContainerHighest),
+                            ) {
+                                SelectionContainer {
+                                    Text(
+                                        text = excerpt,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 210.dp)
+                                            .verticalScroll(rememberScrollState())
+                                            .padding(12.dp),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -2667,12 +2706,97 @@ private fun FailedWorkflowStepRow(
 }
 
 @Composable
+private fun WorkflowCategorySection(
+    group: WorkflowArtifactGroup,
+    category: ArtifactCategory,
+    showDuration: Boolean,
+    createdAt: String,
+    finishedAt: String? = null,
+    liveDuration: Boolean,
+    progress: BuildProgress?,
+    downloadProgress: Map<Long, Int>,
+    autoDownload: Boolean,
+    pendingAutoDownloadRunId: Long?,
+    onDownload: (BuildArtifact) -> Unit,
+    onCopyPath: (DownloadedArtifact) -> Unit,
+    onInstall: (DownloadedArtifact) -> Unit,
+    onFlash: (DownloadedArtifact) -> Unit,
+    onDelete: (DownloadedArtifact) -> Unit,
+    allowRootActions: Boolean,
+) {
+    val remoteInCategory = group.remote.filter {
+        DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) == category
+    }
+    val matchedLocalPaths = remoteInCategory
+        .flatMap { source -> group.local.filter { DownloadUtils.matchesDownloadedArtifact(it, source) } }
+        .map { it.filePath }
+        .toSet()
+    val localOnly = group.local.filter { it.category == category && it.filePath !in matchedLocalPaths }
+    val hasArtifacts = remoteInCategory.isNotEmpty() || localOnly.isNotEmpty()
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (hasArtifacts || liveDuration) {
+            CategoryHeaderWithDuration(
+                category = category,
+                showDuration = showDuration,
+                createdAt = createdAt,
+                finishedAt = finishedAt,
+                live = liveDuration,
+            )
+        }
+        if (hasArtifacts) {
+            remoteInCategory.forEach { artifact ->
+                ArtifactSourceCard(
+                    artifact = artifact,
+                    downloadedFiles = group.local.filter {
+                        DownloadUtils.matchesDownloadedArtifact(it, artifact)
+                    },
+                    progress = downloadProgress[artifact.id],
+                    autoDownloadEligible = autoDownload &&
+                        pendingAutoDownloadRunId == artifact.runId &&
+                        DownloadUtils.shouldAutoDownload(artifact),
+                    onDownload = { onDownload(artifact) },
+                    onCopyPath = onCopyPath,
+                    onInstall = onInstall,
+                    onFlash = onFlash,
+                    onDelete = onDelete,
+                    allowRootActions = allowRootActions,
+                )
+            }
+            localOnly.forEach { artifact ->
+                LocalOnlyArtifactCard(
+                    artifact = artifact,
+                    onCopyPath = onCopyPath,
+                    onInstall = onInstall,
+                    onFlash = onFlash,
+                    onDelete = onDelete,
+                    allowRootActions = allowRootActions,
+                )
+            }
+        } else {
+            CategoryProgressCard(progress = progress)
+        }
+    }
+}
+
+@Composable
 private fun BuildingWorkflowDetail(
     run: WorkflowRun,
+    group: WorkflowArtifactGroup?,
     progress: BuildProgress?,
     cancelling: Boolean,
+    downloadProgress: Map<Long, Int>,
+    autoDownload: Boolean,
+    pendingAutoDownloadRunId: Long?,
+    onDownload: (BuildArtifact) -> Unit,
+    onCopyPath: (DownloadedArtifact) -> Unit,
+    onInstall: (DownloadedArtifact) -> Unit,
+    onFlash: (DownloadedArtifact) -> Unit,
+    onDelete: (DownloadedArtifact) -> Unit,
+    allowRootActions: Boolean,
+    unlinkedWorkflowTitle: String,
     onBack: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -2729,16 +2853,26 @@ private fun BuildingWorkflowDetail(
         // The elapsed chip rides above the first visible category tile, right-
         // aligned to mirror the tile's right edge.
         val elapsedAnchorCategory = visibleCategories.first()
+        val workflowGroup = group ?: emptyWorkflowGroupFor(run, unlinkedWorkflowTitle)
         visibleCategories.forEach { category ->
             item("category-build-${category.name}") {
-                CategoryHeaderWithDuration(
+                WorkflowCategorySection(
+                    group = workflowGroup,
                     category = category,
                     showDuration = category == elapsedAnchorCategory,
-                    createdAt = run.createdAt
+                    createdAt = run.createdAt,
+                    liveDuration = true,
+                    progress = progress,
+                    downloadProgress = downloadProgress,
+                    autoDownload = autoDownload,
+                    pendingAutoDownloadRunId = pendingAutoDownloadRunId,
+                    onDownload = onDownload,
+                    onCopyPath = onCopyPath,
+                    onInstall = onInstall,
+                    onFlash = onFlash,
+                    onDelete = onDelete,
+                    allowRootActions = allowRootActions,
                 )
-            }
-            item("progress-${category.name}") {
-                CategoryProgressCard(progress = progress)
             }
         }
 
@@ -2828,7 +2962,7 @@ private fun BuildDurationChip(
             initialValue = 0f,
             targetValue = 1f,
             animationSpec = infiniteRepeatable(
-                animation = tween(1400, easing = LinearEasing),
+                animation = tween(12_000, easing = LinearEasing),
             ),
             label = "shimmer-phase",
         )
@@ -2841,16 +2975,19 @@ private fun BuildDurationChip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Icon(
-                Icons.Default.Schedule,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(14.dp)
-                    .then(
-                        if (live) Modifier.graphicsLayer { rotationZ = rotation } else Modifier
-                    ),
-                tint = chipAccent
-            )
+            if (live) {
+                BuildDurationClockIcon(
+                    rotationDegrees = rotation,
+                    tint = chipAccent,
+                )
+            } else {
+                Icon(
+                    Icons.Default.Schedule,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = chipAccent,
+                )
+            }
             Text(
                 text = formatted,
                 style = MaterialTheme.typography.labelMedium,
@@ -3427,9 +3564,9 @@ private fun buildWorkflowGroups(
             remote = filteredRemote,
             local = filteredLocal,
             categories = categories,
-            cachedHasRemoteManagerArtifact = remoteTypes.any { it == ArtifactType.KSU_MANAGER },
-            cachedHasManagerArtifact = remoteTypes.any { it == ArtifactType.KSU_MANAGER } ||
-                filteredLocal.any { it.type == ArtifactType.KSU_MANAGER },
+            cachedHasRemoteManagerArtifact = remoteTypes.any { it.isManagerArtifactType() },
+            cachedHasManagerArtifact = remoteTypes.any { it.isManagerArtifactType() } ||
+                filteredLocal.any { it.type.isManagerArtifactType() },
             cachedHasKernelArtifact = remoteTypes.any {
                 it == ArtifactType.KERNEL_PACKAGE || it == ArtifactType.KERNEL_IMG || it == ArtifactType.ANYKERNEL3
             } || filteredLocal.any { it.type in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.KERNEL_IMG, ArtifactType.ANYKERNEL3) },
@@ -3478,10 +3615,14 @@ private fun List<WorkflowArtifactGroup>.sortedForWorkflowDisplay(
         .thenByDescending { it.runNumber }
 )
 
+private fun ArtifactType.isManagerArtifactType(): Boolean =
+    this == ArtifactType.ABK_MANAGER || this == ArtifactType.KSU_MANAGER
+
 private fun artifactIcon(type: ArtifactType) = when (type) {
     ArtifactType.KERNEL_PACKAGE -> Icons.Default.Inventory2
     ArtifactType.KERNEL_IMG -> Icons.Default.Memory
     ArtifactType.ANYKERNEL3 -> Icons.Default.Archive
+    ArtifactType.ABK_MANAGER -> Icons.Default.InstallMobile
     ArtifactType.KSU_MANAGER -> Icons.Default.Shield
     ArtifactType.SUSFS_MODULE -> Icons.Default.Extension
     ArtifactType.OTHER -> Icons.Default.InsertDriveFile
@@ -3492,6 +3633,7 @@ private fun artifactTypeLabelRes(type: ArtifactType) = when (type) {
     ArtifactType.KERNEL_PACKAGE -> R.string.flash_artifact_kernel_package
     ArtifactType.KERNEL_IMG -> R.string.flash_artifact_kernel_img
     ArtifactType.ANYKERNEL3 -> R.string.flash_artifact_anykernel3
+    ArtifactType.ABK_MANAGER -> R.string.flash_artifact_abk_manager
     ArtifactType.KSU_MANAGER -> R.string.flash_artifact_ksu_manager
     ArtifactType.SUSFS_MODULE -> R.string.flash_artifact_susfs_module
     ArtifactType.OTHER -> R.string.flash_artifact_other
@@ -3677,7 +3819,7 @@ private val artifactCategoryOrder = listOf(
 private const val MAX_VISIBLE_WORKFLOWS_PER_CATEGORY = 15
 
 private fun DownloadedArtifact.isInstallableApk(): Boolean =
-    type == ArtifactType.KSU_MANAGER || name.endsWith(".apk", ignoreCase = true)
+    type.isManagerArtifactType() || name.endsWith(".apk", ignoreCase = true)
 
 @StringRes
 private fun ArtifactCategory.labelRes(): Int = when (this) {

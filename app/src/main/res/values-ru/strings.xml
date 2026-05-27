@@ -312,6 +312,10 @@
     <string name="flash_open_github_actions">Открыть GitHub Actions</string>
     <string name="flash_failed_step_list_title">Шаги сборки</string>
     <string name="flash_log_excerpt">Фрагмент лога</string>
+    <string name="flash_build_error">Ошибка сборки</string>
+    <string name="flash_build_error_unavailable">Не удалось загрузить лог ошибки сборки.</string>
+    <string name="flash_copy_error_done">Ошибка скопирована</string>
+    <string name="flash_artifact_abk_manager">Приложение ABK</string>
     <string name="flash_failed_subtitle">Workflow завершился с ошибкой на GitHub.</string>
     <string name="flash_loading_steps">Загрузка шагов сборки…</string>
     <string name="flash_steps_load_error">Не удалось загрузить шаги сборки</string>
