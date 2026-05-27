@@ -355,8 +355,6 @@ object RootUtils {
     fun resolveUserlandKsudPath(context: Context): String? =
         prepareBundledKsudPath(context) ?: embeddedKsudPath(context)
 
-    fun resolveUserlandMagiskbootPath(context: Context): String? = embeddedMagiskbootPath(context)
-
     fun patchAbkLkmBootImage(
         context: Context,
         bootImagePath: String?,
@@ -1561,13 +1559,6 @@ object RootUtils {
     private fun buildKsudShellCommand(ksudPath: String, args: List<String>): String =
         buildShellCommand(buildKsudCommand(ksudPath, args))
 
-    private fun embeddedMagiskbootPath(context: Context? = appContext): String? {
-        val safeContext = context ?: return null
-        return File(safeContext.applicationInfo.nativeLibraryDir, "libmagiskboot.so")
-            .takeIf { it.isFile }
-            ?.absolutePath
-    }
-
     private fun runEmbeddedKsudWithRoot(
         context: Context,
         args: List<String>,
@@ -1659,10 +1650,6 @@ object RootUtils {
     ): List<String> {
         return buildList {
             add("boot-patch")
-            embeddedMagiskbootPath(context)?.let { magiskboot ->
-                add("--magiskboot")
-                add(magiskboot)
-            }
             if (bootImage != null) {
                 add("--boot")
                 add(bootImage.absolutePath)
