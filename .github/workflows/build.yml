@@ -400,6 +400,7 @@ jobs:
           KSU_BRANCH: ${{ inputs.ksu_branch }}
           CUSTOM_REF: ${{ inputs.custom_ref }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: bash .github/scripts/resolve-ksu-ref.sh
 
       - name: 准备 ABK 管理器证书元数据
