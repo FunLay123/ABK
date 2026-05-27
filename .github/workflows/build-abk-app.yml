@@ -232,12 +232,12 @@ jobs:
             if [ -n "$magiskboot_url" ]; then
               curl -fsSL "$magiskboot_url" -o "$bin_dir/magiskboot.bin"
               chmod 755 "$bin_dir/magiskboot.bin"
-              cat > "$bin_dir/magiskboot" <<'EOF'
-#!/system/bin/sh
-LINKER=/apex/com.android.runtime/bin/linker64
-[ -x "$LINKER" ] || LINKER=/system/bin/linker64
-exec "$LINKER" "$0.bin" "$@"
-EOF
+              printf '%s\n' \
+                '#!/system/bin/sh' \
+                'LINKER=/apex/com.android.runtime/bin/linker64' \
+                '[ -x "$LINKER" ] || LINKER=/system/bin/linker64' \
+                'exec "$LINKER" "$0.bin" "$@"' \
+                > "$bin_dir/magiskboot"
               chmod 755 "$bin_dir/magiskboot"
             else
               echo "warning.$abi=magiskboot_missing_upstream" >> "$target_dir/source.properties"
