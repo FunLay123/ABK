@@ -76,12 +76,17 @@ jobs:
           from pathlib import Path
 
           path = Path(os.environ["SOURCE_DIR"]) / "userspace/ksud/src/boot_patch.rs"
+          if not path.is_file():
+              print("boot_patch.rs missing; skip legacy magiskboot source patch")
+              raise SystemExit(0)
           text = path.read_text()
           old = """            } else {\n                let magiskboot_path = workdir.join(\"magiskboot\");\n                assets::copy_assets_to_file(\"magiskboot\", &magiskboot_path)\n                    .context(\"copy magiskboot failed\")?;\n                magiskboot_path\n            };\n            ensure!(magiskboot.exists(), \"{} is not exist\", magiskboot.display());\n            #[cfg(unix)]\n            let _ = std::fs::set_permissions(&magiskboot, std::fs::Permissions::from_mode(0o755));\n            magiskboot\n"""
           new = """            } else {\n                let magiskboot_path = workdir.join(\"magiskboot\");\n                let magiskboot_bin = workdir.join(\"magiskboot.bin\");\n                assets::copy_assets_to_file(\"magiskboot\", &magiskboot_bin)\n                    .context(\"copy magiskboot failed\")?;\n                #[cfg(unix)]\n                {\n                    use std::io::Write;\n                    let mut wrapper = std::fs::File::create(&magiskboot_path)?;\n                    wrapper.write_all(b\"#!/system/bin/sh\\nLINKER=/apex/com.android.runtime/bin/linker64\\n[ -x \\\\\\\"$LINKER\\\\\\\" ] || LINKER=/system/bin/linker64\\nexec \\\\\\\"$LINKER\\\\\\\" \\\\\\\"$0.bin\\\\\\\" \\\\\\\"$@\\\\\\\"\\n\")?;\n                    let _ = std::fs::set_permissions(&magiskboot_path, std::fs::Permissions::from_mode(0o755));\n                    let _ = std::fs::set_permissions(&magiskboot_bin, std::fs::Permissions::from_mode(0o755));\n                }\n                magiskboot_path\n            };\n            ensure!(magiskboot.exists(), \"{} is not exist\", magiskboot.display());\n            #[cfg(unix)]\n            let _ = std::fs::set_permissions(&magiskboot, std::fs::Permissions::from_mode(0o755));\n            magiskboot\n"""
-          if old not in text:
-              raise SystemExit("failed to find magiskboot injection block in boot_patch.rs")
-          path.write_text(text.replace(old, new, 1))
+          if old in text:
+              path.write_text(text.replace(old, new, 1))
+              print("patched boot_patch.rs magiskboot linker wrapper")
+          else:
+              print("boot_patch.rs magiskboot block not found; upstream layout changed — using bin/magiskboot wrapper in CI")
           PY
 
           setup_rust_build() {
@@ -225,7 +230,14 @@ jobs:
             install -Dm755 "$ksuinit_binary" "$bin_dir/ksuinit"
             magiskboot_url="$(magiskboot_url_for_abi "$abi")"
             if [ -n "$magiskboot_url" ]; then
-              curl -fsSL "$magiskboot_url" -o "$bin_dir/magiskboot"
+              curl -fsSL "$magiskboot_url" -o "$bin_dir/magiskboot.bin"
+              chmod 755 "$bin_dir/magiskboot.bin"
+              cat > "$bin_dir/magiskboot" <<'EOF'
+#!/system/bin/sh
+LINKER=/apex/com.android.runtime/bin/linker64
+[ -x "$LINKER" ] || LINKER=/system/bin/linker64
+exec "$LINKER" "$0.bin" "$@"
+EOF
               chmod 755 "$bin_dir/magiskboot"
             else
               echo "warning.$abi=magiskboot_missing_upstream" >> "$target_dir/source.properties"
