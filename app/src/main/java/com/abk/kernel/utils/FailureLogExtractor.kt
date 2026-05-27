@@ -29,7 +29,7 @@ object FailureLogExtractor {
                     ch == '\n' || ch == '\t' -> append(ch)
                     ch.isISOControl() -> Unit
                     ch == '\uFFFD' -> Unit
-                    Character.isFormat(ch) -> Unit
+                    Character.getType(ch) == Character.FORMAT.toInt() -> Unit
                     else -> append(ch)
                 }
             }
