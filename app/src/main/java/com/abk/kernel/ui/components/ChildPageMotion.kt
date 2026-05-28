@@ -166,19 +166,6 @@ suspend fun Animatable<Float, *>.animateBottomNavShow(motionScheme: MotionScheme
     val spec = motionScheme.defaultSpatialSpec<Float>()
     val current = value.coerceIn(0f, 1f)
     if (current >= 1f - BOTTOM_NAV_PROGRESS_EPSILON) return
-
-    val peek = CHILD_PAGE_MOTION_PEEK_FRACTION
-    if (current > peek + BOTTOM_NAV_PROGRESS_EPSILON) {
-        // Already partially visible — finish upward without dipping to peek first.
-        animateTo(1f, spec)
-        return
-    }
-    if (current < peek - BOTTOM_NAV_PROGRESS_EPSILON) {
-        animateTo(peek, spec)
-        delay(BOTTOM_NAV_SHOW_HOLD_MS)
-    } else {
-        delay(BOTTOM_NAV_SHOW_HOLD_MS)
-    }
     animateTo(1f, spec)
 }
 
