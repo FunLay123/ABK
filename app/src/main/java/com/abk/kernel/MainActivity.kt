@@ -457,9 +457,7 @@ private fun AbkMainScaffold(
         BackHandler(onBack = ::handleTopLevelBack)
     }
 
-    val navProgressAnim = remember(childPageVisible) {
-        Animatable(if (childPageVisible) 0f else 1f)
-    }
+    val navProgressAnim = remember { Animatable(1f) }
     LaunchedEffect(childPageVisible) {
         navProgressAnim.animateBottomNavForChildPage(
             childPageVisible = childPageVisible,

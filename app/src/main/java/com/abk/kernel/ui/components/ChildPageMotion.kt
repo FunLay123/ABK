@@ -100,21 +100,43 @@ suspend fun Animatable<Float, *>.animateChildPageBackDismiss(motionScheme: Motio
     animateTo(1f, motionScheme.defaultSpatialSpec())
 }
 
+private const val BOTTOM_NAV_PROGRESS_EPSILON = 0.02f
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 suspend fun Animatable<Float, *>.animateBottomNavHide(motionScheme: MotionScheme) {
-  val spec = motionScheme.fastSpatialSpec<Float>()
-  val peekVisible = 1f - CHILD_PAGE_MOTION_PEEK_FRACTION
-  animateTo(peekVisible, spec)
-  delay(BOTTOM_NAV_HIDE_HOLD_MS)
-  animateTo(0f, spec)
+    val spec = motionScheme.fastSpatialSpec<Float>()
+    val current = value.coerceIn(0f, 1f)
+    if (current <= BOTTOM_NAV_PROGRESS_EPSILON) return
+
+    val peekVisible = 1f - CHILD_PAGE_MOTION_PEEK_FRACTION
+    if (current > peekVisible + BOTTOM_NAV_PROGRESS_EPSILON) {
+        animateTo(peekVisible, spec)
+        delay(BOTTOM_NAV_HIDE_HOLD_MS)
+    } else if (current > BOTTOM_NAV_PROGRESS_EPSILON) {
+        delay(BOTTOM_NAV_HIDE_HOLD_MS)
+    }
+    animateTo(0f, spec)
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 suspend fun Animatable<Float, *>.animateBottomNavShow(motionScheme: MotionScheme) {
-  val spec = motionScheme.defaultSpatialSpec<Float>()
-  animateTo(CHILD_PAGE_MOTION_PEEK_FRACTION, spec)
-  delay(BOTTOM_NAV_SHOW_HOLD_MS)
-  animateTo(1f, spec)
+    val spec = motionScheme.defaultSpatialSpec<Float>()
+    val current = value.coerceIn(0f, 1f)
+    if (current >= 1f - BOTTOM_NAV_PROGRESS_EPSILON) return
+
+    val peek = CHILD_PAGE_MOTION_PEEK_FRACTION
+    if (current > peek + BOTTOM_NAV_PROGRESS_EPSILON) {
+        // Already partially visible — finish upward without dipping to peek first.
+        animateTo(1f, spec)
+        return
+    }
+    if (current < peek - BOTTOM_NAV_PROGRESS_EPSILON) {
+        animateTo(peek, spec)
+        delay(BOTTOM_NAV_SHOW_HOLD_MS)
+    } else {
+        delay(BOTTOM_NAV_SHOW_HOLD_MS)
+    }
+    animateTo(1f, spec)
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
