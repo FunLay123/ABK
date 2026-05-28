@@ -21,10 +21,10 @@ const val BOTTOM_NAV_SHOW_PEEK_MS = 140L
 const val BOTTOM_NAV_SHOW_HOLD_MS = 100L
 const val BOTTOM_NAV_SHOW_SLIDE_MS = 560L
 
-// Child-page back dismiss — browser variant 10 (Fast exit)
-const val CHILD_PAGE_BACK_DISMISS_PEEK_MS = 160L
-const val CHILD_PAGE_BACK_DISMISS_HOLD_MS = 80L
-const val CHILD_PAGE_BACK_DISMISS_SLIDE_MS = 360L
+// Child-page back dismiss — 350 ms total, hold-heavy
+const val CHILD_PAGE_BACK_DISMISS_PEEK_MS = 60L
+const val CHILD_PAGE_BACK_DISMISS_HOLD_MS = 200L
+const val CHILD_PAGE_BACK_DISMISS_SLIDE_MS = 90L
 
 const val CHILD_PAGE_BACK_DISMISS_TOTAL_MS: Long =
     CHILD_PAGE_BACK_DISMISS_PEEK_MS + CHILD_PAGE_BACK_DISMISS_HOLD_MS + CHILD_PAGE_BACK_DISMISS_SLIDE_MS
@@ -33,7 +33,7 @@ const val CHILD_PAGE_BACK_DISMISS_TOTAL_MS: Long =
 const val CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION: Float =
     CHILD_PAGE_BACK_DISMISS_PEEK_MS.toFloat() / CHILD_PAGE_BACK_DISMISS_TOTAL_MS.toFloat()
 
-/** Progress through dismiss timeline where hold plateau ends (variant 10). */
+/** Progress through dismiss timeline where hold plateau ends. */
 const val CHILD_PAGE_BACK_DISMISS_HOLD_END: Float =
     (CHILD_PAGE_BACK_DISMISS_PEEK_MS + CHILD_PAGE_BACK_DISMISS_HOLD_MS).toFloat() /
         CHILD_PAGE_BACK_DISMISS_TOTAL_MS.toFloat()
@@ -98,7 +98,7 @@ fun childPageBackScrimAlpha(dismissProgress: Float, maxAlpha: Float, visualExpon
 }
 
 /**
- * Dismiss progress 0→1 on a wall-clock timeline (variant 10: 160 + 80 + 360 ms).
+ * Dismiss progress 0→1 on a wall-clock timeline (60 + 200 hold + 90 ms = 350 ms).
  * Spatial [MotionScheme] springs settle in ~300ms and ignore the ms remap fractions above.
  */
 suspend fun Animatable<Float, *>.animateChildPageBackDismiss(
