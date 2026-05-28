@@ -5,7 +5,10 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MotionScheme
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.sin
 import kotlinx.coroutines.delay
 
 /** Fraction of hide progress at end of peek (nav + back visual remap). */
@@ -21,10 +24,16 @@ const val BOTTOM_NAV_SHOW_PEEK_MS = 140L
 const val BOTTOM_NAV_SHOW_HOLD_MS = 100L
 const val BOTTOM_NAV_SHOW_SLIDE_MS = 560L
 
-// Child-page back dismiss — 350 ms total, hold-heavy
-const val CHILD_PAGE_BACK_DISMISS_PEEK_MS = 60L
+// Child-page back dismiss — #36 equal thirds (600 ms) + hold creep (mockup #2+#3)
+const val CHILD_PAGE_BACK_DISMISS_PEEK_MS = 200L
 const val CHILD_PAGE_BACK_DISMISS_HOLD_MS = 200L
-const val CHILD_PAGE_BACK_DISMISS_SLIDE_MS = 90L
+const val CHILD_PAGE_BACK_DISMISS_SLIDE_MS = 200L
+
+/** Soft-start sine creep during hold (mockup #3). */
+const val CHILD_PAGE_BACK_HOLD_CREEP_SINE_PX = 10f
+
+/** Smooth cosine drift during hold (mockup #2). */
+const val CHILD_PAGE_BACK_HOLD_CREEP_DRIFT_PX = 18f
 
 const val CHILD_PAGE_BACK_DISMISS_TOTAL_MS: Long =
     CHILD_PAGE_BACK_DISMISS_PEEK_MS + CHILD_PAGE_BACK_DISMISS_HOLD_MS + CHILD_PAGE_BACK_DISMISS_SLIDE_MS
@@ -52,6 +61,21 @@ fun childPageBackPeekAmount(dismissProgress: Float): Float {
     return 1f
 }
 
+/** Extra X during hold: soft sine start + smooth cosine drift (variants 2+3). */
+fun childPageBackHoldCreepPx(dismissProgress: Float): Float {
+    val progress = dismissProgress.coerceIn(0f, 1f)
+    if (progress <= CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION || progress > CHILD_PAGE_BACK_DISMISS_HOLD_END) {
+        return 0f
+    }
+    val holdSpan = CHILD_PAGE_BACK_DISMISS_HOLD_END - CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION
+    if (holdSpan <= 0f) return 0f
+    val holdLocal = ((progress - CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION) / holdSpan).coerceIn(0f, 1f)
+    val halfPi = (PI / 2.0).toFloat()
+    val sinePart = CHILD_PAGE_BACK_HOLD_CREEP_SINE_PX * sin(holdLocal * halfPi)
+    val driftPart = CHILD_PAGE_BACK_HOLD_CREEP_DRIFT_PX * (0.5f - 0.5f * cos(holdLocal * PI.toFloat()))
+    return sinePart + driftPart
+}
+
 fun childPageBackTranslationX(
     dismissProgress: Float,
     peekPx: Float,
@@ -68,7 +92,7 @@ fun childPageBackTranslationX(
             .toDouble()
             .pow(visualExponent.toDouble())
             .toFloat()
-        return peekPx * visual
+        return peekPx * visual + childPageBackHoldCreepPx(progress)
     }
     val slideT = (
         (progress - CHILD_PAGE_BACK_DISMISS_HOLD_END) /
@@ -98,7 +122,7 @@ fun childPageBackScrimAlpha(dismissProgress: Float, maxAlpha: Float, visualExpon
 }
 
 /**
- * Dismiss progress 0→1 on a wall-clock timeline (60 + 200 hold + 90 ms = 350 ms).
+ * Dismiss progress 0→1 on a wall-clock timeline (200 + 200 hold + 200 ms = 600 ms).
  * Spatial [MotionScheme] springs settle in ~300ms and ignore the ms remap fractions above.
  */
 suspend fun Animatable<Float, *>.animateChildPageBackDismiss(
