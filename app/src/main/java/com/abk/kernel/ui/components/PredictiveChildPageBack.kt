@@ -38,52 +38,16 @@ import kotlinx.coroutines.launch
 const val CHILD_PAGE_BACK_VISUAL_EXPONENT = 1.8f
 const val CHILD_PAGE_BACK_SCALE_DELTA = 0.09f
 const val CHILD_PAGE_BACK_SCRIM_ALPHA = 0.32f
-const val CHILD_PAGE_DISMISS_PEEK_FRACTION = 0.30f
 val CHILD_PAGE_BACK_MAX_OFFSET = 56.dp
 val CHILD_PAGE_BACK_MAX_CORNER = 32.dp
 
-private fun peekAmount(dismissProgress: Float, predictiveBackEnabled: Boolean): Float {
-    if (!predictiveBackEnabled) {
-        return dismissProgress.coerceIn(0f, 1f)
-    }
-    return (dismissProgress / CHILD_PAGE_DISMISS_PEEK_FRACTION).coerceIn(0f, 1f)
-}
-
 private fun visualProgressFor(dismissProgress: Float, predictiveBackEnabled: Boolean): Float {
-    return peekAmount(dismissProgress, predictiveBackEnabled).pow(CHILD_PAGE_BACK_VISUAL_EXPONENT)
-}
-
-private fun translationXFor(
-    dismissProgress: Float,
-    predictiveBackEnabled: Boolean,
-    peekPx: Float,
-    screenWidthPx: Float,
-): Float {
-    if (!predictiveBackEnabled) {
-        return peekPx * dismissProgress.coerceIn(0f, 1f).pow(CHILD_PAGE_BACK_VISUAL_EXPONENT)
+    val peek = if (predictiveBackEnabled) {
+        childPageBackPeekAmount(dismissProgress)
+    } else {
+        dismissProgress.coerceIn(0f, 1f)
     }
-    if (dismissProgress <= CHILD_PAGE_DISMISS_PEEK_FRACTION) {
-        return peekPx * visualProgressFor(dismissProgress, predictiveBackEnabled = true)
-    }
-    val slideT = (
-        (dismissProgress - CHILD_PAGE_DISMISS_PEEK_FRACTION) /
-            (1f - CHILD_PAGE_DISMISS_PEEK_FRACTION)
-        ).coerceIn(0f, 1f)
-    return peekPx + (screenWidthPx - peekPx) * slideT
-}
-
-private fun scrimAlphaFor(dismissProgress: Float, predictiveBackEnabled: Boolean): Float {
-    if (!predictiveBackEnabled) {
-        return CHILD_PAGE_BACK_SCRIM_ALPHA * visualProgressFor(dismissProgress, predictiveBackEnabled = false)
-    }
-    if (dismissProgress <= CHILD_PAGE_DISMISS_PEEK_FRACTION) {
-        return CHILD_PAGE_BACK_SCRIM_ALPHA * visualProgressFor(dismissProgress, predictiveBackEnabled = true)
-    }
-    val fadeT = (
-        (dismissProgress - CHILD_PAGE_DISMISS_PEEK_FRACTION) /
-            (1f - CHILD_PAGE_DISMISS_PEEK_FRACTION)
-        ).coerceIn(0f, 1f)
-    return CHILD_PAGE_BACK_SCRIM_ALPHA * (1f - fadeT)
+    return peek.toDouble().pow(CHILD_PAGE_BACK_VISUAL_EXPONENT.toDouble()).toFloat()
 }
 
 @Stable
@@ -129,7 +93,11 @@ fun rememberChildPageBackController(
     suspend fun animateToDismissed() {
         val current = animatable.value.coerceIn(0f, 1f)
         if (current < 1f) {
-            animatable.animateTo(1f, spatialSpec)
+            if (predictiveBackEnabled) {
+                animatable.animateChildPageBackDismiss(motionScheme)
+            } else {
+                animatable.animateTo(1f, spatialSpec)
+            }
         }
         onBack()
     }
@@ -154,7 +122,7 @@ fun rememberChildPageBackController(
         try {
             progress.collect { backEvent ->
                 val gestureProgress = backEvent.progress.coerceIn(0f, 1f)
-                animatable.snapTo(gestureProgress * CHILD_PAGE_DISMISS_PEEK_FRACTION)
+                animatable.snapTo(gestureProgress * CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION)
             }
             animateToDismissed()
         } catch (e: CancellationException) {
@@ -173,14 +141,26 @@ fun rememberChildPageBackController(
     val configuration = LocalConfiguration.current
     val peekPx = with(density) { CHILD_PAGE_BACK_MAX_OFFSET.toPx() }
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
-    val translationXPx = translationXFor(
-        dismissProgress = dismissProgress,
-        predictiveBackEnabled = predictiveBackEnabled,
-        peekPx = peekPx,
-        screenWidthPx = screenWidthPx,
-    )
+    val translationXPx = if (predictiveBackEnabled) {
+        childPageBackTranslationX(
+            dismissProgress = dismissProgress,
+            peekPx = peekPx,
+            screenWidthPx = screenWidthPx,
+            visualExponent = CHILD_PAGE_BACK_VISUAL_EXPONENT,
+        )
+    } else {
+        peekPx * dismissProgress.coerceIn(0f, 1f).pow(CHILD_PAGE_BACK_VISUAL_EXPONENT)
+    }
     val backCorner = with(density) { (CHILD_PAGE_BACK_MAX_CORNER.toPx() * visualProgress).toDp() }
-    val scrimAlpha = scrimAlphaFor(dismissProgress, predictiveBackEnabled)
+    val scrimAlpha = if (predictiveBackEnabled) {
+        childPageBackScrimAlpha(
+            dismissProgress = dismissProgress,
+            maxAlpha = CHILD_PAGE_BACK_SCRIM_ALPHA,
+            visualExponent = CHILD_PAGE_BACK_VISUAL_EXPONENT,
+        )
+    } else {
+        CHILD_PAGE_BACK_SCRIM_ALPHA * visualProgress
+    }
 
     return ChildPageBackController(
         translationXPx = translationXPx,

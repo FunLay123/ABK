@@ -10,13 +10,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 
-/**
- * Fallback exit delay for child pages driven by Navigation Compose (NavHost),
- * where overlay [androidx.compose.animation.AnimatedVisibility] is not used and
- * [Transition.currentState] == [Transition.targetState] on the parent is unavailable.
- */
-const val CHILD_PAGE_NAV_EXIT_DELAY_MS = 280L
-
 @Deprecated(
     message = "Use CHILD_PAGE_NAV_EXIT_DELAY_MS for NavHost-driven child pages",
     replaceWith = ReplaceWith("CHILD_PAGE_NAV_EXIT_DELAY_MS")

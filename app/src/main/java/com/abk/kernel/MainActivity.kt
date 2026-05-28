@@ -16,7 +16,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -80,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.abk.kernel.ui.components.AbkSnackbarHost
+import com.abk.kernel.ui.components.animateBottomNavForChildPage
 import com.abk.kernel.ui.components.showAbkSnackbar
 import com.abk.kernel.ui.screens.AuthGateScreen
 import com.abk.kernel.ui.screens.BuildScreen
@@ -313,6 +315,7 @@ private enum class AbkTab(@StringRes val labelRes: Int) {
     Settings(R.string.nav_settings)
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AbkMainScaffold(
     vm: MainViewModel,
@@ -454,19 +457,22 @@ private fun AbkMainScaffold(
         BackHandler(onBack = ::handleTopLevelBack)
     }
 
+    val navProgressAnim = remember(childPageVisible) {
+        Animatable(if (childPageVisible) 0f else 1f)
+    }
+    LaunchedEffect(childPageVisible) {
+        navProgressAnim.animateBottomNavForChildPage(
+            childPageVisible = childPageVisible,
+            motionScheme = motionScheme,
+        )
+    }
+    val navProgress = navProgressAnim.value
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(uiSurfaceColor(MaterialTheme.colorScheme.surface))
     ) {
-        // Fade + slide the bottom nav in sync with child overlay exit.
-        // Overlay screens clear childPageVisible when their Transition is idle;
-        // Flash detail (NavHost) uses a short exit delay instead.
-        val navProgress by animateFloatAsState(
-            targetValue = if (childPageVisible) 0f else 1f,
-            animationSpec = motionScheme.defaultSpatialSpec(),
-            label = "bottom-nav-progress"
-        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
