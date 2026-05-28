@@ -24,27 +24,25 @@ const val CHILD_PAGE_BACK_DISMISS_PEEK_MS = 240L
 const val CHILD_PAGE_BACK_DISMISS_HOLD_MS = 240L
 const val CHILD_PAGE_BACK_DISMISS_SLIDE_MS = 520L
 
-val CHILD_PAGE_BACK_DISMISS_TOTAL_MS: Long =
+private const val CHILD_PAGE_BACK_DISMISS_TOTAL_MS: Long =
     CHILD_PAGE_BACK_DISMISS_PEEK_MS + CHILD_PAGE_BACK_DISMISS_HOLD_MS + CHILD_PAGE_BACK_DISMISS_SLIDE_MS
 
 /** [Animatable] progress 0 = fully hidden, 1 = fully visible at peek plateau. */
-val CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION: Float =
-    CHILD_PAGE_BACK_DISMISS_PEEK_MS.toFloat() / CHILD_PAGE_BACK_DISMISS_TOTAL_MS
+const val CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION: Float =
+    CHILD_PAGE_BACK_DISMISS_PEEK_MS.toFloat() / CHILD_PAGE_BACK_DISMISS_TOTAL_MS.toFloat()
 
 /** Progress through dismiss spring where hold plateau ends (variant 9). */
-val CHILD_PAGE_BACK_DISMISS_HOLD_END: Float =
+const val CHILD_PAGE_BACK_DISMISS_HOLD_END: Float =
     (CHILD_PAGE_BACK_DISMISS_PEEK_MS + CHILD_PAGE_BACK_DISMISS_HOLD_MS).toFloat() /
-        CHILD_PAGE_BACK_DISMISS_TOTAL_MS
+        CHILD_PAGE_BACK_DISMISS_TOTAL_MS.toFloat()
 
 /** Defer clearing parent [childPageVisible] after NavHost/detail pop (0 = show nav immediately). */
 const val CHILD_PAGE_NAV_EXIT_DELAY_MS = 0L
 
-const val CHILD_PAGE_DISMISS_PEEK_FRACTION = CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION
-
 fun childPageBackPeekAmount(dismissProgress: Float): Float {
     val progress = dismissProgress.coerceIn(0f, 1f)
-    if (progress <= CHILD_PAGE_DISMISS_PEEK_FRACTION) {
-        return (progress / CHILD_PAGE_DISMISS_PEEK_FRACTION).coerceIn(0f, 1f)
+    if (progress <= CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION) {
+        return (progress / CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION).coerceIn(0f, 1f)
     }
     if (progress <= CHILD_PAGE_BACK_DISMISS_HOLD_END) {
         return 1f
@@ -59,12 +57,12 @@ fun childPageBackTranslationX(
     visualExponent: Float,
 ): Float {
     val progress = dismissProgress.coerceIn(0f, 1f)
-    if (progress <= CHILD_PAGE_DISMISS_PEEK_FRACTION) {
+    if (progress <= CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION) {
         val visual = childPageBackPeekAmount(progress).toDouble().pow(visualExponent.toDouble()).toFloat()
         return peekPx * visual
     }
     if (progress <= CHILD_PAGE_BACK_DISMISS_HOLD_END) {
-        val visual = childPageBackPeekAmount(CHILD_PAGE_DISMISS_PEEK_FRACTION)
+        val visual = childPageBackPeekAmount(CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION)
             .toDouble()
             .pow(visualExponent.toDouble())
             .toFloat()
@@ -74,7 +72,7 @@ fun childPageBackTranslationX(
         (progress - CHILD_PAGE_BACK_DISMISS_HOLD_END) /
             (1f - CHILD_PAGE_BACK_DISMISS_HOLD_END)
         ).coerceIn(0f, 1f)
-    val peekVisual = childPageBackPeekAmount(CHILD_PAGE_DISMISS_PEEK_FRACTION)
+    val peekVisual = childPageBackPeekAmount(CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION)
         .toDouble()
         .pow(visualExponent.toDouble())
         .toFloat()
@@ -83,7 +81,7 @@ fun childPageBackTranslationX(
 
 fun childPageBackScrimAlpha(dismissProgress: Float, maxAlpha: Float, visualExponent: Float): Float {
     val progress = dismissProgress.coerceIn(0f, 1f)
-    if (progress <= CHILD_PAGE_DISMISS_PEEK_FRACTION) {
+    if (progress <= CHILD_PAGE_BACK_DISMISS_PEEK_FRACTION) {
         val visual = childPageBackPeekAmount(progress).toDouble().pow(visualExponent.toDouble()).toFloat()
         return maxAlpha * visual
     }
