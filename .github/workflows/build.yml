@@ -2943,6 +2943,8 @@ jobs:
               print("Official SUSFS 源码兼容修复无需修改。")
           PY
 
+          python3 "$GITHUB_WORKSPACE/.github/scripts/fix_official_susfs.py" "$KERNEL_ROOT"
+
       - name: 补齐 SukiSU SUSFS 内联 hook 符号
         if: inputs.ksu_variant == 'SukiSU' && inputs.enable_susfs
         working-directory: ${{ env.KERNEL_ROOT }}
@@ -3791,6 +3793,8 @@ jobs:
             if not fixed:
                 print("Official SUSFS KernelSU init.c already fixed")
             PY
+
+              python3 "$GITHUB_WORKSPACE/.github/scripts/fix_official_susfs.py" "$KERNEL_ROOT"
 
               for ksu_check_file in \
                 common/drivers/kernelsu/core/init.c \
