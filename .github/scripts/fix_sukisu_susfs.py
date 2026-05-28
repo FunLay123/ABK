@@ -482,9 +482,35 @@ def patch_selinux_hide(path, changed_files):
     original = path.read_text()
     text = original
 
+    # Repair a prior bug: "static int ..." replacement matched inside "__maybe_static int ...".
+    for broken, fixed in (
+        ("__maybe_int ", "int "),
+        ("__maybe_void ", "void "),
+    ):
+        if broken in text:
+            text = text.replace(broken, fixed)
+
+    # __maybe_static entries MUST come before plain "static ..." replacements, because
+    # e.g. "__maybe_static int foo" contains the substring "static int foo".
     replacements = (
-        ("static struct selinux_state fake_state;", "struct selinux_state fake_state;"),
         ("__maybe_static struct selinux_state fake_state;", "struct selinux_state fake_state;"),
+        (
+            "__maybe_static int security_context_to_sid_with_policy(",
+            "int security_context_to_sid_with_policy(",
+        ),
+        (
+            "__maybe_static int security_sid_to_context_with_policy(",
+            "int security_sid_to_context_with_policy(",
+        ),
+        (
+            "__maybe_static void __nocfi security_compute_av_user_with_policy(",
+            "void __nocfi security_compute_av_user_with_policy(",
+        ),
+        (
+            "__maybe_static void security_compute_av_user_with_policy(",
+            "void security_compute_av_user_with_policy(",
+        ),
+        ("static struct selinux_state fake_state;", "struct selinux_state fake_state;"),
         (
             "static bool ksu_selinux_hide_enabled __read_mostly = false;",
             "bool ksu_selinux_hide_enabled __read_mostly = false;",
@@ -505,15 +531,7 @@ def patch_selinux_hide(path, changed_files):
             "int security_context_to_sid_with_policy(",
         ),
         (
-            "__maybe_static int security_context_to_sid_with_policy(",
-            "int security_context_to_sid_with_policy(",
-        ),
-        (
             "static int security_sid_to_context_with_policy(",
-            "int security_sid_to_context_with_policy(",
-        ),
-        (
-            "__maybe_static int security_sid_to_context_with_policy(",
             "int security_sid_to_context_with_policy(",
         ),
         (
@@ -521,15 +539,7 @@ def patch_selinux_hide(path, changed_files):
             "void __nocfi security_compute_av_user_with_policy(",
         ),
         (
-            "__maybe_static void __nocfi security_compute_av_user_with_policy(",
-            "void __nocfi security_compute_av_user_with_policy(",
-        ),
-        (
             "static void security_compute_av_user_with_policy(",
-            "void security_compute_av_user_with_policy(",
-        ),
-        (
-            "__maybe_static void security_compute_av_user_with_policy(",
             "void security_compute_av_user_with_policy(",
         ),
     )
@@ -812,6 +822,10 @@ def verify_selinux_hide_exports(ksu_dir):
         "__maybe_static int security_sid_to_context_with_policy(",
         "__maybe_static void __nocfi security_compute_av_user_with_policy(",
         "__maybe_static void security_compute_av_user_with_policy(",
+        "__maybe_int security_context_to_sid_with_policy(",
+        "__maybe_int security_sid_to_context_with_policy(",
+        "__maybe_void __nocfi security_compute_av_user_with_policy(",
+        "__maybe_void security_compute_av_user_with_policy(",
         "static void __nocfi security_compute_av_user_with_policy(",
         "static void security_compute_av_user_with_policy(",
     )
