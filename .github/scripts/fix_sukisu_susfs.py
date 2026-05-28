@@ -390,31 +390,160 @@ void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr)
     write_if_changed(path, text, original, changed_files)
 
 
+FAKE_STATUS_MARKER = "ABK: simonpunk SUSFS hooks selinuxfs.c expect these globals at link time"
+
+FAKE_STATUS_BLOCK = f"""
+#ifdef CONFIG_KSU_SUSFS
+/* {FAKE_STATUS_MARKER}. */
+#include <linux/static_key.h>
+
+DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);
+struct page *fake_status = NULL;
+
+void initialize_fake_status(void)
+{{
+\tmutex_lock(&selinux_state.status_lock);
+\tif (fake_status)
+\t\tgoto out;
+\tif (!selinux_state.status_page) {{
+\t\tpr_warn("initialize_fake_status: status_page does not exist\\n");
+\t\tgoto out;
+\t}}
+
+\t{{
+\t\tstruct selinux_kernel_status *status = page_address(selinux_state.status_page);
+\t\tstruct page *new_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
+\t\tstruct selinux_kernel_status *new_status;
+
+\t\tif (!status->enforcing) {{
+\t\t\tpr_warn("initialize_fake_status: skip not enforcing\\n");
+\t\t\tgoto out;
+\t\t}}
+\t\tif (!new_page) {{
+\t\t\tpr_err("initialize_fake_status: failed to allocate page\\n");
+\t\t\tgoto out;
+\t\t}}
+
+\t\tnew_status = page_address(new_page);
+\t\tmemcpy(new_status, status, sizeof(*status));
+\t\tfake_status = new_page;
+\t\tpr_info("initialize_fake_status initialized: sequence=%d, policyload=%d, enforcing=%d\\n",
+\t\t\tnew_status->sequence, new_status->policyload, new_status->enforcing);
+\t}}
+out:
+\tmutex_unlock(&selinux_state.status_lock);
+}}
+#endif /* CONFIG_KSU_SUSFS */
+"""
+
+
+def patch_selinux_hide_init_static_key(text):
+    if "static_key_enable(&fake_status_initialize_key.key)" in text:
+        return text
+    if "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key)" not in text:
+        return text
+
+    enable_block = (
+        "#ifdef CONFIG_KSU_SUSFS\n"
+        "\tstatic_key_enable(&fake_status_initialize_key.key);\n"
+        "#endif\n"
+    )
+
+    # Fix an older ABK placement that enabled the key only on registration failure.
+    wrong = (
+        'pr_err("Failed to register selinux_hide feature handler\\n");\n'
+        "#ifdef CONFIG_KSU_SUSFS\n"
+        "\tstatic_key_enable(&fake_status_initialize_key.key);\n"
+        "#endif\n"
+        "\t}\n"
+    )
+    if wrong in text:
+        text = text.replace(
+            wrong,
+            'pr_err("Failed to register selinux_hide feature handler\\n");\n\t}\n',
+            1,
+        )
+
+    pattern = re.compile(
+        r"(void\s+__init\s+ksu_selinux_hide_init\s*\(\)\s*\{"
+        r".*?"
+        r'pr_err\("Failed to register selinux_hide feature handler\\n"\);\s*'
+        r"\}\s*)"
+        r"(\})",
+        re.DOTALL,
+    )
+    match = pattern.search(text)
+    if not match:
+        return text
+    return text[: match.start(2)] + enable_block + text[match.start(2) :]
+
+
 def patch_selinux_hide(path, changed_files):
     original = path.read_text()
     text = original
 
-    text = text.replace("static struct selinux_state fake_state;", "struct selinux_state fake_state;")
-    text = text.replace(
-        "static bool ksu_selinux_hide_running __read_mostly = false;",
-        "bool ksu_selinux_hide_running __read_mostly = false;",
+    replacements = (
+        ("static struct selinux_state fake_state;", "struct selinux_state fake_state;"),
+        ("__maybe_static struct selinux_state fake_state;", "struct selinux_state fake_state;"),
+        (
+            "static bool ksu_selinux_hide_enabled __read_mostly = false;",
+            "bool ksu_selinux_hide_enabled __read_mostly = false;",
+        ),
+        (
+            "static bool ksu_selinux_hide_running __read_mostly = false;",
+            "bool ksu_selinux_hide_running __read_mostly = false;",
+        ),
+        ("static struct page *fake_status = NULL;", "struct page *fake_status = NULL;"),
+        (
+            "static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
+            "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
+        ),
+        ("static void initialize_fake_status(void)", "void initialize_fake_status(void)"),
+        ("static void initialize_fake_status()", "void initialize_fake_status()"),
+        (
+            "static int security_context_to_sid_with_policy(",
+            "int security_context_to_sid_with_policy(",
+        ),
+        (
+            "__maybe_static int security_context_to_sid_with_policy(",
+            "int security_context_to_sid_with_policy(",
+        ),
+        (
+            "static int security_sid_to_context_with_policy(",
+            "int security_sid_to_context_with_policy(",
+        ),
+        (
+            "__maybe_static int security_sid_to_context_with_policy(",
+            "int security_sid_to_context_with_policy(",
+        ),
+        (
+            "static void __nocfi security_compute_av_user_with_policy(",
+            "void __nocfi security_compute_av_user_with_policy(",
+        ),
+        (
+            "__maybe_static void __nocfi security_compute_av_user_with_policy(",
+            "void __nocfi security_compute_av_user_with_policy(",
+        ),
+        (
+            "static void security_compute_av_user_with_policy(",
+            "void security_compute_av_user_with_policy(",
+        ),
+        (
+            "__maybe_static void security_compute_av_user_with_policy(",
+            "void security_compute_av_user_with_policy(",
+        ),
     )
-    text = text.replace(
-        "static int security_context_to_sid_with_policy(",
-        "int security_context_to_sid_with_policy(",
-    )
-    text = text.replace(
-        "static int security_sid_to_context_with_policy(",
-        "int security_sid_to_context_with_policy(",
-    )
-    text = text.replace(
-        "static void __nocfi security_compute_av_user_with_policy(",
-        "void __nocfi security_compute_av_user_with_policy(",
-    )
-    text = text.replace(
-        "static void security_compute_av_user_with_policy(",
-        "void security_compute_av_user_with_policy(",
-    )
+    for old, new in replacements:
+        if old in text:
+            text = text.replace(old, new)
+
+    if FAKE_STATUS_MARKER not in text and "struct page *fake_status" not in text:
+        anchor = "static DEFINE_MUTEX(selinux_hide_mutex);\n"
+        if anchor not in text:
+            die(f"{path} missing selinux_hide mutex anchor for fake_status injection")
+        text = text.replace(anchor, anchor + FAKE_STATUS_BLOCK + "\n", 1)
+
+    text = patch_selinux_hide_init_static_key(text)
 
     write_if_changed(path, text, original, changed_files)
 
@@ -653,6 +782,49 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user 
     write_if_changed(path, text, original, changed_files)
 
 
+def verify_selinux_hide_exports(ksu_dir):
+    path = ksu_dir / "feature/selinux_hide.c"
+    if not path.exists():
+        die(f"{path} not found")
+
+    selinux_hide = path.read_text()
+    required = (
+        "bool ksu_selinux_hide_enabled __read_mostly",
+        "bool ksu_selinux_hide_running __read_mostly",
+        "struct page *fake_status",
+        "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key)",
+        "void initialize_fake_status",
+        "static_key_enable(&fake_status_initialize_key.key)",
+    )
+    missing = [marker for marker in required if marker not in selinux_hide]
+    if missing:
+        die(f"{path} missing exported SUSFS SELinux symbols: {missing}")
+
+    forbidden = (
+        "static bool ksu_selinux_hide_enabled __read_mostly",
+        "static bool ksu_selinux_hide_running __read_mostly",
+        "static struct page *fake_status",
+        "static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key)",
+        "static void initialize_fake_status",
+        "static int security_context_to_sid_with_policy(",
+        "static int security_sid_to_context_with_policy(",
+        "__maybe_static int security_context_to_sid_with_policy(",
+        "__maybe_static int security_sid_to_context_with_policy(",
+        "__maybe_static void __nocfi security_compute_av_user_with_policy(",
+        "__maybe_static void security_compute_av_user_with_policy(",
+        "static void __nocfi security_compute_av_user_with_policy(",
+        "static void security_compute_av_user_with_policy(",
+    )
+    present = [marker for marker in forbidden if marker in selinux_hide]
+    if present:
+        die(f"{path} still has non-exported SELinux compat symbols: {present}")
+    if (
+        "void __nocfi security_compute_av_user_with_policy(" not in selinux_hide
+        and "void security_compute_av_user_with_policy(" not in selinux_hide
+    ):
+        die(f"{path} missing exported security_compute_av_user_with_policy()")
+
+
 def verify(ksu_dir):
     required = {
         ksu_dir / "runtime/ksud_integration.c": (
@@ -686,26 +858,31 @@ def verify(ksu_dir):
         if missing:
             die(f"{path} missing markers: {missing}")
 
-    selinux_hide = (ksu_dir / "feature/selinux_hide.c").read_text()
-    forbidden = (
-        "static int security_context_to_sid_with_policy(",
-        "static int security_sid_to_context_with_policy(",
-        "static void __nocfi security_compute_av_user_with_policy(",
-        "static void security_compute_av_user_with_policy(",
-    )
-    present = [marker for marker in forbidden if marker in selinux_hide]
-    if present:
-        die(f"{ksu_dir / 'feature/selinux_hide.c'} still has non-exported SELinux compat symbols: {present}")
-    if (
-        "void __nocfi security_compute_av_user_with_policy(" not in selinux_hide
-        and "void security_compute_av_user_with_policy(" not in selinux_hide
-    ):
-        die(f"{ksu_dir / 'feature/selinux_hide.c'} missing exported security_compute_av_user_with_policy()")
+    verify_selinux_hide_exports(ksu_dir)
+
+
+def patch_selinux_exports_only(root):
+    ksu_dir = find_ksu_dir(root)
+    changed_files = []
+    patch_selinux_hide(ksu_dir / "feature/selinux_hide.c", changed_files)
+    verify_selinux_hide_exports(ksu_dir)
+
+    if changed_files:
+        print("Patched SUSFS SELinux export symbols:")
+        for file in changed_files:
+            print(f"  {file}")
+    else:
+        print("SUSFS SELinux export symbols already patched.")
 
 
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--selinux-exports-only":
+        patch_selinux_exports_only(Path(sys.argv[2]).resolve())
+        return
+
     if len(sys.argv) != 2:
-        die("usage: fix_sukisu_susfs.py <kernel-root>")
+        die("usage: fix_sukisu_susfs.py <kernel-root>\n"
+            "       fix_sukisu_susfs.py --selinux-exports-only <kernel-root>")
 
     root = Path(sys.argv[1]).resolve()
     ksu_dir = find_ksu_dir(root)

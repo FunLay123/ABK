@@ -3307,6 +3307,17 @@ jobs:
 
           echo "ABK Control 管理器桥接校验通过。"
 
+      # simonpunk/susfs4ksu 676d202+ hooks security/selinux/selinuxfs.c and expects
+      # exported globals from feature/selinux_hide.c. SukiSU/Official ship them as static;
+      # ReSukiSU manual-hook builds omit fake_status entirely. Official gets exports from
+      # susfs 10_enable_susfs_for_ksu.patch — do not run this step for Official.
+      - name: 导出 SUSFS SELinux 符号
+        if: inputs.enable_susfs && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU')
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/.github/scripts/fix_sukisu_susfs.py" --selinux-exports-only "$KERNEL_ROOT"
+
       - name: 编译内核
         uses: nick-fields/retry@v4
         with:
