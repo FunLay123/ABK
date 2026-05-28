@@ -1,6 +1,8 @@
 package com.abk.kernel.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MotionScheme
 import kotlin.math.pow
@@ -24,7 +26,7 @@ const val CHILD_PAGE_BACK_DISMISS_PEEK_MS = 240L
 const val CHILD_PAGE_BACK_DISMISS_HOLD_MS = 240L
 const val CHILD_PAGE_BACK_DISMISS_SLIDE_MS = 520L
 
-private const val CHILD_PAGE_BACK_DISMISS_TOTAL_MS: Long =
+const val CHILD_PAGE_BACK_DISMISS_TOTAL_MS: Long =
     CHILD_PAGE_BACK_DISMISS_PEEK_MS + CHILD_PAGE_BACK_DISMISS_HOLD_MS + CHILD_PAGE_BACK_DISMISS_SLIDE_MS
 
 /** [Animatable] progress 0 = fully hidden, 1 = fully visible at peek plateau. */
@@ -95,9 +97,26 @@ fun childPageBackScrimAlpha(dismissProgress: Float, maxAlpha: Float, visualExpon
     return maxAlpha * (1f - fadeT)
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-suspend fun Animatable<Float, *>.animateChildPageBackDismiss(motionScheme: MotionScheme) {
-    animateTo(1f, motionScheme.defaultSpatialSpec())
+/**
+ * Dismiss progress 0→1 on a wall-clock timeline (variant 9: 240 + 240 + 520 ms).
+ * Spatial [MotionScheme] springs settle in ~300ms and ignore the ms remap fractions above.
+ */
+suspend fun Animatable<Float, *>.animateChildPageBackDismiss(
+    @Suppress("UNUSED_PARAMETER") motionScheme: MotionScheme,
+) {
+    val current = value.coerceIn(0f, 1f)
+    if (current >= 1f) return
+    val remainingFraction = (1f - current).coerceIn(0f, 1f)
+    val durationMillis = (CHILD_PAGE_BACK_DISMISS_TOTAL_MS * remainingFraction)
+        .toInt()
+        .coerceAtLeast(1)
+    animateTo(
+        targetValue = 1f,
+        animationSpec = tween(
+            durationMillis = durationMillis,
+            easing = LinearEasing,
+        ),
+    )
 }
 
 private const val BOTTOM_NAV_PROGRESS_EPSILON = 0.02f
