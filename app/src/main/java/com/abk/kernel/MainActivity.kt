@@ -365,14 +365,20 @@ private fun AbkMainScaffold(
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.snackbarMessage, state.snackbarLongDuration, state.error) {
-        val message = state.snackbarMessage ?: state.error ?: return@LaunchedEffect
-        val longDuration =
-            (state.snackbarMessage != null && state.snackbarLongDuration) || state.error != null
-        snackbarHostState.showAbkSnackbar(message = message, longDuration = longDuration)
-        if (state.snackbarMessage != null) {
-            vm.clearSnackbar()
-        } else if (state.error != null) {
-            vm.clearError()
+        when (val snackbar = state.snackbarMessage) {
+            null -> {
+                val error = state.error ?: return@LaunchedEffect
+                snackbarHostState.showAbkSnackbar(message = error, longDuration = true)
+                vm.clearError()
+            }
+            else -> {
+                snackbarHostState.showAbkSnackbar(
+                    message = snackbar,
+                    longDuration = state.snackbarLongDuration,
+                )
+                vm.clearSnackbar()
+                if (state.error != null) vm.clearError()
+            }
         }
     }
 

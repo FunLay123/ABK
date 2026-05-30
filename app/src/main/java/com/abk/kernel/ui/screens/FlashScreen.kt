@@ -191,7 +191,7 @@ import com.abk.kernel.utils.FlashFilterWorkflowState
 import com.abk.kernel.utils.FlashWorkflowFilter
 import com.abk.kernel.utils.WorkflowPrimary
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
-import com.abk.kernel.ui.components.CHILD_PAGE_NAV_EXIT_DELAY_MS
+import com.abk.kernel.ui.components.CHILD_PAGE_BACK_DISMISS_TOTAL_MS
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
 import com.abk.kernel.ui.components.childPageOverlayEnterTransition
 import com.abk.kernel.ui.components.childPageOverlayExitTransition
@@ -471,7 +471,7 @@ fun FlashScreen(
         onVisibleChange = { detailVisible ->
             onDetailPageVisibleChange(detailVisible || ghostFailedPageTransition.currentState)
         },
-        exitDelayMs = CHILD_PAGE_NAV_EXIT_DELAY_MS
+        exitDelayMs = CHILD_PAGE_BACK_DISMISS_TOTAL_MS
     )
 
     ObserveChildPageVisibility(
@@ -490,6 +490,8 @@ fun FlashScreen(
         navigatingToFlashDetail = false
         if (flashDetailRouteActive) {
             navController.popBackStack()
+        } else {
+            onDetailPageVisibleChange(ghostFailedPageTransition.currentState)
         }
     }
 
@@ -1033,6 +1035,7 @@ fun FlashScreen(
                                             } else {
                                                 selectedRunId = group.runId
                                                 selectedPrebuiltReleaseId = null
+                                                onDetailPageVisibleChange(true)
                                                 navigatingToFlashDetail = true
                                                 navController.navigate(flashWorkflowRoute(group.runId))
                                             }
@@ -1113,6 +1116,7 @@ fun FlashScreen(
                                             onClick = {
                                                 selectedPrebuiltReleaseId = release.id
                                                 selectedRunId = null
+                                                onDetailPageVisibleChange(true)
                                                 navigatingToFlashDetail = true
                                                 navController.navigate(flashPrebuiltRoute(release.id))
                                             }
@@ -1270,8 +1274,7 @@ fun FlashScreen(
                                 run = buildingRun,
                                 group = group,
                                 progress = state.buildProgressByRunId[routeRunId]
-                                    ?: BuildProgressUtils.defaultFor(buildingRun)
-                                    ?: BuildProgress(),
+                                    ?: BuildProgressUtils.defaultFor(buildingRun),
                                 cancelling = isCancellingThis,
                                 downloadProgress = state.downloadProgress,
                                 autoDownload = state.autoDownload,

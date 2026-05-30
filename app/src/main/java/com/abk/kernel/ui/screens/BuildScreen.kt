@@ -62,6 +62,7 @@ import com.abk.kernel.data.model.KSU_VARIANT_SUKISU
 import com.abk.kernel.data.model.ModuleCatalogItem
 import com.abk.kernel.data.model.ModuleCatalogRepository
 import com.abk.kernel.data.model.WorkflowRun
+import com.abk.kernel.data.model.isKernelBuild
 import com.abk.kernel.data.model.isManagerBuild
 import com.abk.kernel.data.model.isManagerDevBuild
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
@@ -706,29 +707,49 @@ fun BuildScreen(
                 enter = fadeIn() + slideInVertically { -it / 3 } + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                // Build per-run chip text from the dispatched queue config so
-                // the progress card can show a row of compact tiles (top =
-                // running, bottom = queued) instead of a wall of step rows.
-                val runningChips = remember(state.activeBuildRuns, state.buildQueue) {
-                    buildRunChipsForStatus(state.activeBuildRuns, state.buildQueue, running = true)
+                val kernelActiveRuns = remember(state.activeBuildRuns) {
+                    state.activeBuildRuns.filter { it.isKernelBuild() }
                 }
-                val queuedChips = remember(state.activeBuildRuns, state.buildQueue) {
-                    buildRunChipsForStatus(state.activeBuildRuns, state.buildQueue, running = false)
+                val managerActiveRuns = remember(state.activeBuildRuns) {
+                    state.activeBuildRuns.filter { it.isManagerBuild() }
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    BuildStatusBanner(
-                        status = state.buildStatus,
-                        progress = state.buildProgress,
-                        runId = state.currentRun?.id ?: 0L,
-                        activeRunCount = state.activeBuildRuns.size,
-                        cancelling = state.currentRun?.id in state.cancellingWorkflowRunIds,
-                        onCancel = { runId -> vm.cancelWorkflowRun(runId) }
+                val kernelRunningChips = remember(kernelActiveRuns, state.buildQueue) {
+                    buildRunChipsForStatus(kernelActiveRuns, state.buildQueue, running = true)
+                }
+                val kernelQueuedChips = remember(kernelActiveRuns, state.buildQueue) {
+                    buildRunChipsForStatus(kernelActiveRuns, state.buildQueue, running = false)
+                }
+                val managerRunningChips = remember(managerActiveRuns, state.buildQueue) {
+                    buildRunChipsForStatus(managerActiveRuns, state.buildQueue, running = true)
+                }
+                val managerQueuedChips = remember(managerActiveRuns, state.buildQueue) {
+                    buildRunChipsForStatus(managerActiveRuns, state.buildQueue, running = false)
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    BuildKindProgressBlock(
+                        title = stringResource(R.string.status_build),
+                        status = state.kernelBuildStatus,
+                        progress = state.kernelBuildProgress,
+                        currentRun = state.kernelCurrentRun,
+                        activeRunCount = state.kernelActiveBuildRuns.size,
+                        cancellingRunIds = state.cancellingWorkflowRunIds,
+                        runningChips = kernelRunningChips,
+                        queuedChips = kernelQueuedChips,
+                        onCancel = vm::cancelWorkflowRun,
                     )
-                    BuildProgressCard(
-                        progress = state.buildProgress,
-                        runningChips = runningChips,
-                        queuedChips = queuedChips
-                    )
+                    if (state.managerBuildStatus != BuildStatus.IDLE || state.managerCurrentRun != null) {
+                        BuildKindProgressBlock(
+                            title = stringResource(R.string.status_manager_build),
+                            status = state.managerBuildStatus,
+                            progress = state.managerBuildProgress,
+                            currentRun = state.managerCurrentRun,
+                            activeRunCount = state.managerActiveBuildRuns.size,
+                            cancellingRunIds = state.cancellingWorkflowRunIds,
+                            runningChips = managerRunningChips,
+                            queuedChips = managerQueuedChips,
+                            onCancel = vm::cancelWorkflowRun,
+                        )
+                    }
                 }
             }
 
@@ -2240,6 +2261,48 @@ private fun buildTimePreview(context: Context, buildTime: String): String {
 
 private val BUILD_TIME_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss z yyyy", Locale.US)
+
+@Composable
+private fun BuildKindProgressBlock(
+    title: String,
+    status: BuildStatus,
+    progress: BuildProgress,
+    currentRun: WorkflowRun?,
+    activeRunCount: Int,
+    cancellingRunIds: Set<Long>,
+    runningChips: List<BuildRunChip>,
+    queuedChips: List<BuildRunChip>,
+    onCancel: (Long) -> Unit,
+) {
+    if (
+        status == BuildStatus.IDLE &&
+        currentRun == null &&
+        runningChips.isEmpty() &&
+        queuedChips.isEmpty()
+    ) {
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        BuildStatusBanner(
+            status = status,
+            progress = progress,
+            runId = currentRun?.id ?: 0L,
+            activeRunCount = activeRunCount,
+            cancelling = currentRun?.id in cancellingRunIds,
+            onCancel = onCancel,
+        )
+        BuildProgressCard(
+            progress = progress,
+            runningChips = runningChips,
+            queuedChips = queuedChips,
+        )
+    }
+}
 
 @Composable
 private fun BuildStatusBanner(
