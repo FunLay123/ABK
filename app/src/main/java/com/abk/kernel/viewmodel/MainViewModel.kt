@@ -215,6 +215,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val monitoredRunIds = mutableSetOf<Long>()
     private val preparedMirrorArtifacts = mutableMapOf<Long, Set<String>>()
     private val artifactDownloadJobs = mutableMapOf<Long, Job>()
+    private val cancelledArtifactDownloadKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
     private val artifactLoadJobs = mutableMapOf<Long, Job>()
     private val artifactLoadGenerations = mutableMapOf<Long, Int>()
     private var hasCheckedWorkflowEnablementThisLaunch = false
@@ -2286,7 +2287,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun cancelDownload(taskKey: Long) {
+        cancelledArtifactDownloadKeys.add(taskKey)
         artifactDownloadJobs.remove(taskKey)?.cancel()
+        NotificationUtils.cancelDownloadNotification(getApplication())
         finishWorkflowDownloadTask(taskKey)
     }
 
@@ -2453,6 +2456,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startArtifactDownload(artifact: BuildArtifact, automatic: Boolean) {
+        cancelledArtifactDownloadKeys.remove(artifact.id)
         if (automatic && artifact.id in artifactDownloadJobs) return
         artifactDownloadJobs[artifact.id]?.cancel()
         artifactDownloadJobs[artifact.id] = viewModelScope.launch {
@@ -2584,6 +2588,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         } catch (cancel: CancellationException) {
             NotificationUtils.cancelDownloadNotification(getApplication())
+            finishWorkflowDownloadTask(artifact.id)
             throw cancel
         }
     }
@@ -2610,6 +2615,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun updateWorkflowDownloadProgress(taskKey: Long, progress: Int) {
+        if (taskKey in cancelledArtifactDownloadKeys || taskKey !in artifactDownloadJobs) return
         _uiState.update { state ->
             state.withDownloadState(
                 activeDownloadTasks = state.activeDownloadTasks
@@ -2623,6 +2629,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun finishWorkflowDownloadTask(taskKey: Long) {
+        cancelledArtifactDownloadKeys.remove(taskKey)
         _uiState.update { state ->
             state.withDownloadState(
                 activeDownloadTasks = state.activeDownloadTasks.filterNot { it.key == taskKey },

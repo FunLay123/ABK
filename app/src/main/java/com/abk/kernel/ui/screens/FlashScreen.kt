@@ -165,6 +165,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import com.abk.kernel.R
+import com.abk.kernel.data.model.ActiveDownloadTask
 import com.abk.kernel.data.model.ArtifactCategory
 import com.abk.kernel.data.model.ArtifactType
 import com.abk.kernel.data.model.BuildArtifact
@@ -260,6 +261,12 @@ fun FlashScreen(
     }.getOrDefault(RootUtils.Ak3SlotTarget.CURRENT)
     val flashAnyKernelCurrentSlotLabel = stringResource(R.string.root_patch_ak3_slot_current)
     val flashAnyKernelInactiveSlotLabel = stringResource(R.string.root_patch_ak3_slot_inactive)
+    val workflowActiveDownloads = remember(state.activeDownloadTasks) {
+        state.activeDownloadTasks.sortedByDescending { it.runNumber }
+    }
+    val pendingAutoDownloadRun = remember(state.pendingAutoDownloadRunId, state.recentRuns) {
+        state.recentRuns.firstOrNull { it.id == state.pendingAutoDownloadRunId }
+    }
     val remoteArtifacts = remember(state.artifacts) {
         state.artifacts.filter {
             !it.expired && DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) != null
@@ -1001,6 +1008,21 @@ fun FlashScreen(
                             }
                         }
 
+                        if (workflowActiveDownloads.isNotEmpty() || state.pendingAutoDownloadRunId > 0L) {
+                            item {
+                                WorkflowDownloadManagementCard(
+                                    tasks = workflowActiveDownloads,
+                                    pendingRunId = state.pendingAutoDownloadRunId.takeIf { it > 0L },
+                                    pendingRunLabel = pendingAutoDownloadRun?.let(::workflowRunLabel)
+                                        ?: state.pendingAutoDownloadRunId
+                                            .takeIf { it > 0L }
+                                            ?.let { "#$it" },
+                                    onCancelTask = vm::cancelDownload,
+                                    onCancelPending = vm::cancelAutoDownloads
+                                )
+                            }
+                        }
+
                         when {
                             visibleWorkflowGroups.isNotEmpty() -> {
                                 items(visibleWorkflowGroups, key = { "workflow-${it.runId}" }) { group ->
@@ -1716,6 +1738,110 @@ private fun FlashHero(
             }
         }
     )
+}
+
+@Composable
+private fun WorkflowDownloadManagementCard(
+    tasks: List<ActiveDownloadTask>,
+    pendingRunId: Long?,
+    pendingRunLabel: String?,
+    onCancelTask: (Long) -> Unit,
+    onCancelPending: (Long) -> Unit
+) {
+    if (tasks.isEmpty() && pendingRunId == null) return
+    ExpressiveSectionCard(
+        title = stringResource(R.string.flash_download_tasks_title),
+        subtitle = stringResource(R.string.flash_download_tasks_desc),
+        icon = Icons.Default.Download
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (pendingRunId != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = pendingRunLabel ?: "#$pendingRunId",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = stringResource(R.string.flash_download_waiting_auto),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedButton(onClick = { onCancelPending(pendingRunId) }) {
+                        Icon(Icons.Default.Cancel, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.flash_stop_auto_download))
+                    }
+                }
+            }
+
+            tasks.forEachIndexed { index, task ->
+                if (index > 0) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = task.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = workflowTaskLabel(task),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        ExpressiveStatusChip(
+                            label = if (task.automatic) {
+                                stringResource(R.string.flash_auto_download_badge)
+                            } else {
+                                stringResource(R.string.flash_manual_download_badge)
+                            },
+                            color = if (task.automatic) {
+                                MaterialTheme.colorScheme.secondary
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        )
+                    }
+                    LinearProgressIndicator(
+                        progress = { (task.progress / 100f).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = stringResource(R.string.flash_download_progress, task.progress),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(onClick = { onCancelTask(task.key) }) {
+                            Text(stringResource(R.string.flash_cancel_download))
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -3922,6 +4048,12 @@ private data class WorkflowArtifactGroup(
     val cachedHasRemoteKernelArtifact: Boolean,
     val cachedHasSusfsModuleArtifact: Boolean
 )
+
+private fun workflowRunLabel(run: WorkflowRun): String =
+    if (run.runNumber > 0) "#${run.runNumber} · ${run.displayTitle ?: run.name ?: run.id}" else "#${run.id}"
+
+private fun workflowTaskLabel(task: ActiveDownloadTask): String =
+    if (task.runNumber > 0) "#${task.runNumber} · ${task.runTitle}" else "#${task.runId} · ${task.runTitle}"
 
 private fun WorkflowRun.isActiveFlashRun(): Boolean =
     status in setOf("queued", "waiting", "requested", "pending", "in_progress")
