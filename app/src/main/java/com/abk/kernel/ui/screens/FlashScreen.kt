@@ -165,7 +165,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import com.abk.kernel.R
-import com.abk.kernel.data.model.ActiveDownloadTask
 import com.abk.kernel.data.model.ArtifactCategory
 import com.abk.kernel.data.model.ArtifactType
 import com.abk.kernel.data.model.BuildArtifact
@@ -261,13 +260,6 @@ fun FlashScreen(
     }.getOrDefault(RootUtils.Ak3SlotTarget.CURRENT)
     val flashAnyKernelCurrentSlotLabel = stringResource(R.string.root_patch_ak3_slot_current)
     val flashAnyKernelInactiveSlotLabel = stringResource(R.string.root_patch_ak3_slot_inactive)
-    val workflowActiveDownloads = remember(state.activeDownloadTasks) {
-        state.activeDownloadTasks.sortedByDescending { it.runNumber }
-    }
-    val pendingAutoDownloadRun = remember(state.pendingAutoDownloadRunId, state.recentRuns) {
-        state.recentRuns.firstOrNull { it.id == state.pendingAutoDownloadRunId }
-    }
-
     val remoteArtifacts = remember(state.artifacts) {
         state.artifacts.filter {
             !it.expired && DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) != null
@@ -1009,21 +1001,6 @@ fun FlashScreen(
                             }
                         }
 
-                        if (workflowActiveDownloads.isNotEmpty() || state.pendingAutoDownloadRunId > 0L) {
-                            item {
-                                WorkflowDownloadManagementCard(
-                                    tasks = workflowActiveDownloads,
-                                    pendingRunId = state.pendingAutoDownloadRunId.takeIf { it > 0L },
-                                    pendingRunLabel = pendingAutoDownloadRun?.let(::workflowRunLabel)
-                                        ?: state.pendingAutoDownloadRunId
-                                            .takeIf { it > 0L }
-                                            ?.let { "#$it" },
-                                    onCancelTask = vm::cancelDownload,
-                                    onCancelPending = vm::cancelAutoDownloads
-                                )
-                            }
-                        }
-
                         when {
                             visibleWorkflowGroups.isNotEmpty() -> {
                                 items(visibleWorkflowGroups, key = { "workflow-${it.runId}" }) { group ->
@@ -1377,18 +1354,6 @@ fun FlashScreen(
                                 )
                             }
 
-                            if (workflowActiveDownloads.any { it.runId == group.runId } || state.pendingAutoDownloadRunId == group.runId) {
-                                item("downloads-${group.runId}") {
-                                    WorkflowDownloadManagementCard(
-                                        tasks = workflowActiveDownloads.filter { it.runId == group.runId },
-                                        pendingRunId = state.pendingAutoDownloadRunId.takeIf { it == group.runId },
-                                        pendingRunLabel = workflowGroupLabel(group),
-                                        onCancelTask = vm::cancelDownload,
-                                        onCancelPending = vm::cancelAutoDownloads
-                                    )
-                                }
-                            }
-
                             val visibleCategories = if (isManagerPrimary) {
                                 listOf(ArtifactCategory.MANAGER)
                             } else {
@@ -1427,6 +1392,9 @@ fun FlashScreen(
                                             autoDownload = state.autoDownload,
                                             pendingAutoDownloadRunId = state.pendingAutoDownloadRunId,
                                             onDownload = vm::downloadArtifact,
+                                            onCancelDownload = vm::cancelDownload,
+                                            onCancelAutoDownload = vm::cancelAutoDownloads,
+                                            showDownloadCancelActions = true,
                                             onCopyPath = ::copyDownloadedFilePath,
                                             onInstall = ::requestInstallManager,
                                             onFlash = {
@@ -1748,110 +1716,6 @@ private fun FlashHero(
             }
         }
     )
-}
-
-@Composable
-private fun WorkflowDownloadManagementCard(
-    tasks: List<ActiveDownloadTask>,
-    pendingRunId: Long?,
-    pendingRunLabel: String?,
-    onCancelTask: (Long) -> Unit,
-    onCancelPending: (Long) -> Unit
-) {
-    if (tasks.isEmpty() && pendingRunId == null) return
-    ExpressiveSectionCard(
-        title = stringResource(R.string.flash_download_tasks_title),
-        subtitle = stringResource(R.string.flash_download_tasks_desc),
-        icon = Icons.Default.Download
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (pendingRunId != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = pendingRunLabel ?: "#$pendingRunId",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = stringResource(R.string.flash_download_waiting_auto),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    OutlinedButton(onClick = { onCancelPending(pendingRunId) }) {
-                        Icon(Icons.Default.Cancel, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.flash_stop_auto_download))
-                    }
-                }
-            }
-
-            tasks.forEachIndexed { index, task ->
-                if (index > 0) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = task.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = workflowTaskLabel(task),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        ExpressiveStatusChip(
-                            label = if (task.automatic) {
-                                stringResource(R.string.flash_auto_download_badge)
-                            } else {
-                                stringResource(R.string.flash_manual_download_badge)
-                            },
-                            color = if (task.automatic) {
-                                MaterialTheme.colorScheme.secondary
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            }
-                        )
-                    }
-                    LinearProgressIndicator(
-                        progress = { (task.progress / 100f).coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = stringResource(R.string.flash_download_progress, task.progress),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(onClick = { onCancelTask(task.key) }) {
-                            Text(stringResource(R.string.flash_cancel_download))
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable
@@ -3107,6 +2971,9 @@ private fun WorkflowCategorySection(
     autoDownload: Boolean,
     pendingAutoDownloadRunId: Long?,
     onDownload: (BuildArtifact) -> Unit,
+    onCancelDownload: (Long) -> Unit = {},
+    onCancelAutoDownload: (Long) -> Unit = {},
+    showDownloadCancelActions: Boolean = false,
     onCopyPath: (DownloadedArtifact) -> Unit,
     onInstall: (DownloadedArtifact) -> Unit,
     onFlash: (DownloadedArtifact) -> Unit,
@@ -3144,7 +3011,19 @@ private fun WorkflowCategorySection(
                     autoDownloadEligible = autoDownload &&
                         pendingAutoDownloadRunId == artifact.runId &&
                         DownloadUtils.shouldAutoDownload(artifact),
+                    pendingAutoDownload = pendingAutoDownloadRunId == artifact.runId,
+                    showDownloadCancelActions = showDownloadCancelActions,
                     onDownload = { onDownload(artifact) },
+                    onCancelDownload = if (showDownloadCancelActions) {
+                        { onCancelDownload(artifact.id) }
+                    } else {
+                        null
+                    },
+                    onCancelAutoDownload = if (showDownloadCancelActions) {
+                        { onCancelAutoDownload(artifact.runId) }
+                    } else {
+                        null
+                    },
                     onCopyPath = onCopyPath,
                     onInstall = onInstall,
                     onFlash = onFlash,
@@ -3580,7 +3459,11 @@ private fun ArtifactSourceCard(
     downloadedFiles: List<DownloadedArtifact>,
     progress: Int?,
     autoDownloadEligible: Boolean,
+    pendingAutoDownload: Boolean,
+    showDownloadCancelActions: Boolean = false,
     onDownload: () -> Unit,
+    onCancelDownload: (() -> Unit)? = null,
+    onCancelAutoDownload: (() -> Unit)? = null,
     onCopyPath: (DownloadedArtifact) -> Unit,
     onInstall: (DownloadedArtifact) -> Unit,
     onFlash: (DownloadedArtifact) -> Unit,
@@ -3613,21 +3496,66 @@ private fun ArtifactSourceCard(
 
             when {
                 progress != null -> {
-                    LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth())
-                    Text(
-                        stringResource(R.string.flash_download_progress, progress),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LinearProgressIndicator(
+                            progress = { animatedProgress },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            stringResource(R.string.flash_download_progress, progress),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (showDownloadCancelActions && onCancelDownload != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Button(
+                                    onClick = onCancelDownload,
+                                    modifier = Modifier.height(42.dp)
+                                ) {
+                                    Icon(Icons.Default.Cancel, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(stringResource(R.string.flash_cancel_download))
+                                }
+                            }
+                        }
+                    }
                 }
                 downloadedFiles.isEmpty() -> {
-                    Button(
-                        onClick = onDownload,
-                        modifier = Modifier.fillMaxWidth().height(42.dp)
-                    ) {
-                        Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.flash_download))
+                    if (pendingAutoDownload && autoDownloadEligible) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = stringResource(R.string.flash_download_waiting_auto),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (showDownloadCancelActions && onCancelAutoDownload != null) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    Button(
+                                        onClick = onCancelAutoDownload,
+                                        modifier = Modifier.height(42.dp)
+                                    ) {
+                                        Icon(Icons.Default.Cancel, null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(stringResource(R.string.flash_stop_auto_download))
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = onDownload,
+                            modifier = Modifier.fillMaxWidth().height(42.dp)
+                        ) {
+                            Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.flash_download))
+                        }
                     }
                 }
                 else -> {
@@ -3994,15 +3922,6 @@ private data class WorkflowArtifactGroup(
     val cachedHasRemoteKernelArtifact: Boolean,
     val cachedHasSusfsModuleArtifact: Boolean
 )
-
-private fun workflowRunLabel(run: WorkflowRun): String =
-    if (run.runNumber > 0) "#${run.runNumber} · ${run.displayTitle ?: run.name ?: run.id}" else "#${run.id}"
-
-private fun workflowGroupLabel(group: WorkflowArtifactGroup): String =
-    if (group.runNumber > 0) "#${group.runNumber} · ${group.runTitle}" else "#${group.runId} · ${group.runTitle}"
-
-private fun workflowTaskLabel(task: ActiveDownloadTask): String =
-    if (task.runNumber > 0) "#${task.runNumber} · ${task.runTitle}" else "#${task.runId} · ${task.runTitle}"
 
 private fun WorkflowRun.isActiveFlashRun(): Boolean =
     status in setOf("queued", "waiting", "requested", "pending", "in_progress")
