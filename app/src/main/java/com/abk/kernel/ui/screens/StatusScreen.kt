@@ -161,20 +161,17 @@ fun StatusScreen(
                     BuildStatus.IN_PROGRESS -> Row(verticalAlignment = Alignment.CenterVertically) {
                         LoadingIndicator(Modifier.size(24.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("${state.buildProgress.percent}% · ${state.buildProgress.currentStep}")
+                        Text("${state.kernelBuildProgress.percent}% · ${state.kernelBuildProgress.currentStep}")
                     }
                     BuildStatus.SUCCESS -> StatusRow(Icons.Default.CheckCircle, stringResource(R.string.status_recent_build_success), false)
                     BuildStatus.FAILURE -> StatusRow(Icons.Default.Error, stringResource(R.string.status_recent_build_failed), true)
                     BuildStatus.CANCELLED -> StatusRow(Icons.Default.Cancel, stringResource(R.string.status_build_cancelled), true)
                 }
                 val kernelRun = state.kernelCurrentRun
-                if (kernelRun != null &&
-                    kernelRun.id == state.currentRun?.id &&
-                    state.buildProgress.totalSteps > 0
-                ) {
+                if (kernelRun != null && state.kernelBuildProgress.totalSteps > 0) {
                     Spacer(Modifier.height(8.dp))
                     val animatedProgress by animateFloatAsState(
-                        targetValue = (state.buildProgress.percent / 100f).coerceIn(0f, 1f),
+                        targetValue = (state.kernelBuildProgress.percent / 100f).coerceIn(0f, 1f),
                         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
                         label = "status-progress"
                     )
@@ -183,7 +180,11 @@ fun StatusScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        stringResource(R.string.status_steps_complete, state.buildProgress.completedSteps, state.buildProgress.totalSteps),
+                        stringResource(
+                            R.string.status_steps_complete,
+                            state.kernelBuildProgress.completedSteps,
+                            state.kernelBuildProgress.totalSteps
+                        ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -252,9 +253,7 @@ fun StatusScreen(
                     icon = Icons.Default.Shield,
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
                 ) {
-                    val managerProgress = state.managerCurrentRun
-                        ?.let { state.buildProgressByRunId[it.id] }
-                        ?: state.buildProgress
+                    val managerProgress = state.managerBuildProgress
                     when (state.managerBuildStatus) {
                         BuildStatus.IDLE -> StatusRow(Icons.Default.HourglassEmpty, stringResource(R.string.status_no_running_build), false)
                         BuildStatus.QUEUED -> StatusRow(

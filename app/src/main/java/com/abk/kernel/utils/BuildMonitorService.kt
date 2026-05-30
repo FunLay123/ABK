@@ -54,7 +54,8 @@ class BuildMonitorService : Service() {
     private val monitorJobs = mutableMapOf<Long, Job>()
     private val runSnapshots = mutableMapOf<Long, WorkflowRun>()
     private val progressSnapshots = mutableMapOf<Long, BuildProgress>()
-    private val completedRunSuccess = mutableMapOf<Long, Boolean>()
+    private val completedOutcomes = mutableMapOf<Long, BuildSessionOutcome>()
+    private val completedRunKinds = mutableMapOf<Long, NotificationUtils.BuildKind>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -115,26 +116,20 @@ class BuildMonitorService : Service() {
                         }
                         when (run.status) {
                             "completed" -> {
-                                val success = run.conclusion == "success"
-                                val cancelled = run.conclusion == "cancelled"
+                                val outcome = when (run.conclusion) {
+                                    "success" -> BuildSessionOutcome.Success
+                                    "cancelled" -> BuildSessionOutcome.Cancelled
+                                    else -> BuildSessionOutcome.Failure
+                                }
                                 val completedKind = kindForRun(run)
                                 val finish = finishMonitoring(
                                     runId,
-                                    success = if (cancelled) null else success
+                                    outcome = outcome,
+                                    kind = completedKind
                                 )
                                 if (notifyBuild) {
-                                    if (cancelled) {
-                                        if (finish.shouldStop) {
-                                            NotificationUtils.cancelBuildNotification(applicationContext)
-                                        } else {
-                                            publishMergedRunningNotification()
-                                        }
-                                    } else if (finish.shouldStop) {
-                                        NotificationUtils.notifyBuildDone(
-                                            applicationContext,
-                                            finish.allSucceeded,
-                                            completedKind
-                                        )
+                                    if (finish.shouldStop) {
+                                        publishSessionDoneNotification()
                                     } else {
                                         publishMergedRunningNotification()
                                     }
@@ -155,14 +150,14 @@ class BuildMonitorService : Service() {
                             }
                             else -> {
                                 val failedKind = kindForRun(run)
-                                val finish = finishMonitoring(runId, success = false)
+                                val finish = finishMonitoring(
+                                    runId,
+                                    outcome = BuildSessionOutcome.Failure,
+                                    kind = failedKind
+                                )
                                 if (notifyBuild) {
                                     if (finish.shouldStop) {
-                                        NotificationUtils.notifyBuildDone(
-                                            applicationContext,
-                                            success = false,
-                                            kind = failedKind
-                                        )
+                                        publishSessionDoneNotification()
                                     } else {
                                         publishMergedRunningNotification()
                                     }
@@ -233,19 +228,52 @@ class BuildMonitorService : Service() {
         else -> NotificationUtils.BuildKind.Unknown
     }
 
-    private fun finishMonitoring(runId: Long, success: Boolean? = null): MonitorFinish {
+    private fun finishMonitoring(
+        runId: Long,
+        outcome: BuildSessionOutcome? = null,
+        kind: NotificationUtils.BuildKind? = null,
+    ): MonitorFinish {
         val finish = synchronized(monitorLock) {
             monitorJobs.remove(runId)
             runSnapshots.remove(runId)
             progressSnapshots.remove(runId)
-            success?.let { completedRunSuccess[runId] = it }
-            MonitorFinish(
-                shouldStop = monitorJobs.isEmpty(),
-                allSucceeded = completedRunSuccess.values.all { it }
-            )
+            if (outcome != null) {
+                completedOutcomes[runId] = outcome
+                kind?.let { completedRunKinds[runId] = it }
+            }
+            MonitorFinish(shouldStop = monitorJobs.isEmpty())
         }
         if (finish.shouldStop) stopServiceAndForeground()
         return finish
+    }
+
+    private fun publishSessionDoneNotification() {
+        val action = synchronized(monitorLock) {
+            resolveBuildSessionNotificationAction(completedOutcomes.values)
+        } ?: return
+        val kind = synchronized(monitorLock) { resolveSessionDoneKind() }
+        when (action) {
+            BuildSessionNotificationAction.NotifySuccess ->
+                NotificationUtils.notifyBuildDone(applicationContext, success = true, kind = kind)
+            BuildSessionNotificationAction.NotifyFailure ->
+                NotificationUtils.notifyBuildDone(applicationContext, success = false, kind = kind)
+            BuildSessionNotificationAction.CancelNotification ->
+                NotificationUtils.cancelBuildNotification(applicationContext)
+        }
+    }
+
+    private fun resolveSessionDoneKind(): NotificationUtils.BuildKind {
+        val kinds: Set<NotificationUtils.BuildKind> =
+            synchronized(monitorLock) { completedRunKinds.values.toSet() }
+        return when {
+            NotificationUtils.BuildKind.Kernel in kinds &&
+                NotificationUtils.BuildKind.ManagerOnly in kinds ->
+                NotificationUtils.BuildKind.Mixed
+            kinds.size == 1 -> kinds.single()
+            NotificationUtils.BuildKind.Kernel in kinds -> NotificationUtils.BuildKind.Kernel
+            NotificationUtils.BuildKind.ManagerOnly in kinds -> NotificationUtils.BuildKind.ManagerOnly
+            else -> NotificationUtils.BuildKind.Unknown
+        }
     }
 
     private fun stopAllMonitoring() {
@@ -254,7 +282,8 @@ class BuildMonitorService : Service() {
             monitorJobs.clear()
             runSnapshots.clear()
             progressSnapshots.clear()
-            completedRunSuccess.clear()
+            completedOutcomes.clear()
+            completedRunKinds.clear()
             current
         }
         jobs.forEach { it.cancel() }
@@ -286,7 +315,8 @@ class BuildMonitorService : Service() {
             monitorJobs.clear()
             runSnapshots.clear()
             progressSnapshots.clear()
-            completedRunSuccess.clear()
+            completedOutcomes.clear()
+            completedRunKinds.clear()
         }
         scope.cancel()
         removeForegroundNotification()
@@ -295,8 +325,5 @@ class BuildMonitorService : Service() {
 
     private val ACTIVE_MONITOR_STATUSES = setOf("queued", "waiting", "requested", "pending", "in_progress")
 
-    private data class MonitorFinish(
-        val shouldStop: Boolean,
-        val allSucceeded: Boolean
-    )
+    private data class MonitorFinish(val shouldStop: Boolean)
 }

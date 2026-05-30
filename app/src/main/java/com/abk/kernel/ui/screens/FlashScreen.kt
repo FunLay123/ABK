@@ -171,6 +171,7 @@ import com.abk.kernel.data.model.ArtifactType
 import com.abk.kernel.data.model.BuildArtifact
 import com.abk.kernel.data.model.BuildParameterSummary
 import com.abk.kernel.data.model.BuildProgress
+import com.abk.kernel.utils.BuildProgressUtils
 import com.abk.kernel.data.model.BuildQueueItemStatus
 import com.abk.kernel.data.model.BuildStatus
 import com.abk.kernel.data.model.DownloadedArtifact
@@ -1256,11 +1257,9 @@ fun FlashScreen(
                             BuildingWorkflowDetail(
                                 run = buildingRun,
                                 group = group,
-                                progress = if (state.currentRun?.id == routeRunId) {
-                                    state.buildProgress
-                                } else {
-                                    state.buildProgressByRunId[routeRunId]
-                                },
+                                progress = state.buildProgressByRunId[routeRunId]
+                                    ?: BuildProgressUtils.defaultFor(buildingRun)
+                                    ?: BuildProgress(),
                                 cancelling = isCancellingThis,
                                 downloadProgress = state.downloadProgress,
                                 autoDownload = state.autoDownload,
