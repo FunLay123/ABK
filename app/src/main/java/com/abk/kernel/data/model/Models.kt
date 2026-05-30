@@ -343,7 +343,6 @@ data class ModuleCatalogFetchResult(
 
 const val KSU_BRANCH_STABLE = "Stable(标准)"
 const val KSU_BRANCH_DEV = "Dev(开发)"
-const val KSU_BRANCH_LATEST = "Latest(最新)"
 const val KSU_BRANCH_CUSTOM = "Custom(自定义)"
 const val KSU_VARIANT_NONE = "None"
 const val KSU_VARIANT_OFFICIAL = "Official"
@@ -352,12 +351,7 @@ const val KSU_VARIANT_RESUKISU = "ReSukiSU"
 const val BUILD_TARGET_GKI = "gki"
 const val BUILD_TARGET_ONEPLUS = "oneplus"
 
-val KSU_BRANCH_STANDARD_OPTIONS = listOf(
-    KSU_BRANCH_STABLE,
-    KSU_BRANCH_DEV,
-    KSU_BRANCH_LATEST,
-    KSU_BRANCH_CUSTOM,
-)
+val KSU_BRANCH_STANDARD_OPTIONS = listOf(KSU_BRANCH_STABLE, KSU_BRANCH_DEV, KSU_BRANCH_CUSTOM)
 val KSU_BRANCH_BUILD_PLAN_OPTIONS = KSU_BRANCH_STANDARD_OPTIONS
 val KSU_VARIANT_OPTIONS = listOf(
     KSU_VARIANT_OFFICIAL,

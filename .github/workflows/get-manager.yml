@@ -9,10 +9,6 @@ on:
       kernelsu_variant:
         required: true
         type: string
-      kernelsu_branch:
-        required: false
-        type: string
-        default: "Stable(标准)"
     outputs:
       susVer:
         description: "The fetched SUSFS version number"
@@ -64,45 +60,21 @@ jobs:
       - name: 安装依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y git curl jq unzip
-
-      - uses: actions/checkout@v6
-        with:
-          sparse-checkout: |
-            .github/scripts
-
-      - name: Resolve Latest KSU refs
-        if: inputs.kernelsu_branch == 'Latest(最新)'
-        env:
-          KSU_VARIANT: ${{ inputs.kernelsu_variant }}
-          KSU_BRANCH: ${{ inputs.kernelsu_branch }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: bash .github/scripts/resolve-ksu-ref.sh
+          sudo apt-get install -y git curl jq
 
       - name: 获取 KSU & SUSFS 版本
         id: get_version
         run: |
 
-          clone_ksu_repo() {
-            local url="$1"
-            local branch="${2:-}"
-            if [ -n "$branch" ]; then
-              git clone --depth 1 -b "$branch" "$url" KernelSU
-            else
-              git clone "$url" KernelSU
-            fi
-          }
-
           if [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
             echo "This is the SukiSU variant"
-            clone_ksu_repo "https://github.com/SukiSU-Ultra/SukiSU-Ultra.git" "${RESOLVED_KSU_SOURCE_BRANCH:-}"
+            git clone https://github.com/SukiSU-Ultra/SukiSU-Ultra.git KernelSU
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ]; then
             echo "This is the ReSukiSU variant"
-            clone_ksu_repo "https://github.com/ReSukiSU/ReSukiSU.git" "${RESOLVED_KSU_SOURCE_BRANCH:-}"
+            git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU
           elif [ "${{ inputs.kernelsu_variant }}" == "Official" ]; then
             echo "This is the Official"
-            clone_ksu_repo "https://github.com/tiann/KernelSU.git" "${RESOLVED_KSU_SOURCE_BRANCH:-main}"
+            git clone https://github.com/tiann/KernelSU.git KernelSU
           else
             echo "Unknown variant"
             exit 1
@@ -169,39 +141,24 @@ jobs:
             curl -fL -o "manager-artifacts/${variant}/${apk_name}" "$apk_url"
           }
 
-          case "${{ inputs.kernelsu_branch }}" in
-            "Latest(最新)")
-              if [ -z "${RESOLVED_KSU_REPO:-}" ] || [ -z "${RESOLVED_KSU_SOURCE_BRANCH:-}" ]; then
-                echo "::error::Latest manager download requires RESOLVED_KSU_REPO and RESOLVED_KSU_SOURCE_BRANCH"
-                exit 1
-              fi
-              GITHUB_REPOSITORY="${{ github.repository }}" \
-                bash .github/scripts/download-manager-from-actions.sh \
-                "$RESOLVED_KSU_REPO" \
-                "$RESOLVED_KSU_SOURCE_BRANCH" \
-                "manager-artifacts/${{ inputs.kernelsu_variant }}"
+          case "${{ inputs.kernelsu_variant }}" in
+            "Official")
+              download_latest_release_apk "tiann/KernelSU" "Official"
+              ;;
+            "SukiSU")
+              download_latest_release_apk "SukiSU-Ultra/SukiSU-Ultra" "SukiSU"
+              ;;
+            "ReSukiSU")
+              echo "直接下载 ReSukiSU Manager-release.zip，不做匹配..."
+              mkdir -p "manager-artifacts/ReSukiSU"
+              curl -fL -o "ReSukiSU-Manager-release.zip" \
+                "https://nightly.link/ReSukiSU/ReSukiSU/workflows/build-manager/main/Manager-release.zip"
+              unzip -o "ReSukiSU-Manager-release.zip" -d "manager-artifacts/ReSukiSU"
+              rm -f "ReSukiSU-Manager-release.zip"
               ;;
             *)
-              case "${{ inputs.kernelsu_variant }}" in
-                "Official")
-                  download_latest_release_apk "tiann/KernelSU" "Official"
-                  ;;
-                "SukiSU")
-                  download_latest_release_apk "SukiSU-Ultra/SukiSU-Ultra" "SukiSU"
-                  ;;
-                "ReSukiSU")
-                  echo "直接下载 ReSukiSU Manager-release.zip，不做匹配..."
-                  mkdir -p "manager-artifacts/ReSukiSU"
-                  curl -fL -o "ReSukiSU-Manager-release.zip" \
-                    "https://nightly.link/ReSukiSU/ReSukiSU/workflows/build-manager/main/Manager-release.zip"
-                  unzip -o "ReSukiSU-Manager-release.zip" -d "manager-artifacts/ReSukiSU"
-                  rm -f "ReSukiSU-Manager-release.zip"
-                  ;;
-                *)
-                  echo "::error::未知 KernelSU 变体: ${{ inputs.kernelsu_variant }}"
-                  exit 1
-                  ;;
-              esac
+              echo "::error::未知 KernelSU 变体: ${{ inputs.kernelsu_variant }}"
+              exit 1
               ;;
           esac
 
@@ -253,13 +210,7 @@ jobs:
 
       - name: Notify on failure
         if: steps.add_KSU.outcome == 'failure'
-        run: |
-          echo "::warning::Manager download failed (kernel build is unaffected)."
-          if [ "${{ inputs.kernelsu_branch }}" = "Latest(最新)" ]; then
-            echo "Latest mode: no successful build-manager on ${RESOLVED_KSU_REPO:-?}@${RESOLVED_KSU_SOURCE_BRANCH:-?}"
-          else
-            echo "下载CI构建的KSU失败!"
-          fi
+        run: echo "下载CI构建的KSU失败!"
 
       - name: 上传APK
         if: steps.add_KSU.outcome == 'success'
