@@ -435,7 +435,10 @@ fun FlashScreen(
         if (!shouldPrefetchWorkflowSummaries) return@LaunchedEffect
         delay(200)
         visibleWorkflowGroups.forEach { group ->
-            vm.loadBuildParameterSummary(group.runId)
+            val run = recentRunById[group.runId]
+            if (group.shouldShowParameterDetails(run)) {
+                vm.loadBuildParameterSummary(group.runId)
+            }
             delay(150)
         }
     }
@@ -872,18 +875,23 @@ fun FlashScreen(
     }
 
     parameterTarget?.let { group ->
-        val runId = group.runId
-        LaunchedEffect(runId) {
-            vm.loadBuildParameterSummary(runId)
+        val run = recentRunById[group.runId]
+        if (!group.shouldShowParameterDetails(run)) {
+            LaunchedEffect(group.runId) { parameterTarget = null }
+        } else {
+            val runId = group.runId
+            LaunchedEffect(runId) {
+                vm.loadBuildParameterSummary(runId)
+            }
+            BuildParameterSummaryDialog(
+                group = group,
+                summary = state.buildParameterSummaries[runId],
+                loading = runId in state.loadingBuildParameterRunIds,
+                error = state.buildParameterErrors[runId],
+                onDismiss = { parameterTarget = null },
+                onRetry = { vm.loadBuildParameterSummary(runId, force = true) }
+            )
         }
-        BuildParameterSummaryDialog(
-            group = group,
-            summary = state.buildParameterSummaries[runId],
-            loading = runId in state.loadingBuildParameterRunIds,
-            error = state.buildParameterErrors[runId],
-            onDismiss = { parameterTarget = null },
-            onRetry = { vm.loadBuildParameterSummary(runId, force = true) }
-        )
     }
 
     prebuiltParameterTarget?.let { release ->
@@ -1005,12 +1013,14 @@ fun FlashScreen(
                                         hasKernelArtifact = group.hasKernelArtifact(),
                                         hasManagerArtifact = group.hasManagerArtifact()
                                     ) == WorkflowPrimary.Manager
+                                    val showParameterDetails = group.shouldShowParameterDetails(run)
                                     val failedGhost = group.runId in state.sessionGhostFailedRuns &&
                                         group.runId !in state.dismissedFailedRunIds
                                     WorkflowRunCard(
                                         group = group,
                                         summary = state.buildParameterSummaries[group.runId],
                                         showKernelBuildChips = !isManagerPrimary,
+                                        showParameterDetails = showParameterDetails,
                                         dispatchedKernelVariant = dispatchedConfig?.kernelsuVariant,
                                         dispatchedSusfsEnabled = dispatchedConfig?.let { !it.cancelSusfs },
                                         active = active,
@@ -1027,7 +1037,9 @@ fun FlashScreen(
                                                 navController.navigate(flashWorkflowRoute(group.runId))
                                             }
                                         },
-                                        onShowParameters = { parameterTarget = group },
+                                        onShowParameters = {
+                                            if (showParameterDetails) parameterTarget = group
+                                        },
                                         onDelete = {
                                             if (failedGhost) {
                                                 vm.dismissFailedWorkflow(group.runId)
@@ -1287,11 +1299,22 @@ fun FlashScreen(
                         contentPadding = PaddingValues(bottom = 32.dp)
                     ) {
                         if (group != null) {
+                            val detailRun = recentRunById[group.runId]
+                            val isManagerPrimary = FlashWorkflowFilter.primaryKind(
+                                run = detailRun,
+                                runTitle = group.runTitle,
+                                hasKernelArtifact = group.hasKernelArtifact(),
+                                hasManagerArtifact = group.hasManagerArtifact()
+                            ) == WorkflowPrimary.Manager
+                            val showParameterDetails = group.shouldShowParameterDetails(detailRun)
                             item {
                                 WorkflowDetailHeader(
                                     group = group,
+                                    showParameterDetails = showParameterDetails,
                                     onBack = dismiss,
-                                    onShowParameters = { parameterTarget = group },
+                                    onShowParameters = {
+                                        if (showParameterDetails) parameterTarget = group
+                                    },
                                     onDelete = {
                                         deleteWorkflowTarget = group
                                         deleteRemoteWorkflowRun = false
@@ -1311,15 +1334,7 @@ fun FlashScreen(
                                 }
                             }
 
-                            val detailRun = recentRunById[group.runId]
-                            val visibleCategories = if (
-                                FlashWorkflowFilter.primaryKind(
-                                    run = detailRun,
-                                    runTitle = group.runTitle,
-                                    hasKernelArtifact = group.hasKernelArtifact(),
-                                    hasManagerArtifact = group.hasManagerArtifact()
-                                ) == WorkflowPrimary.Manager
-                            ) {
+                            val visibleCategories = if (isManagerPrimary) {
                                 listOf(ArtifactCategory.MANAGER)
                             } else {
                                 artifactCategoryOrder
@@ -2544,6 +2559,7 @@ private fun WorkflowRunCard(
     group: WorkflowArtifactGroup,
     summary: BuildParameterSummary?,
     showKernelBuildChips: Boolean,
+    showParameterDetails: Boolean,
     dispatchedKernelVariant: String?,
     dispatchedSusfsEnabled: Boolean?,
     active: Boolean,
@@ -2645,11 +2661,10 @@ private fun WorkflowRunCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                // Parameter details are parsed from the build log, which doesn't
-                // exist while the build is still running — hide the button until
-                // the run has actually finished so users don't tap into an
-                // empty/loading dialog.
-                if (!active && !failedGhost) {
+                // Parameter details come from the kernel build log — manager-only
+                // workflows have nothing meaningful to show. While a build is
+                // still running the log isn't ready either, so hide until finished.
+                if (showParameterDetails && !active && !failedGhost) {
                     IconButton(onClick = onShowParameters) {
                         Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.flash_parameter_details))
                     }
@@ -3410,6 +3425,7 @@ private fun CategoryProgressCard(progress: BuildProgress?) {
 @Composable
 private fun WorkflowDetailHeader(
     group: WorkflowArtifactGroup,
+    showParameterDetails: Boolean = true,
     onBack: () -> Unit,
     onShowParameters: () -> Unit,
     onDelete: () -> Unit
@@ -3436,8 +3452,10 @@ private fun WorkflowDetailHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = onShowParameters) {
-                Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.flash_parameter_details))
+            if (showParameterDetails) {
+                IconButton(onClick = onShowParameters) {
+                    Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.flash_parameter_details))
+                }
             }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.flash_delete_workflow))
@@ -4208,6 +4226,14 @@ private fun WorkflowArtifactGroup.hasManagerArtifact(): Boolean =
 
 private fun WorkflowArtifactGroup.hasKernelArtifact(): Boolean =
     cachedHasKernelArtifact
+
+private fun WorkflowArtifactGroup.shouldShowParameterDetails(run: WorkflowRun?): Boolean =
+    FlashWorkflowFilter.shouldShowParameterDetails(
+        run = run,
+        runTitle = runTitle,
+        hasKernelArtifact = hasKernelArtifact(),
+        hasManagerArtifact = hasManagerArtifact(),
+    )
 
 private fun WorkflowArtifactGroup.hasRemoteKernelArtifact(): Boolean =
     cachedHasRemoteKernelArtifact

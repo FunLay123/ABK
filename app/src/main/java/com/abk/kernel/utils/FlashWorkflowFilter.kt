@@ -139,6 +139,19 @@ object FlashWorkflowFilter {
 
     fun isPureManagerBuild(run: WorkflowRun): Boolean =
         run.isManagerBuild() && !run.isKernelBuild()
+
+    /** Kernel build logs carry the parameter matrix; manager-only workflows do not. */
+    fun shouldShowParameterDetails(
+        run: WorkflowRun?,
+        runTitle: String,
+        hasKernelArtifact: Boolean,
+        hasManagerArtifact: Boolean,
+    ): Boolean = primaryKind(
+        run = run,
+        runTitle = runTitle,
+        hasKernelArtifact = hasKernelArtifact,
+        hasManagerArtifact = hasManagerArtifact,
+    ) != WorkflowPrimary.Manager
 }
 
 private fun String.titleLooksLikeManager(): Boolean {
