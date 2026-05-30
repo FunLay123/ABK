@@ -2,7 +2,6 @@ package com.abk.kernel.viewmodel
 
 import com.abk.kernel.data.model.BuildArtifact
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -65,7 +64,7 @@ class DownloadTaskStateTest {
     }
 
     @Test
-    fun derivesIsDownloadingFromTasksAndProgress() {
+    fun withDownloadState_updatesTasksAndProgress() {
         val task = BuildArtifact(
             id = 9L,
             name = "kernel.zip",
@@ -83,8 +82,9 @@ class DownloadTaskStateTest {
         val withProgressOnly = MainUiState().withDownloadState(downloadProgress = mapOf(9L to 50))
         val idle = MainUiState().withDownloadState()
 
-        assertTrue(withTask.isDownloading)
-        assertTrue(withProgressOnly.isDownloading)
-        assertFalse(idle.isDownloading)
+        assertEquals(listOf(task), withTask.activeDownloadTasks)
+        assertEquals(mapOf(9L to 50), withProgressOnly.downloadProgress)
+        assertTrue(idle.activeDownloadTasks.isEmpty())
+        assertTrue(idle.downloadProgress.isEmpty())
     }
 }

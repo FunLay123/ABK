@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import androidx.annotation.StringRes
+import androidx.core.content.ContextCompat
 import com.abk.kernel.utils.LocaleHelper
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -22,6 +23,8 @@ import com.abk.kernel.data.repository.PreferencesRepository
 import com.abk.kernel.data.repository.Result
 import com.abk.kernel.utils.BuildMonitorService
 import com.abk.kernel.utils.BuildProgressUtils
+import com.abk.kernel.utils.buildDisplaySnapshot
+import com.abk.kernel.utils.computeKindBuildProgress
 import com.abk.kernel.utils.DownloadDirectoryUtils
 import com.abk.kernel.utils.DownloadUtils
 import com.abk.kernel.utils.FailureLogExtractor
@@ -140,7 +143,6 @@ data class MainUiState(
     val isLoadingPrebuiltGkiReleases: Boolean = false,
     val prebuiltGkiAssetsByReleaseId: Map<Long, List<PrebuiltGkiAsset>> = emptyMap(),
     val loadingPrebuiltGkiAssetReleaseIds: Set<Long> = emptySet(),
-    val isDownloading: Boolean = false,
     val downloadProgress: Map<Long, Int> = emptyMap(),
     val activeDownloadTasks: List<ActiveDownloadTask> = emptyList(),
     val pendingAutoDownloadRunId: Long = -1L,
@@ -522,11 +524,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun registerStatusReceiver() {
         val filter = IntentFilter(BuildMonitorService.BROADCAST_STATUS)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            getApplication<Application>().registerReceiver(statusReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            getApplication<Application>().registerReceiver(statusReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            getApplication(),
+            statusReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     // ── Root ──────────────────────────────────────────────────────────────
@@ -5212,12 +5215,6 @@ internal fun prebuiltRecommendationScore(asset: PrebuiltGkiAsset, recommended: K
     return 10 + (if (hasAndroid) 5 else 0) + (if (hasPatch) 8 else 0)
 }
 
-private data class BuildDisplaySnapshot(
-    val status: BuildStatus,
-    val currentRun: WorkflowRun?,
-    val progress: BuildProgress
-)
-
 private fun MainUiState.withBuildRunDisplay(
     run: WorkflowRun,
     status: BuildStatus,
@@ -5257,16 +5254,18 @@ private fun MainUiState.withBuildRunDisplay(
         fallbackStatus = if (run.isManagerBuild()) status else managerBuildStatus
     )
     val descriptors = buildRunDescriptors(updatedRuns)
-    val kernelProgressDisplay = buildDisplaySnapshot(
-        activeRuns = kernelActive,
+    val kernelBuildProgressMerged = computeKindBuildProgress(
+        forKernel = true,
+        activeRuns = updatedRuns,
         progressByRunId = updatedProgressByRunId,
         fallbackRun = if (run.isKernelBuild()) run else kernelCurrentRun,
         fallbackStatus = if (run.isKernelBuild()) status else kernelBuildStatus,
         fallbackProgress = if (run.isKernelBuild()) progress else kernelBuildProgress,
         descriptors = descriptors
     )
-    val managerProgressDisplay = buildDisplaySnapshot(
-        activeRuns = managerActive,
+    val managerBuildProgressMerged = computeKindBuildProgress(
+        forKernel = false,
+        activeRuns = updatedRuns,
         progressByRunId = updatedProgressByRunId,
         fallbackRun = if (run.isManagerBuild()) run else managerCurrentRun,
         fallbackStatus = if (run.isManagerBuild()) status else managerBuildStatus,
@@ -5283,11 +5282,11 @@ private fun MainUiState.withBuildRunDisplay(
         kernelBuildStatus = kernelDisplay.status,
         kernelCurrentRun = kernelDisplay.currentRun,
         kernelActiveBuildRuns = kernelActive,
-        kernelBuildProgress = kernelProgressDisplay.progress,
+        kernelBuildProgress = kernelBuildProgressMerged,
         managerBuildStatus = managerDisplay.status,
         managerCurrentRun = managerDisplay.currentRun,
         managerActiveBuildRuns = managerActive,
-        managerBuildProgress = managerProgressDisplay.progress
+        managerBuildProgress = managerBuildProgressMerged
     )
     return if (status == BuildStatus.FAILURE && run.isFailedFlashRun() && run.id !in dismissedFailedRunIds) {
         withDisplay.copy(sessionGhostFailedRuns = withDisplay.sessionGhostFailedRuns + (run.id to run))
@@ -5331,16 +5330,18 @@ private fun MainUiState.withoutActiveBuildRun(
         fallbackStatus = managerFallbackStatus
     )
     val descriptors = buildRunDescriptors(updatedRuns)
-    val kernelProgressDisplay = buildDisplaySnapshot(
-        activeRuns = kernelActive,
+    val kernelBuildProgressMerged = computeKindBuildProgress(
+        forKernel = true,
+        activeRuns = updatedRuns,
         progressByRunId = updatedProgressByRunId,
         fallbackRun = kernelFallbackRun,
         fallbackStatus = kernelFallbackStatus,
         fallbackProgress = if (kernelCurrentRun?.id == runId) fallbackProgress else kernelBuildProgress,
         descriptors = descriptors
     )
-    val managerProgressDisplay = buildDisplaySnapshot(
-        activeRuns = managerActive,
+    val managerBuildProgressMerged = computeKindBuildProgress(
+        forKernel = false,
+        activeRuns = updatedRuns,
         progressByRunId = updatedProgressByRunId,
         fallbackRun = managerFallbackRun,
         fallbackStatus = managerFallbackStatus,
@@ -5356,11 +5357,11 @@ private fun MainUiState.withoutActiveBuildRun(
         kernelBuildStatus = kernelDisplay.status,
         kernelCurrentRun = kernelDisplay.currentRun,
         kernelActiveBuildRuns = kernelActive,
-        kernelBuildProgress = kernelProgressDisplay.progress,
+        kernelBuildProgress = kernelBuildProgressMerged,
         managerBuildStatus = managerDisplay.status,
         managerCurrentRun = managerDisplay.currentRun,
         managerActiveBuildRuns = managerActive,
-        managerBuildProgress = managerProgressDisplay.progress
+        managerBuildProgress = managerBuildProgressMerged
     )
 }
 
@@ -5389,33 +5390,6 @@ private fun kernelBuildDisplaySnapshot(
     return KernelBuildDisplaySnapshot(
         status = status,
         currentRun = sortedRuns.firstOrNull()
-    )
-}
-
-private fun buildDisplaySnapshot(
-    activeRuns: List<WorkflowRun>,
-    progressByRunId: Map<Long, BuildProgress>,
-    fallbackRun: WorkflowRun?,
-    fallbackStatus: BuildStatus,
-    fallbackProgress: BuildProgress,
-    descriptors: Map<Long, BuildProgressUtils.RunDescriptor> = emptyMap()
-): BuildDisplaySnapshot {
-    val sortedRuns = activeRuns
-        .filter { it.isActiveBuildRun() }
-        .distinctBy { it.id }
-        .sortedByDescending { it.id }
-    if (sortedRuns.isEmpty()) {
-        return BuildDisplaySnapshot(fallbackStatus, fallbackRun, fallbackProgress)
-    }
-    val status = if (sortedRuns.any { it.status == "in_progress" }) {
-        BuildStatus.IN_PROGRESS
-    } else {
-        BuildStatus.QUEUED
-    }
-    return BuildDisplaySnapshot(
-        status = status,
-        currentRun = sortedRuns.firstOrNull(),
-        progress = BuildProgressUtils.merge(sortedRuns, progressByRunId, descriptors)
     )
 }
 
@@ -5710,8 +5684,7 @@ internal fun MainUiState.withDownloadState(
     error = error,
     downloadedArtifacts = downloadedArtifacts,
     downloadProgress = downloadProgress,
-    activeDownloadTasks = activeDownloadTasks,
-    isDownloading = downloadProgress.isNotEmpty() || activeDownloadTasks.isNotEmpty()
+    activeDownloadTasks = activeDownloadTasks
 )
 
 private data class Quintuple<A, B, C, D, E>(val a: A, val b: B, val c: C, val d: D, val e: E)

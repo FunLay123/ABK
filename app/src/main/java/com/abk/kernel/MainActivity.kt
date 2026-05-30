@@ -369,8 +369,11 @@ private fun AbkMainScaffold(
         val longDuration =
             (state.snackbarMessage != null && state.snackbarLongDuration) || state.error != null
         snackbarHostState.showAbkSnackbar(message = message, longDuration = longDuration)
-        if (state.snackbarMessage != null) vm.clearSnackbar()
-        if (state.error != null) vm.clearError()
+        if (state.snackbarMessage != null) {
+            vm.clearSnackbar()
+        } else if (state.error != null) {
+            vm.clearError()
+        }
     }
 
     LaunchedEffect(pendingModuleInstallUri) {
