@@ -15,17 +15,16 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** Hand poses matching [androidx.compose.material.icons.filled.Schedule] (≈10:10). */
-private const val HOUR_HAND_DEGREES = -125f
-private const val MINUTE_HAND_BASE_DEGREES = -5f
+/** Hour hand at 10 o'clock — matches [androidx.compose.material.icons.filled.Schedule]. */
+private const val HOUR_HAND_DEGREES_FROM_TWELVE = 300f
 
 /**
- * Small schedule-style clock for the live workflow duration chip: the dial stays fixed and
- * only the minute hand rotates ([rotationDegrees]).
+ * Schedule-style clock for live workflow duration: fixed dial + hour hand,
+ * only the second hand sweeps ([secondHandDegreesFromTwelve], 0° = 12 o'clock).
  */
 @Composable
 fun LiveDurationScheduleIcon(
-    rotationDegrees: Float,
+    secondHandDegreesFromTwelve: Float,
     tint: Color,
     modifier: Modifier = Modifier,
 ) {
@@ -37,37 +36,57 @@ fun LiveDurationScheduleIcon(
             val center = this.center
             val dim = size.minDimension
             val radius = dim * 0.46f
+            val stroke = dim * 0.085f
             drawCircle(
                 color = tint,
                 radius = radius,
                 center = center,
-                style = Stroke(width = dim * 0.085f),
+                style = Stroke(width = stroke),
             )
-            val hourLength = dim * 0.36f
-            val minuteLength = dim * 0.42f
-            val stroke = dim * 0.095f
-            val minuteAngleRad = Math.toRadians(
-                (MINUTE_HAND_BASE_DEGREES + rotationDegrees).toDouble(),
-            )
-            val hourAngleRad = Math.toRadians(HOUR_HAND_DEGREES.toDouble())
-            fun handEnd(length: Float, angleRad: Double) = Offset(
-                x = center.x + length * cos(angleRad).toFloat(),
-                y = center.y + length * sin(angleRad).toFloat(),
-            )
-            drawLine(
+            val hourLength = dim * 0.32f
+            val secondLength = dim * 0.40f
+            val hourStroke = dim * 0.09f
+            val secondStroke = dim * 0.075f
+            drawHand(
+                center = center,
+                length = hourLength,
+                degreesFromTwelve = HOUR_HAND_DEGREES_FROM_TWELVE,
                 color = tint,
-                start = center,
-                end = handEnd(minuteLength, minuteAngleRad),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round,
+                strokeWidth = hourStroke,
             )
-            drawLine(
+            drawHand(
+                center = center,
+                length = secondLength,
+                degreesFromTwelve = secondHandDegreesFromTwelve,
                 color = tint,
-                start = center,
-                end = handEnd(hourLength, hourAngleRad),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round,
+                strokeWidth = secondStroke,
             )
         }
     }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHand(
+    center: Offset,
+    length: Float,
+    degreesFromTwelve: Float,
+    color: Color,
+    strokeWidth: Float,
+) {
+    val end = handEnd(center, length, degreesFromTwelve)
+    drawLine(
+        color = color,
+        start = center,
+        end = end,
+        strokeWidth = strokeWidth,
+        cap = StrokeCap.Round,
+    )
+}
+
+/** Clockwise degrees from 12 o'clock; 0° points up. */
+private fun handEnd(center: Offset, length: Float, degreesFromTwelve: Float): Offset {
+    val rad = Math.toRadians(degreesFromTwelve.toDouble())
+    return Offset(
+        x = center.x + (length * sin(rad)).toFloat(),
+        y = center.y - (length * cos(rad)).toFloat(),
+    )
 }

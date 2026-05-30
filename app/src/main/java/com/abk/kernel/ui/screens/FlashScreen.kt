@@ -129,16 +129,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -196,10 +189,10 @@ import com.abk.kernel.ui.components.ObserveChildPageVisibility
 import com.abk.kernel.ui.components.childPageOverlayEnterTransition
 import com.abk.kernel.ui.components.childPageOverlayExitTransition
 import com.abk.kernel.ui.components.childPageScrimExitTransition
-import com.abk.kernel.ui.components.LiveDurationScheduleIcon
 import com.abk.kernel.ui.components.rememberChildPageBackController
 import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.utils.FailureLogExtractor
+import com.abk.kernel.ui.components.LiveDurationScheduleIcon
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -3323,7 +3316,7 @@ private fun BuildDurationChip(
         if (!isFinished) {
             while (true) {
                 currentMillis = System.currentTimeMillis()
-                delay(1000L)
+                delay(100L)
             }
         }
     }
@@ -3338,40 +3331,20 @@ private fun BuildDurationChip(
     }
     val chipAccent = MaterialTheme.colorScheme.primary
     val chipShape = RoundedCornerShape(50)
-    val liveTransition = if (live) rememberInfiniteTransition(label = "chip-shimmer") else null
-    val rotation by if (liveTransition != null) {
-        liveTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(12_000, easing = LinearEasing),
-            ),
-            label = "clock-rotate",
-        )
-    } else {
-        remember { mutableFloatStateOf(0f) }
-    }
-    val shimmerPhase by if (liveTransition != null) {
-        liveTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(12_000, easing = LinearEasing),
-            ),
-            label = "shimmer-phase",
-        )
-    } else {
-        remember { mutableFloatStateOf(0f) }
-    }
-    val chipContent: @Composable () -> Unit = {
+    val secondHandDegrees = ((currentMillis % 60_000L) / 60_000f) * 360f
+    Surface(
+        shape = chipShape,
+        color = uiSurfaceColor(chipAccent.copy(alpha = 0.14f)),
+        contentColor = chipAccent,
+    ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (live) {
                 LiveDurationScheduleIcon(
-                    rotationDegrees = rotation,
+                    secondHandDegreesFromTwelve = secondHandDegrees,
                     tint = chipAccent,
                 )
             } else {
@@ -3385,41 +3358,8 @@ private fun BuildDurationChip(
             Text(
                 text = formatted,
                 style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
             )
-        }
-    }
-    if (live) {
-        val base = chipAccent.copy(alpha = 0.14f)
-        val highlight = chipAccent.copy(alpha = 0.28f)
-        Surface(
-            shape = chipShape,
-            color = Color.Transparent,
-            contentColor = chipAccent,
-        ) {
-            Box(
-                Modifier.drawWithCache {
-                    val band = size.width * 1.6f
-                    val travel = size.width + band
-                    val offset = (shimmerPhase * travel) % travel - band
-                    val brush = Brush.linearGradient(
-                        colors = listOf(base, highlight, base),
-                        start = Offset(offset, 0f),
-                        end = Offset(offset + band, size.height),
-                    )
-                    onDrawBehind { drawRect(brush) }
-                }
-            ) {
-                chipContent()
-            }
-        }
-    } else {
-        Surface(
-            shape = chipShape,
-            color = uiSurfaceColor(chipAccent.copy(alpha = 0.14f)),
-            contentColor = chipAccent,
-        ) {
-            chipContent()
         }
     }
 }
