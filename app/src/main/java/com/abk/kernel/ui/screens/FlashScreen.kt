@@ -153,9 +153,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -1304,7 +1302,7 @@ fun FlashScreen(
                     wasShowingBuilding = showBuilding
                     if (!showBuilding) return@LaunchedEffect
                     vm.refreshWorkflowArtifacts(routeRunId)
-                    while (currentCoroutineContext().isActive) {
+                    while (true) {
                         delay(20_000)
                         if (recentRunById[routeRunId]?.isActiveFlashRun() != true) break
                         vm.refreshWorkflowArtifacts(routeRunId)
