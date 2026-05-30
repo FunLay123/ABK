@@ -338,6 +338,7 @@ private fun AbkMainScaffold(
             buildList {
                 add(AbkTab.RuntimeHome)
                 if (state.rootGranted) add(AbkTab.InstalledModules)
+                add(AbkTab.Modules)
                 if (runtimeNativeManagerActive) add(AbkTab.RootAuth)
                 add(AbkTab.Settings)
             }
@@ -567,6 +568,11 @@ private fun AbkMainScaffold(
                         )
                         AbkTab.Modules -> ModuleRepositoryScreen(
                             vm = vm,
+                            mode = if (state.runtimeNavigationEnabled) {
+                                com.abk.kernel.ui.screens.ModuleRepositoryMode.RUNTIME_STANDARD
+                            } else {
+                                com.abk.kernel.ui.screens.ModuleRepositoryMode.BUILD_ABK
+                            },
                             outerPadding = contentPadding,
                             onRepositoryPageVisibleChange = { moduleRepositoryPageVisible = it }
                         )

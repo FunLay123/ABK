@@ -29,6 +29,7 @@ import com.abk.kernel.utils.NotificationUtils
 import com.abk.kernel.utils.RootUtils
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -111,8 +112,10 @@ data class MainUiState(
     val buildQueue: List<BuildQueueItem> = emptyList(),
     val buildQueueProcessing: Boolean = false,
     val cancellingWorkflowRunIds: Set<Long> = emptySet(),
-    val moduleCatalogRepositories: List<ModuleCatalogRepository> = emptyList(),
-    val refreshingModuleCatalogRepositoryIds: Set<String> = emptySet(),
+    val runtimeModuleRepositories: List<RuntimeModuleRepository> = emptyList(),
+    val buildModuleRepositories: List<ModuleCatalogRepository> = emptyList(),
+    val refreshingRuntimeModuleRepositoryIds: Set<String> = emptySet(),
+    val refreshingBuildModuleRepositoryIds: Set<String> = emptySet(),
     val validatingCustomExternalModule: Boolean = false,
     val customExternalModuleError: String? = null,
     val recommendedBuildConfig: KernelBuildConfig? = null,
@@ -137,6 +140,7 @@ data class MainUiState(
     val loadingPrebuiltGkiAssetReleaseIds: Set<Long> = emptySet(),
     val isDownloading: Boolean = false,
     val downloadProgress: Map<Long, Int> = emptyMap(),
+    val activeDownloadTasks: List<ActiveDownloadTask> = emptyList(),
     val pendingAutoDownloadRunId: Long = -1L,
     val deletingWorkflowRunId: Long? = null,
     // Settings
@@ -458,8 +462,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            prefs.moduleCatalogRepositoriesJson.collect { json ->
-                _uiState.update { it.copy(moduleCatalogRepositories = parseModuleCatalogRepositories(json)) }
+            prefs.runtimeModuleRepositoriesJson.collect { json ->
+                val repositories = parseRuntimeModuleRepositories(json)
+                _uiState.update { it.copy(runtimeModuleRepositories = repositories) }
+                refreshStaleRuntimeModuleRepositories(repositories)
+            }
+        }
+        viewModelScope.launch {
+            prefs.buildModuleRepositoriesJson.collect { json ->
+                val repositories = parseBuildModuleRepositories(json)
+                _uiState.update { it.copy(buildModuleRepositories = repositories) }
+                refreshStaleBuildModuleRepositories(repositories)
             }
         }
         viewModelScope.launch {
@@ -1317,7 +1330,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     downloadMirrorBaseUrl = it.downloadMirrorBaseUrl,
                     prebuiltGkiEnabled = it.prebuiltGkiEnabled,
                     predictiveBackEnabled = it.predictiveBackEnabled,
-                    moduleCatalogRepositories = it.moduleCatalogRepositories
+                    runtimeModuleRepositories = it.runtimeModuleRepositories,
+                    buildModuleRepositories = it.buildModuleRepositories
                 )
             }
         }
@@ -2086,7 +2100,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun downloadArtifact(
         artifact: BuildArtifact
     ) {
-        startArtifactDownload(artifact)
+        startArtifactDownload(artifact, automatic = false)
     }
 
     fun loadPrebuiltGkiReleases(force: Boolean = false) {
@@ -2194,7 +2208,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun downloadPrebuiltGki(asset: PrebuiltGkiAsset) {
         val key = DownloadUtils.prebuiltProgressKey(asset.id)
-        artifactDownloadJobs[key]?.cancel()
+        if (key in artifactDownloadJobs) return
         artifactDownloadJobs[key] = viewModelScope.launch {
             try {
                 downloadPrebuiltGkiNow(asset, key)
@@ -2214,6 +2228,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .sortedDownloadedForDisplay()
             _uiState.update { it.copy(downloadedArtifacts = updated) }
             prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
+        }
+    }
+
+    fun cancelDownload(taskKey: Long) {
+        artifactDownloadJobs.remove(taskKey)?.cancel()
+        finishWorkflowDownloadTask(taskKey)
+    }
+
+    fun cancelAutoDownloads(runId: Long) {
+        viewModelScope.launch {
+            if (_uiState.value.pendingAutoDownloadRunId == runId) {
+                prefs.clearPendingAutoDownloadRunId()
+            }
+            _uiState.value.activeDownloadTasks
+                .filter { it.runId == runId && it.automatic }
+                .forEach { task -> cancelDownload(task.key) }
         }
     }
 
@@ -2251,8 +2281,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .map { it.id }
                     .toSet()
                 removedRemoteIds.forEach { artifactId ->
-                    artifactDownloadJobs[artifactId]?.cancel()
-                    artifactDownloadJobs.remove(artifactId)
+                    cancelDownload(artifactId)
                 }
                 val updatedRemote = _uiState.value.artifacts
                     .filterNot { it.runId == runId }
@@ -2266,6 +2295,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         buildParameterSummaries = updatedParameterSummaries,
                         loadingBuildParameterRunIds = state.loadingBuildParameterRunIds - runId,
                         buildParameterErrors = state.buildParameterErrors - runId,
+                        activeDownloadTasks = state.activeDownloadTasks.filterNot { it.runId == runId },
                         downloadProgress = state.downloadProgress.filterKeys { it !in removedRemoteIds },
                         recentRuns = state.recentRuns.filterNot { it.id == runId },
                         currentRun = state.currentRun?.takeUnless { it.id == runId }
@@ -2274,7 +2304,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         fallbackStatus = if (state.currentRun?.id == runId) BuildStatus.IDLE else state.buildStatus,
                         fallbackProgress = state.buildProgress,
                         fallbackRun = state.currentRun?.takeUnless { it.id == runId }
-                    )
+                    ).withDownloadState()
                 }
                 if (_uiState.value.pendingAutoDownloadRunId == runId) {
                     prefs.clearPendingAutoDownloadRunId()
@@ -2368,13 +2398,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun startArtifactDownload(artifact: BuildArtifact) {
+    private fun startArtifactDownload(artifact: BuildArtifact, automatic: Boolean) {
+        if (automatic && artifact.id in artifactDownloadJobs) return
         artifactDownloadJobs[artifact.id]?.cancel()
         artifactDownloadJobs[artifact.id] = viewModelScope.launch {
             try {
-                downloadArtifactNow(artifact)
+                downloadArtifactNow(artifact, automatic)
             } finally {
                 artifactDownloadJobs.remove(artifact.id)
+                finishWorkflowDownloadTask(artifact.id)
             }
         }
     }
@@ -2384,125 +2416,163 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val token = prefs.accessToken.first()
         val downloadDirectory = prefs.downloadDirectory.first()
         _uiState.update {
-            it.copy(
-                isDownloading = true,
+            it.withDownloadState(
                 error = null,
                 downloadProgress = it.downloadProgress + (progressKey to 0)
             )
         }
         NotificationUtils.notifyDownloadProgress(getApplication(), 0, asset.name)
-        val results = DownloadUtils.downloadDirectAsset(
-            getApplication(),
-            token,
-            asset.browserDownloadUrl,
-            asset.name,
-            asset.sizeBytes,
-            PREBUILT_GKI_RUN_ID,
-            text(R.string.vm_prebuilt_gki_label),
-            downloadDirectory
-        ) { pct ->
-            NotificationUtils.notifyDownloadProgress(getApplication(), pct, asset.name)
-            _uiState.update { s ->
-                s.copy(downloadProgress = s.downloadProgress + (progressKey to pct))
+        try {
+            val results = DownloadUtils.downloadDirectAsset(
+                getApplication(),
+                token,
+                asset.browserDownloadUrl,
+                asset.name,
+                asset.sizeBytes,
+                PREBUILT_GKI_RUN_ID,
+                text(R.string.vm_prebuilt_gki_label),
+                downloadDirectory
+            ) { pct ->
+                NotificationUtils.notifyDownloadProgress(getApplication(), pct, asset.name)
+                _uiState.update { s ->
+                    s.withDownloadState(downloadProgress = s.downloadProgress + (progressKey to pct))
+                }
             }
-        }
-        if (!_uiState.value.prebuiltGkiEnabled) {
-            _uiState.update { it.copy(isDownloading = false, downloadProgress = it.downloadProgress - progressKey) }
-            return
-        }
-        if (results.artifacts.isNotEmpty()) {
-            NotificationUtils.notifyDownloadDone(getApplication(), asset.name)
-            val updated = (_uiState.value.downloadedArtifacts + results.artifacts)
-                .distinctBy { it.filePath }
-                .sortedDownloadedForDisplay()
-            _uiState.update { s ->
-                s.copy(
-                    isDownloading = false,
-                    error = null,
-                    downloadedArtifacts = updated,
-                    downloadProgress = s.downloadProgress - progressKey
+            if (!_uiState.value.prebuiltGkiEnabled) {
+                _uiState.update {
+                    it.withDownloadState(downloadProgress = it.downloadProgress - progressKey)
+                }
+                return
+            }
+            if (results.artifacts.isNotEmpty()) {
+                NotificationUtils.notifyDownloadDone(getApplication(), asset.name)
+                val updated = (_uiState.value.downloadedArtifacts + results.artifacts)
+                    .distinctBy { it.filePath }
+                    .sortedDownloadedForDisplay()
+                _uiState.update { s ->
+                    s.withDownloadState(
+                        error = null,
+                        downloadedArtifacts = updated,
+                        downloadProgress = s.downloadProgress - progressKey
+                    )
+                }
+                prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
+            } else {
+                finishArtifactDownloadWithError(
+                    progressKey,
+                    results.errorMessage ?: text(R.string.vm_prebuilt_gki_download_failed, asset.name)
                 )
             }
-            prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
-        } else {
-            finishArtifactDownloadWithError(
-                progressKey,
-                results.errorMessage ?: text(R.string.vm_prebuilt_gki_download_failed, asset.name)
-            )
+        } catch (cancel: CancellationException) {
+            NotificationUtils.cancelDownloadNotification(getApplication())
+            _uiState.update {
+                it.withDownloadState(downloadProgress = it.downloadProgress - progressKey)
+            }
+            throw cancel
         }
     }
 
-    private suspend fun downloadArtifactNow(artifact: BuildArtifact) {
+    private suspend fun downloadArtifactNow(artifact: BuildArtifact, automatic: Boolean) {
         val token = prefs.accessToken.first()
         val downloadDirectory = prefs.downloadDirectory.first()
         if (token.isNullOrBlank()) {
-            _uiState.update { it.copy(isDownloading = false, error = text(R.string.vm_artifact_download_login_required)) }
+            _uiState.update {
+                it.withDownloadState(error = text(R.string.vm_artifact_download_login_required))
+            }
             return
         }
-        _uiState.update {
-            it.copy(
-                isDownloading = true,
-                error = null,
-                downloadProgress = it.downloadProgress + (artifact.id to 0)
-            )
-        }
+        startWorkflowDownloadTask(artifact, automatic)
         NotificationUtils.notifyDownloadProgress(getApplication(), 0, artifact.name)
-        val mirrorBaseUrl = prefs.downloadMirrorBaseUrl.first()
-        val mirrorEnabled = mirrorBaseUrl.isNotBlank()
-        val downloadUrl = if (mirrorEnabled) {
-            monitorMirrorAndResolveDownloadUrl(artifact, mirrorBaseUrl) ?: run {
-                finishArtifactDownloadWithError(artifact.id, text(R.string.vm_mirror_prepare_failed, artifact.name))
-                return
-            }
-        } else {
-            null
-        }
-        val results = DownloadUtils.downloadArtifact(
-            getApplication(),
-            if (downloadUrl == null) token else null,
-            artifact.toArtifact(),
-            artifact.toWorkflowRun(),
-            downloadUrl,
-            downloadDirectory
-        ) { pct ->
-            val displayProgress = if (mirrorEnabled) {
-                (50 + pct / 2).coerceIn(50, 100)
+        try {
+            val mirrorBaseUrl = prefs.downloadMirrorBaseUrl.first()
+            val mirrorEnabled = mirrorBaseUrl.isNotBlank()
+            val downloadUrl = if (mirrorEnabled) {
+                monitorMirrorAndResolveDownloadUrl(artifact, mirrorBaseUrl) ?: run {
+                    finishArtifactDownloadWithError(artifact.id, text(R.string.vm_mirror_prepare_failed, artifact.name))
+                    return
+                }
             } else {
-                pct
+                null
             }
-            NotificationUtils.notifyDownloadProgress(getApplication(), displayProgress, artifact.name)
-            _uiState.update { s ->
-                s.copy(downloadProgress = s.downloadProgress + (artifact.id to displayProgress))
+            val results = DownloadUtils.downloadArtifact(
+                getApplication(),
+                if (downloadUrl == null) token else null,
+                artifact.toArtifact(),
+                artifact.toWorkflowRun(),
+                downloadUrl,
+                downloadDirectory
+            ) { pct ->
+                val displayProgress = if (mirrorEnabled) {
+                    (50 + pct / 2).coerceIn(50, 100)
+                } else {
+                    pct
+                }
+                NotificationUtils.notifyDownloadProgress(getApplication(), displayProgress, artifact.name)
+                updateWorkflowDownloadProgress(artifact.id, displayProgress)
             }
-        }
-        if (results.artifacts.isNotEmpty()) {
-            NotificationUtils.notifyDownloadDone(getApplication(), artifact.name)
-            val updated = (_uiState.value.downloadedArtifacts + results.artifacts)
-                .distinctBy { it.filePath }
-                .sortedDownloadedForDisplay()
-            _uiState.update { s ->
-                s.copy(
-                    isDownloading = false,
-                    error = null,
-                    downloadedArtifacts = updated,
-                    downloadProgress = s.downloadProgress - artifact.id
+            if (results.artifacts.isNotEmpty()) {
+                NotificationUtils.notifyDownloadDone(getApplication(), artifact.name)
+                val updated = (_uiState.value.downloadedArtifacts + results.artifacts)
+                    .distinctBy { it.filePath }
+                    .sortedDownloadedForDisplay()
+                _uiState.update { s ->
+                    s.withDownloadState(
+                        error = null,
+                        downloadedArtifacts = updated
+                    )
+                }
+                prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
+            } else {
+                finishArtifactDownloadWithError(
+                    artifact.id,
+                    results.errorMessage ?: text(R.string.vm_artifact_download_failed, artifact.name)
                 )
             }
-            prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
-        } else {
-            finishArtifactDownloadWithError(
-                artifact.id,
-                results.errorMessage ?: text(R.string.vm_artifact_download_failed, artifact.name)
-            )
+        } catch (cancel: CancellationException) {
+            NotificationUtils.cancelDownloadNotification(getApplication())
+            throw cancel
         }
     }
 
     private fun finishArtifactDownloadWithError(artifactId: Long, message: String) {
         _uiState.update {
-            it.copy(
-                isDownloading = false,
+            it.withDownloadState(
                 error = it.error ?: message,
                 downloadProgress = it.downloadProgress - artifactId
+            )
+        }
+    }
+
+    private fun startWorkflowDownloadTask(artifact: BuildArtifact, automatic: Boolean) {
+        val task = artifact.toActiveDownloadTask(automatic = automatic)
+        _uiState.update { state ->
+            state.withDownloadState(
+                error = null,
+                activeDownloadTasks = (state.activeDownloadTasks.filterNot { it.key == task.key } + task)
+                    .sortedDownloadTasks(),
+                downloadProgress = state.downloadProgress + (task.key to task.progress)
+            )
+        }
+    }
+
+    private fun updateWorkflowDownloadProgress(taskKey: Long, progress: Int) {
+        _uiState.update { state ->
+            state.withDownloadState(
+                activeDownloadTasks = state.activeDownloadTasks
+                    .map { task ->
+                        if (task.key == taskKey) task.copy(progress = progress.coerceIn(0, 100)) else task
+                    }
+                    .sortedDownloadTasks(),
+                downloadProgress = state.downloadProgress + (taskKey to progress.coerceIn(0, 100))
+            )
+        }
+    }
+
+    private fun finishWorkflowDownloadTask(taskKey: Long) {
+        _uiState.update { state ->
+            state.withDownloadState(
+                activeDownloadTasks = state.activeDownloadTasks.filterNot { it.key == taskKey },
+                downloadProgress = state.downloadProgress - taskKey
             )
         }
     }
@@ -2652,9 +2722,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun markMirrorProgress(artifactId: Long, progress: Int) {
-        _uiState.update { s ->
-            s.copy(downloadProgress = s.downloadProgress + (artifactId to progress.coerceIn(0, 100)))
-        }
+        updateWorkflowDownloadProgress(artifactId, progress)
     }
 
     private suspend fun findMirrorReleaseAssetUrl(
@@ -2747,7 +2815,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         prefs.clearPendingAutoDownloadRunId()
-        targets.forEach { startArtifactDownload(it) }
+        targets.forEach { startArtifactDownload(it, automatic = true) }
     }
 
     // ── Settings ──────────────────────────────────────────────────────────
@@ -2802,7 +2870,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 prebuiltGkiAssetsByReleaseId = emptyMap(),
                 loadingPrebuiltGkiAssetReleaseIds = emptySet(),
                 downloadProgress = it.downloadProgress.filterKeys { key -> key >= 0L }
-            )
+            ).withDownloadState()
         }
         prefs.setPrebuiltGkiEnabled(v)
     }
@@ -3735,40 +3803,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateBuildConfig(preview.plan.config)
     }
 
-    fun addModuleCatalogRepository(url: String) {
+    fun addBuildModuleRepository(url: String) {
         val cleanUrl = normalizeModuleCatalogUrl(url)
         if (cleanUrl.isBlank()) {
             _uiState.update { it.copy(error = text(R.string.vm_module_repo_url_empty)) }
             return
         }
 
-        val current = _uiState.value.moduleCatalogRepositories
+        val current = _uiState.value.buildModuleRepositories
         val existing = current.firstOrNull { it.url.equals(cleanUrl, ignoreCase = true) }
         if (existing != null) {
-            refreshModuleCatalogRepository(existing.id)
+            refreshBuildModuleRepository(existing.id)
             return
         }
 
         val repository = ModuleCatalogRepository(
             id = UUID.randomUUID().toString(),
             url = cleanUrl,
-            name = cleanUrl.moduleCatalogFallbackName(text(R.string.module_repo_title))
+            name = cleanUrl.moduleCatalogFallbackName(localizedBuildModuleRepoTitle())
         )
-        saveModuleCatalogRepositories(current + repository)
-        refreshModuleCatalogRepository(repository.id)
+        saveBuildModuleRepositories(current + repository)
+        refreshBuildModuleRepository(repository.id)
     }
 
-    fun deleteModuleCatalogRepository(id: String) {
-        saveModuleCatalogRepositories(_uiState.value.moduleCatalogRepositories.filterNot { it.id == id })
+    fun deleteBuildModuleRepository(id: String) {
+        saveBuildModuleRepositories(_uiState.value.buildModuleRepositories.filterNot { it.id == id })
     }
 
-    fun refreshModuleCatalogRepository(id: String) {
-        val repository = _uiState.value.moduleCatalogRepositories.firstOrNull { it.id == id } ?: return
+    fun refreshBuildModuleRepository(id: String) {
+        val repository = _uiState.value.buildModuleRepositories.firstOrNull { it.id == id } ?: return
         viewModelScope.launch {
             _uiState.update {
-                it.copy(refreshingModuleCatalogRepositoryIds = it.refreshingModuleCatalogRepositoryIds + id)
+                it.copy(refreshingBuildModuleRepositoryIds = it.refreshingBuildModuleRepositoryIds + id)
             }
-            when (val result = github.fetchModuleCatalog(repository.url)) {
+            when (val result = github.fetchBuildModuleCatalog(repository.url)) {
                 is Result.Success -> {
                     val data = result.data
                     val updated = repository.copy(
@@ -3779,16 +3847,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         error = null,
                         skippedCount = data.skippedCount
                     )
-                    saveModuleCatalogRepositories(
-                        _uiState.value.moduleCatalogRepositories.map {
+                    saveBuildModuleRepositories(
+                        _uiState.value.buildModuleRepositories.map {
                             if (it.id == id) updated else it
                         }
                     )
                 }
                 is Result.Error -> {
                     val updated = repository.copy(error = result.message)
-                    saveModuleCatalogRepositories(
-                        _uiState.value.moduleCatalogRepositories.map {
+                    saveBuildModuleRepositories(
+                        _uiState.value.buildModuleRepositories.map {
                             if (it.id == id) updated else it
                         }
                     )
@@ -3796,14 +3864,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Result.Loading -> Unit
             }
             _uiState.update {
-                it.copy(refreshingModuleCatalogRepositoryIds = it.refreshingModuleCatalogRepositoryIds - id)
+                it.copy(refreshingBuildModuleRepositoryIds = it.refreshingBuildModuleRepositoryIds - id)
             }
         }
     }
 
-    fun refreshAllModuleCatalogRepositories() {
-        _uiState.value.moduleCatalogRepositories.forEach { repository ->
-            refreshModuleCatalogRepository(repository.id)
+    fun refreshAllBuildModuleRepositories() {
+        _uiState.value.buildModuleRepositories.forEach { repository ->
+            refreshBuildModuleRepository(repository.id)
         }
     }
 
@@ -3916,6 +3984,90 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
+    fun addRuntimeModuleRepository(url: String) {
+        val cleanUrl = normalizeModuleCatalogUrl(url)
+        if (cleanUrl.isBlank()) {
+            _uiState.update { it.copy(error = text(R.string.vm_module_repo_url_empty)) }
+            return
+        }
+
+        val current = _uiState.value.runtimeModuleRepositories
+        val existing = current.firstOrNull { it.url.equals(cleanUrl, ignoreCase = true) }
+        if (existing != null) {
+            refreshRuntimeModuleRepository(existing.id)
+            return
+        }
+
+        val repository = RuntimeModuleRepository(
+            id = UUID.randomUUID().toString(),
+            url = cleanUrl,
+            name = cleanUrl.moduleCatalogFallbackName(localizedRuntimeModuleRepoTitle())
+        )
+        saveRuntimeModuleRepositories(current + repository)
+        refreshRuntimeModuleRepository(repository.id)
+    }
+
+    fun deleteRuntimeModuleRepository(id: String) {
+        saveRuntimeModuleRepositories(_uiState.value.runtimeModuleRepositories.filterNot { it.id == id })
+    }
+
+    fun refreshRuntimeModuleRepository(id: String) {
+        val repository = _uiState.value.runtimeModuleRepositories.firstOrNull { it.id == id } ?: return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(refreshingRuntimeModuleRepositoryIds = it.refreshingRuntimeModuleRepositoryIds + id)
+            }
+            when (val result = github.fetchRuntimeModuleCatalog(repository.url)) {
+                is Result.Success -> {
+                    val data = result.data
+                    val updated = repository.copy(
+                        indexJsonUrl = data.indexUrl,
+                        name = data.name,
+                        modules = data.modules,
+                        lastUpdated = System.currentTimeMillis(),
+                        error = null,
+                        skippedCount = data.skippedCount
+                    )
+                    saveRuntimeModuleRepositories(
+                        _uiState.value.runtimeModuleRepositories.map {
+                            if (it.id == id) updated else it
+                        }
+                    )
+                }
+                is Result.Error -> {
+                    val updated = repository.copy(error = result.message)
+                    saveRuntimeModuleRepositories(
+                        _uiState.value.runtimeModuleRepositories.map {
+                            if (it.id == id) updated else it
+                        }
+                    )
+                }
+                Result.Loading -> Unit
+            }
+            _uiState.update {
+                it.copy(refreshingRuntimeModuleRepositoryIds = it.refreshingRuntimeModuleRepositoryIds - id)
+            }
+        }
+    }
+
+    fun refreshAllRuntimeModuleRepositories() {
+        _uiState.value.runtimeModuleRepositories.forEach { repository ->
+            refreshRuntimeModuleRepository(repository.id)
+        }
+    }
+
+    private fun refreshStaleRuntimeModuleRepositories(repositories: List<RuntimeModuleRepository>) {
+        repositories
+            .filter { it.lastUpdated <= 0L && it.error == null }
+            .forEach { repository -> refreshRuntimeModuleRepository(repository.id) }
+    }
+
+    private fun refreshStaleBuildModuleRepositories(repositories: List<ModuleCatalogRepository>) {
+        repositories
+            .filter { it.lastUpdated <= 0L && it.error == null }
+            .forEach { repository -> refreshBuildModuleRepository(repository.id) }
+    }
+
     suspend fun addCustomExternalModuleFromUrl(url: String, stage: String): Boolean {
         val metadata = checkCustomExternalModuleMetadata(url) ?: return false
         val normalizedStage = CustomExternalModuleStage.normalize(stage)
@@ -4014,10 +4166,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private fun saveModuleCatalogRepositories(repositories: List<ModuleCatalogRepository>) {
-        val sanitized = sanitizeModuleCatalogRepositories(repositories)
-        _uiState.update { it.copy(moduleCatalogRepositories = sanitized) }
-        viewModelScope.launch { prefs.saveModuleCatalogRepositoriesJson(gson.toJson(sanitized)) }
+    private fun saveRuntimeModuleRepositories(repositories: List<RuntimeModuleRepository>) {
+        val sanitized = sanitizeRuntimeModuleRepositories(repositories)
+        _uiState.update { it.copy(runtimeModuleRepositories = sanitized) }
+        viewModelScope.launch { prefs.saveRuntimeModuleRepositoriesJson(gson.toJson(sanitized)) }
+    }
+
+    private fun saveBuildModuleRepositories(repositories: List<ModuleCatalogRepository>) {
+        val sanitized = sanitizeBuildModuleRepositories(repositories)
+        _uiState.update { it.copy(buildModuleRepositories = sanitized) }
+        viewModelScope.launch { prefs.saveBuildModuleRepositoriesJson(gson.toJson(sanitized)) }
     }
 
     fun loadBuildParameterSummary(runId: Long, force: Boolean = false) {
@@ -4165,17 +4323,84 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private fun parseModuleCatalogRepositories(json: String?): List<ModuleCatalogRepository> {
-        if (json.isNullOrBlank()) return defaultModuleCatalogRepositories()
-        return runCatching<List<ModuleCatalogRepository>> {
-            val type = object : TypeToken<List<ModuleCatalogRepository>>() {}.type
-            sanitizeModuleCatalogRepositories(
-                gson.fromJson<List<ModuleCatalogRepository>>(json, type).orEmpty()
+    private fun parseRuntimeModuleRepositories(json: String?): List<RuntimeModuleRepository> {
+        if (json.isNullOrBlank()) return defaultRuntimeModuleRepositories()
+        return runCatching<List<RuntimeModuleRepository>> {
+            val type = object : TypeToken<List<RuntimeModuleRepository>>() {}.type
+            sanitizeRuntimeModuleRepositories(
+                gson.fromJson<List<RuntimeModuleRepository>>(json, type).orEmpty()
             )
-        }.getOrDefault(defaultModuleCatalogRepositories())
+        }.getOrDefault(defaultRuntimeModuleRepositories())
     }
 
-    private fun sanitizeModuleCatalogRepositories(
+    private fun sanitizeRuntimeModuleRepositories(
+        repositories: List<RuntimeModuleRepository>
+    ): List<RuntimeModuleRepository> {
+        return repositories
+            .mapNotNull { repository ->
+                val url = normalizeModuleCatalogUrl(repository.url)
+                if (url.isBlank()) return@mapNotNull null
+                val modules = repository.modules
+                    .mapNotNull(::sanitizeRuntimeModuleCatalogItem)
+                    .distinctBy { it.id.trim().lowercase().ifBlank { it.name.trim().lowercase() } }
+                    .sortedBy { it.name.lowercase() }
+                repository.copy(
+                    id = repository.id.ifBlank { UUID.randomUUID().toString() },
+                    url = url,
+                    indexJsonUrl = repository.indexJsonUrl.trim(),
+                    name = repository.name.trim().ifBlank { url.moduleCatalogFallbackName(localizedRuntimeModuleRepoTitle()) },
+                    modules = modules,
+                    lastUpdated = repository.lastUpdated.takeIf { it > 0L } ?: 0L,
+                    error = repository.error?.takeIf { it.isNotBlank() },
+                    skippedCount = repository.skippedCount.coerceAtLeast(0)
+                )
+            }
+            .distinctBy { it.url.lowercase() }
+            .sortedWith(compareByDescending<RuntimeModuleRepository> {
+                if (it.url == OFFICIAL_RUNTIME_MODULE_REPOSITORY_URL) 1 else 0
+            }
+                .thenBy { it.name.lowercase() })
+    }
+
+    private fun sanitizeRuntimeModuleCatalogItem(item: RuntimeModuleCatalogItem): RuntimeModuleCatalogItem? {
+        val name = item.name.trim()
+        val zipUrl = item.zipUrl.trim()
+        if (name.isBlank() || zipUrl.isBlank()) return null
+        return item.copy(
+            id = item.id.trim().ifBlank { name.lowercase().replace(' ', '_') },
+            name = name,
+            version = item.version.trim(),
+            author = item.author.trim(),
+            description = item.description.trim(),
+            zipUrl = zipUrl,
+            changelog = item.changelog.trim(),
+            support = item.support.trim(),
+            donate = item.donate.trim(),
+            website = item.website.trim(),
+            cover = item.cover.trim(),
+            icon = item.icon.trim()
+        )
+    }
+
+    private fun defaultRuntimeModuleRepositories(): List<RuntimeModuleRepository> = listOf(
+        RuntimeModuleRepository(
+            id = OFFICIAL_RUNTIME_MODULE_REPOSITORY_ID,
+            url = OFFICIAL_RUNTIME_MODULE_REPOSITORY_URL,
+            name = localizedRuntimeModuleRepoTitle()
+        )
+    )
+
+    private fun parseBuildModuleRepositories(json: String?): List<ModuleCatalogRepository> {
+        if (json.isNullOrBlank()) return defaultBuildModuleRepositories()
+        return runCatching<List<ModuleCatalogRepository>> {
+            val type = object : TypeToken<List<ModuleCatalogRepository>>() {}.type
+            sanitizeBuildModuleRepositories(
+                gson.fromJson<List<ModuleCatalogRepository>>(json, type).orEmpty()
+            )
+        }.getOrDefault(defaultBuildModuleRepositories())
+    }
+
+    private fun sanitizeBuildModuleRepositories(
         repositories: List<ModuleCatalogRepository>
     ): List<ModuleCatalogRepository> {
         return repositories
@@ -4183,14 +4408,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val url = normalizeModuleCatalogUrl(repository.url)
                 if (url.isBlank()) return@mapNotNull null
                 val modules = repository.modules
-                    .mapNotNull(::sanitizeModuleCatalogItem)
+                    .mapNotNull(::sanitizeBuildModuleCatalogItem)
                     .distinctBy { it.repoUrl.trim().lowercase() }
                     .sortedBy { it.name.lowercase() }
                 repository.copy(
                     id = repository.id.ifBlank { UUID.randomUUID().toString() },
                     url = url,
                     indexJsonUrl = repository.indexJsonUrl.trim(),
-                    name = repository.name.trim().ifBlank { url.moduleCatalogFallbackName(text(R.string.module_repo_title)) },
+                    name = repository.name.trim().ifBlank { url.moduleCatalogFallbackName(localizedBuildModuleRepoTitle()) },
                     modules = modules,
                     lastUpdated = repository.lastUpdated.takeIf { it > 0L } ?: 0L,
                     error = repository.error?.takeIf { it.isNotBlank() },
@@ -4199,12 +4424,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             .distinctBy { it.url.lowercase() }
             .sortedWith(compareByDescending<ModuleCatalogRepository> {
-                if (it.url == OFFICIAL_MODULE_CATALOG_URL) 1 else 0
+                if (it.url == OFFICIAL_BUILD_MODULE_CATALOG_URL) 1 else 0
             }
                 .thenBy { it.name.lowercase() })
     }
 
-    private fun sanitizeModuleCatalogItem(item: ModuleCatalogItem): ModuleCatalogItem? {
+    private fun sanitizeBuildModuleCatalogItem(item: ModuleCatalogItem): ModuleCatalogItem? {
         val repoUrl = item.repoUrl.trim()
         if (repoUrl.isBlank()) return null
         val supportedStages = item.supportedStages
@@ -4220,7 +4445,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .filter { it in supportedStages }
             .ifEmpty { listOf(defaultStage) }
         return item.copy(
-            name = item.name.trim().ifBlank { repoUrl.moduleCatalogFallbackName(text(R.string.module_repo_title)) },
+            name = item.name.trim().ifBlank { repoUrl.moduleCatalogFallbackName(localizedBuildModuleRepoTitle()) },
             version = item.version.trim(),
             description = item.description.trim(),
             repoUrl = repoUrl,
@@ -4232,10 +4457,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private fun defaultModuleCatalogRepositories(): List<ModuleCatalogRepository> = listOf(
+    private fun defaultBuildModuleRepositories(): List<ModuleCatalogRepository> = listOf(
         ModuleCatalogRepository(
-            id = OFFICIAL_MODULE_CATALOG_ID,
-            url = OFFICIAL_MODULE_CATALOG_URL,
+            id = OFFICIAL_BUILD_MODULE_CATALOG_ID,
+            url = OFFICIAL_BUILD_MODULE_CATALOG_URL,
             name = text(R.string.vm_official_module_repo)
         )
     )
@@ -4377,6 +4602,20 @@ internal fun String.moduleCatalogFallbackName(fallback: String = "Module reposit
     .removeSuffix(".git")
     .removeSuffix(".json")
     .ifBlank { fallback }
+
+private fun MainViewModel.localizedRuntimeModuleRepoTitle(): String =
+    when (LocaleHelper.getLanguage(getApplication())) {
+        LocaleHelper.LANG_ZH -> "普通模块仓库"
+        LocaleHelper.LANG_RU -> "Репозиторий обычных модулей"
+        else -> "Standard Module Repo"
+    }
+
+private fun MainViewModel.localizedBuildModuleRepoTitle(): String =
+    when (LocaleHelper.getLanguage(getApplication())) {
+        LocaleHelper.LANG_ZH -> "ABK 模块仓库"
+        LocaleHelper.LANG_RU -> "Репозиторий модулей ABK"
+        else -> "ABK Module Repo"
+    }
 
 private fun padBase64Url(value: String): String =
     value + "=".repeat((4 - value.length % 4) % 4)
@@ -4673,8 +4912,11 @@ private const val BUILD_PLAN_ONEPLUS_FIELDS_VERSION = 4
 private const val BUILD_PLAN_NAME_LIMIT = 80
 private const val BUILD_PLAN_MAX_STRING_BYTES = 4096
 private const val BUILD_PLAN_MAX_MODULES = 32
-private const val OFFICIAL_MODULE_CATALOG_ID = "official-abk-module-catalog"
-private const val OFFICIAL_MODULE_CATALOG_URL = "https://github.com/xingguangcuican6666/ABK_repo"
+private const val OFFICIAL_RUNTIME_MODULE_REPOSITORY_ID = "official-runtime-module-repository"
+private const val OFFICIAL_RUNTIME_MODULE_REPOSITORY_URL =
+    "https://raw.githubusercontent.com/Magisk-Modules-Alt-Repo/json-v2/refs/heads/main/json/modules.json"
+private const val OFFICIAL_BUILD_MODULE_CATALOG_ID = "official-abk-module-catalog"
+private const val OFFICIAL_BUILD_MODULE_CATALOG_URL = "https://github.com/xingguangcuican6666/ABK_repo"
 
 private val BUILD_PLAN_KSU_VARIANTS = listOf("Official", "SukiSU", "ReSukiSU", "None")
 private val BUILD_PLAN_KSU_BRANCHES = KSU_BRANCH_BUILD_PLAN_OPTIONS
@@ -5388,6 +5630,38 @@ private fun List<DownloadedArtifact>.sortedDownloadedForDisplay(): List<Download
             .thenByDescending { it.runId }
             .thenBy { it.name }
     )
+
+internal fun List<ActiveDownloadTask>.sortedDownloadTasks(): List<ActiveDownloadTask> =
+    sortedWith(
+        compareByDescending<ActiveDownloadTask> { it.runNumber }
+            .thenByDescending { it.runId }
+            .thenBy { it.name }
+    )
+
+internal fun BuildArtifact.toActiveDownloadTask(automatic: Boolean): ActiveDownloadTask =
+    ActiveDownloadTask(
+        key = id,
+        artifactId = id,
+        runId = runId,
+        name = name,
+        runTitle = runTitle,
+        runNumber = runNumber,
+        progress = 0,
+        automatic = automatic
+    )
+
+internal fun MainUiState.withDownloadState(
+    error: String? = this.error,
+    downloadedArtifacts: List<DownloadedArtifact> = this.downloadedArtifacts,
+    downloadProgress: Map<Long, Int> = this.downloadProgress,
+    activeDownloadTasks: List<ActiveDownloadTask> = this.activeDownloadTasks
+): MainUiState = copy(
+    error = error,
+    downloadedArtifacts = downloadedArtifacts,
+    downloadProgress = downloadProgress,
+    activeDownloadTasks = activeDownloadTasks,
+    isDownloading = downloadProgress.isNotEmpty() || activeDownloadTasks.isNotEmpty()
+)
 
 private data class Quintuple<A, B, C, D, E>(val a: A, val b: B, val c: C, val d: D, val e: E)
 
