@@ -40,6 +40,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -211,9 +215,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val monitoredRunIds = mutableSetOf<Long>()
     private val preparedMirrorArtifacts = mutableMapOf<Long, Set<String>>()
     private val artifactDownloadJobs = mutableMapOf<Long, Job>()
+    private val artifactLoadJobs = mutableMapOf<Long, Job>()
+    private val artifactLoadGenerations = mutableMapOf<Long, Int>()
     private var hasCheckedWorkflowEnablementThisLaunch = false
     private var buildQueueJob: Job? = null
     private var recentRunsRefreshJob: Job? = null
+    private var recentRunsRefreshGeneration = 0
     private var foregroundWorkflowRefreshJob: Job? = null
     private var foregroundWorkflowRefreshIntervalSec =
         PreferencesRepository.DEFAULT_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC
@@ -281,7 +288,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     maybeLoadArtifactsWhileRunning(run.id)
                 }
                 if (bs == BuildStatus.SUCCESS) {
-                    loadArtifacts(run.id, autoDownload = true)
+                    loadArtifacts(run.id, autoDownload = true, retryWhenEmpty = true, force = true)
                 }
                 if (bs !in ACTIVE_BUILD_STATUSES) {
                     monitoredRunIds.remove(run.id)
@@ -1699,11 +1706,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val state = _uiState.value
         val username = state.user?.login ?: return
         val repoName = state.forkRepo?.name ?: return
-        if (recentRunsRefreshJob?.isActive == true || (showRefreshIndicator && state.isRefreshingRecentRuns)) return
+        val userInitiatedFull = showRefreshIndicator && !lightweight
+        if (recentRunsRefreshJob?.isActive == true) {
+            if (!userInitiatedFull) return
+            recentRunsRefreshJob?.cancel()
+        }
+        val generation = ++recentRunsRefreshGeneration
         recentRunsRefreshJob = viewModelScope.launch {
-            if (showRefreshIndicator) {
-                _uiState.update { it.copy(isRefreshingRecentRuns = true) }
-            }
+            _uiState.update { it.copy(isRefreshingRecentRuns = true) }
             try {
                 when (val r = github.listRecentRuns(username, repoName, perPage = RECENT_WORKFLOW_RUNS_PAGE_SIZE)) {
                     is Result.Success -> {
@@ -1733,10 +1743,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     else -> {}
                 }
             } finally {
-                if (showRefreshIndicator) {
+                if (generation == recentRunsRefreshGeneration) {
                     _uiState.update { it.copy(isRefreshingRecentRuns = false) }
+                    recentRunsRefreshJob = null
                 }
-                recentRunsRefreshJob = null
             }
         }
     }
@@ -2052,8 +2062,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showSnackbar(message = timeoutMessage, longDuration = true)
     }
 
-    fun refreshWorkflowArtifacts(runId: Long) {
-        loadArtifacts(runId, autoDownload = false)
+    fun refreshWorkflowArtifacts(
+        runId: Long,
+        autoDownload: Boolean = false,
+        retryWhenEmpty: Boolean = false,
+        force: Boolean = false,
+    ) {
+        loadArtifacts(
+            runId = runId,
+            autoDownload = autoDownload,
+            retryWhenEmpty = retryWhenEmpty,
+            force = force,
+        )
     }
 
     private fun maybeLoadArtifactsWhileRunning(runId: Long) {
@@ -2065,31 +2085,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         loadArtifacts(runId, autoDownload = false)
     }
 
-    fun loadArtifacts(runId: Long, autoDownload: Boolean = false) {
+    fun loadArtifacts(
+        runId: Long,
+        autoDownload: Boolean = false,
+        retryWhenEmpty: Boolean = autoDownload,
+        force: Boolean = false,
+    ) {
+        if (runId <= 0L) return
         val state = _uiState.value
         val username = state.user?.login ?: return
         val repoName = state.forkRepo?.name ?: return
-        viewModelScope.launch {
-            when (val r = listArtifactsWithRetry(username, repoName, runId, retryWhenEmpty = autoDownload)) {
-                is Result.Success -> {
-                    val run = state.recentRuns.find { it.id == runId }
-                        ?: state.currentRun?.takeIf { it.id == runId }
-                        ?: when (val runResult = github.getWorkflowRun(username, repoName, runId)) {
-                            is Result.Success -> runResult.data
-                            else -> null
+        if (!force && artifactLoadJobs[runId]?.isActive == true) return
+
+        artifactLoadJobs[runId]?.cancel()
+        val generation = (artifactLoadGenerations[runId] ?: 0) + 1
+        artifactLoadGenerations[runId] = generation
+        artifactLoadJobs[runId] = viewModelScope.launch {
+            try {
+                when (val r = listArtifactsWithRetry(username, repoName, runId, retryWhenEmpty = retryWhenEmpty)) {
+                    is Result.Success -> {
+                        if (generation != artifactLoadGenerations[runId]) return@launch
+                        val run = _uiState.value.recentRuns.find { it.id == runId }
+                            ?: _uiState.value.currentRun?.takeIf { it.id == runId }
+                            ?: when (val runResult = github.getWorkflowRun(username, repoName, runId)) {
+                                is Result.Success -> runResult.data
+                                else -> null
+                            }
+                        val buildArtifacts = r.data.map { artifact ->
+                            if (run != null) artifact.withRun(run) else artifact.toBuildArtifact(
+                                runId,
+                                text(R.string.vm_workflow_run_title, runId)
+                            )
                         }
-                    val buildArtifacts = r.data.map { artifact ->
-                        if (run != null) artifact.withRun(run) else artifact.toBuildArtifact(
-                            runId,
-                            text(R.string.vm_workflow_run_title, runId)
-                        )
+                        val merged = mergeRemoteArtifacts(_uiState.value.artifacts, buildArtifacts)
+                        _uiState.update { it.copy(artifacts = merged) }
+                        prefs.saveRemoteArtifactsJson(gson.toJson(merged))
+                        maybeAutoDownloadRun(runId, buildArtifacts, autoDownload)
                     }
-                    val merged = mergeRemoteArtifacts(_uiState.value.artifacts, buildArtifacts)
-                    _uiState.update { it.copy(artifacts = merged) }
-                    prefs.saveRemoteArtifactsJson(gson.toJson(merged))
-                    maybeAutoDownloadRun(runId, buildArtifacts, autoDownload)
+                    else -> {}
                 }
-                else -> {}
+            } finally {
+                if (generation == artifactLoadGenerations[runId]) {
+                    artifactLoadJobs.remove(runId)
+                }
             }
         }
     }
@@ -2789,15 +2827,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (runsToRefresh.isEmpty()) return
 
         val existingArtifacts = _uiState.value.artifacts
+        val (priorityRuns, otherRuns) = runsToRefresh.partition { run ->
+            run.status in activeStatuses || run.isManagerBuild()
+        }
         val (merged, pendingRunId) = withContext(Dispatchers.IO) {
-            val collected = runsToRefresh.flatMap { run ->
-                when (val artifacts = github.listArtifacts(owner, repoName, run.id)) {
-                    is Result.Success -> artifacts.data.map { it.withRun(run) }
-                    else -> emptyList()
-                }
+            suspend fun fetchArtifacts(batch: List<WorkflowRun>): List<BuildArtifact> = coroutineScope {
+                batch.map { run ->
+                    async {
+                        when (val artifacts = github.listArtifacts(owner, repoName, run.id)) {
+                            is Result.Success -> artifacts.data.map { it.withRun(run) }
+                            else -> emptyList()
+                        }
+                    }
+                }.awaitAll().flatten()
             }
-            val mergedArtifacts = mergeRemoteArtifacts(existingArtifacts, collected)
+
+            var mergedArtifacts = existingArtifacts
+            mergedArtifacts = mergeRemoteArtifacts(mergedArtifacts, fetchArtifacts(priorityRuns))
             prefs.saveRemoteArtifactsJson(gson.toJson(mergedArtifacts))
+            _uiState.update { it.copy(artifacts = mergedArtifacts) }
+
+            ensureActive()
+            if (otherRuns.isNotEmpty()) {
+                mergedArtifacts = mergeRemoteArtifacts(mergedArtifacts, fetchArtifacts(otherRuns))
+                prefs.saveRemoteArtifactsJson(gson.toJson(mergedArtifacts))
+            }
             mergedArtifacts to prefs.pendingAutoDownloadRunId.first()
         }
         _uiState.update { it.copy(artifacts = merged) }

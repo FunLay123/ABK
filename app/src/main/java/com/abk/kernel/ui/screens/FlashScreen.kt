@@ -239,6 +239,7 @@ fun FlashScreen(
     var prebuiltParameterTarget by remember { mutableStateOf<PrebuiltGkiRelease?>(null) }
     var deleteRemoteWorkflowRun by remember { mutableStateOf(false) }
     var showFlashConfirm by remember { mutableStateOf(false) }
+    var showInstallManagerConfirm by remember { mutableStateOf(false) }
     var cancelConfirmRunId by remember { mutableStateOf<Long?>(null) }
     var showTerminal by remember { mutableStateOf(false) }
     var selectedAnyKernelSlotTargetName by rememberSaveable {
@@ -503,7 +504,9 @@ fun FlashScreen(
     }
 
     LaunchedEffect(state.forkRepo?.fullName) {
-        if (state.forkRepo != null) vm.loadRecentRuns()
+        if (state.forkRepo != null) {
+            vm.loadRecentRuns(showRefreshIndicator = false, lightweight = true)
+        }
     }
 
     LaunchedEffect(state.prebuiltGkiEnabled) {
@@ -556,6 +559,11 @@ fun FlashScreen(
         scope.launch(Dispatchers.Main.immediate) {
             terminalLog = terminalLog + line
         }
+    }
+
+    fun requestInstallManager(item: DownloadedArtifact) {
+        selectedItem = item
+        showInstallManagerConfirm = true
     }
 
     fun installManager(item: DownloadedArtifact) {
@@ -687,7 +695,8 @@ fun FlashScreen(
     }
 
     if (showFlashConfirm) {
-        val item = selectedItem ?: return
+        val item = selectedItem
+        if (item != null) {
         AlertDialog(
             onDismissRequest = { showFlashConfirm = false },
             icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
@@ -749,6 +758,33 @@ fun FlashScreen(
                 TextButton(onClick = { showFlashConfirm = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
+        }
+    }
+
+    if (showInstallManagerConfirm) {
+        val item = selectedItem
+        if (item != null) {
+        AlertDialog(
+            onDismissRequest = { showInstallManagerConfirm = false },
+            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text(stringResource(R.string.flash_confirm_install_manager)) },
+            text = { Text(stringResource(R.string.flash_confirm_install_manager_msg)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showInstallManagerConfirm = false
+                        installManager(item)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text(stringResource(R.string.flash_confirm_install_manager)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showInstallManagerConfirm = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+        }
     }
 
     // Cancel-build confirmation dialog. Styled to match the flash confirm
@@ -1136,7 +1172,7 @@ fun FlashScreen(
                                     LocalOnlyArtifactCard(
                                         artifact = artifact,
                                         onCopyPath = ::copyDownloadedFilePath,
-                                        onInstall = ::installManager,
+                                        onInstall = ::requestInstallManager,
                                         onFlash = {
                                             selectedItem = it
                                             showFlashConfirm = true
@@ -1247,10 +1283,26 @@ fun FlashScreen(
                     ?: if (keepBuildingForCancel) recentRunById[routeRunId] else null
                 val showBuilding = buildingRun != null &&
                     (activeRun != null || isCancellingThis)
+                var wasShowingBuilding by remember(routeRunId) { mutableStateOf(false) }
                 LaunchedEffect(routeRunId, showBuilding) {
+                    if (wasShowingBuilding && !showBuilding) {
+                        val finishedRun = recentRunById[routeRunId]
+                        val retryWhenEmpty = when (finishedRun?.conclusion) {
+                            "failure", "cancelled" -> false
+                            "success" -> true
+                            else -> finishedRun?.status == "completed"
+                        }
+                        vm.refreshWorkflowArtifacts(
+                            routeRunId,
+                            autoDownload = state.autoDownload && retryWhenEmpty,
+                            retryWhenEmpty = retryWhenEmpty,
+                            force = true,
+                        )
+                    }
+                    wasShowingBuilding = showBuilding
                     if (!showBuilding) return@LaunchedEffect
                     vm.refreshWorkflowArtifacts(routeRunId)
-                    while (true) {
+                    while (currentCoroutineContext().isActive) {
                         delay(20_000)
                         if (recentRunById[routeRunId]?.isActiveFlashRun() != true) break
                         vm.refreshWorkflowArtifacts(routeRunId)
@@ -1281,7 +1333,7 @@ fun FlashScreen(
                                 pendingAutoDownloadRunId = state.pendingAutoDownloadRunId,
                                 onDownload = vm::downloadArtifact,
                                 onCopyPath = ::copyDownloadedFilePath,
-                                onInstall = ::installManager,
+                                onInstall = ::requestInstallManager,
                                 onFlash = {
                                     selectedItem = it
                                     showFlashConfirm = true
@@ -1376,7 +1428,7 @@ fun FlashScreen(
                                             pendingAutoDownloadRunId = state.pendingAutoDownloadRunId,
                                             onDownload = vm::downloadArtifact,
                                             onCopyPath = ::copyDownloadedFilePath,
-                                            onInstall = ::installManager,
+                                            onInstall = ::requestInstallManager,
                                             onFlash = {
                                                 selectedItem = it
                                                 showFlashConfirm = true
@@ -1500,7 +1552,7 @@ fun FlashScreen(
                                             progress = state.downloadProgress[DownloadUtils.prebuiltProgressKey(asset.id)],
                                             onDownload = { vm.downloadPrebuiltGki(asset) },
                                             onCopyPath = ::copyDownloadedFilePath,
-                                            onInstall = ::installManager,
+                                            onInstall = ::requestInstallManager,
                                             onFlash = {
                                                 selectedItem = it
                                                 showFlashConfirm = true

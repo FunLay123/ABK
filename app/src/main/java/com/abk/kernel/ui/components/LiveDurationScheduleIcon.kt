@@ -4,24 +4,24 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
 
+/** Hand poses matching [androidx.compose.material.icons.filled.Schedule] (≈10:10). */
+private const val HOUR_HAND_DEGREES = -125f
+private const val MINUTE_HAND_BASE_DEGREES = -5f
+
 /**
- * Same [Icons.Default.Schedule] glyph as the finished-workflow duration chip, but only the
- * minute hand appears to move: the icon rotates underneath while a fixed hour hand is
- * painted on top to mask the icon's hour hand.
+ * Small schedule-style clock for the live workflow duration chip: the dial stays fixed and
+ * only the minute hand rotates ([rotationDegrees]).
  */
 @Composable
 fun LiveDurationScheduleIcon(
@@ -33,27 +33,39 @@ fun LiveDurationScheduleIcon(
         modifier = modifier.size(14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Default.Schedule,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { rotationZ = rotationDegrees },
-        )
         Canvas(Modifier.fillMaxSize()) {
             val center = this.center
-            val hourLength = size.minDimension * 0.36f
-            // Matches the default hour-hand pose on Material Schedule (≈10 o'clock).
-            val hourAngleRad = Math.toRadians(-125.0)
+            val dim = size.minDimension
+            val radius = dim * 0.46f
+            drawCircle(
+                color = tint,
+                radius = radius,
+                center = center,
+                style = Stroke(width = dim * 0.085f),
+            )
+            val hourLength = dim * 0.36f
+            val minuteLength = dim * 0.42f
+            val stroke = dim * 0.095f
+            val minuteAngleRad = Math.toRadians(
+                (MINUTE_HAND_BASE_DEGREES + rotationDegrees).toDouble(),
+            )
+            val hourAngleRad = Math.toRadians(HOUR_HAND_DEGREES.toDouble())
+            fun handEnd(length: Float, angleRad: Double) = Offset(
+                x = center.x + length * cos(angleRad).toFloat(),
+                y = center.y + length * sin(angleRad).toFloat(),
+            )
             drawLine(
                 color = tint,
                 start = center,
-                end = Offset(
-                    x = center.x + hourLength * cos(hourAngleRad).toFloat(),
-                    y = center.y + hourLength * sin(hourAngleRad).toFloat(),
-                ),
-                strokeWidth = size.minDimension * 0.095f,
+                end = handEnd(minuteLength, minuteAngleRad),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = tint,
+                start = center,
+                end = handEnd(hourLength, hourAngleRad),
+                strokeWidth = stroke,
                 cap = StrokeCap.Round,
             )
         }

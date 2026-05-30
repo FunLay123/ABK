@@ -300,6 +300,8 @@
     <string name="install_module">Install module</string>
     <string name="flash_confirm">Confirm flash</string>
     <string name="flash_confirm_msg">Flashing a kernel is risky. Make sure you understand the consequences. Continue?</string>
+    <string name="flash_confirm_install_manager">Confirm install</string>
+    <string name="flash_confirm_install_manager_msg">Installing the manager app will replace the current manager on this device. Continue?</string>
     <string name="flash_files_title">Files</string>
     <string name="flash_terminal">Terminal</string>
     <string name="flash_copy_path_done">File path copied</string>

@@ -282,6 +282,8 @@
     <string name="install_module">Установить модуль</string>
     <string name="flash_confirm">Подтвердить прошивку</string>
     <string name="flash_confirm_msg">Прошивка ядра — рискованная операция. Убедитесь, что понимаете последствия. Продолжить?</string>
+    <string name="flash_confirm_install_manager">Подтвердить установку</string>
+    <string name="flash_confirm_install_manager_msg">Установка менеджера заменит текущее приложение на устройстве. Продолжить?</string>
     <string name="flash_files_title">Файлы</string>
     <string name="flash_terminal">Терминал</string>
     <string name="flash_copy_path_done">Путь к файлу скопирован</string>

@@ -300,6 +300,8 @@
     <string name="install_module">安装模块</string>
     <string name="flash_confirm">确认刷写</string>
     <string name="flash_confirm_msg">刷写内核存在风险，请确保您了解后果。是否继续？</string>
+    <string name="flash_confirm_install_manager">确认安装</string>
+    <string name="flash_confirm_install_manager_msg">安装管理器应用将替换设备上的当前管理器。是否继续？</string>
     <string name="flash_files_title">文件</string>
     <string name="flash_terminal">终端</string>
     <string name="flash_copy_path_done">已复制文件路径</string>
