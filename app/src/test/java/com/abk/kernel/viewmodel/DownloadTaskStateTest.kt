@@ -87,4 +87,29 @@ class DownloadTaskStateTest {
         assertTrue(idle.activeDownloadTasks.isEmpty())
         assertTrue(idle.downloadProgress.isEmpty())
     }
+
+    @Test
+    fun mergeWorkflowActiveDownloads_fillsFromProgressMap() {
+        val artifact = BuildArtifact(
+            id = 42L,
+            name = "AnyKernel3.zip",
+            sizeInBytes = 1L,
+            archiveDownloadUrl = "https://example.com/42",
+            expired = false,
+            createdAt = "",
+            runId = 7L,
+            runTitle = "Build",
+            runNumber = 99,
+            runCreatedAt = ""
+        )
+        val merged = mergeWorkflowActiveDownloads(
+            tasks = emptyList(),
+            progress = mapOf(42L to 25),
+            artifacts = listOf(artifact),
+        )
+        assertEquals(1, merged.size)
+        assertEquals(42L, merged.first().key)
+        assertEquals(25, merged.first().progress)
+        assertEquals("AnyKernel3.zip", merged.first().name)
+    }
 }

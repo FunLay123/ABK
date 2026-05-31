@@ -202,6 +202,7 @@ import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.utils.DownloadUtils
 import com.abk.kernel.utils.RootUtils
 import com.abk.kernel.viewmodel.MainViewModel
+import com.abk.kernel.viewmodel.mergeWorkflowActiveDownloads
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -254,8 +255,16 @@ fun FlashScreen(
     }.getOrDefault(RootUtils.Ak3SlotTarget.CURRENT)
     val flashAnyKernelCurrentSlotLabel = stringResource(R.string.root_patch_ak3_slot_current)
     val flashAnyKernelInactiveSlotLabel = stringResource(R.string.root_patch_ak3_slot_inactive)
-    val workflowActiveDownloads = remember(state.activeDownloadTasks) {
-        state.activeDownloadTasks.sortedByDescending { it.runNumber }
+    val workflowActiveDownloads = remember(
+        state.activeDownloadTasks,
+        state.downloadProgress,
+        state.artifacts,
+    ) {
+        mergeWorkflowActiveDownloads(
+            tasks = state.activeDownloadTasks,
+            progress = state.downloadProgress,
+            artifacts = state.artifacts,
+        )
     }
     val pendingAutoDownloadRun = remember(state.pendingAutoDownloadRunId, state.recentRuns) {
         state.recentRuns.firstOrNull { it.id == state.pendingAutoDownloadRunId }

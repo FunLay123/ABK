@@ -2290,7 +2290,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         cancelledArtifactDownloadKeys.add(taskKey)
         artifactDownloadJobs.remove(taskKey)?.cancel()
         NotificationUtils.cancelDownloadNotification(getApplication())
-        finishWorkflowDownloadTask(taskKey)
+        clearWorkflowDownloadTaskUi(taskKey)
     }
 
     fun cancelAutoDownloads(runId: Long) {
@@ -2531,6 +2531,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun downloadArtifactNow(artifact: BuildArtifact, automatic: Boolean) {
+        ensureArtifactDownloadActive(artifact.id)
         val token = prefs.accessToken.first()
         val downloadDirectory = prefs.downloadDirectory.first()
         if (token.isNullOrBlank()) {
@@ -2542,6 +2543,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         startWorkflowDownloadTask(artifact, automatic)
         NotificationUtils.notifyDownloadProgress(getApplication(), 0, artifact.name)
         try {
+            ensureArtifactDownloadActive(artifact.id)
             val mirrorBaseUrl = prefs.downloadMirrorBaseUrl.first()
             val mirrorEnabled = mirrorBaseUrl.isNotBlank()
             val downloadUrl = if (mirrorEnabled) {
@@ -2552,6 +2554,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 null
             }
+            ensureArtifactDownloadActive(artifact.id)
             val results = DownloadUtils.downloadArtifact(
                 getApplication(),
                 if (downloadUrl == null) token else null,
@@ -2595,11 +2598,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun finishArtifactDownloadWithError(artifactId: Long, message: String) {
         _uiState.update {
-            it.withDownloadState(
-                error = it.error ?: message,
-                downloadProgress = it.downloadProgress - artifactId
-            )
+            it.withDownloadState(error = it.error ?: message)
         }
+        finishWorkflowDownloadTask(artifactId)
     }
 
     private fun startWorkflowDownloadTask(artifact: BuildArtifact, automatic: Boolean) {
@@ -2616,25 +2617,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun updateWorkflowDownloadProgress(taskKey: Long, progress: Int) {
         if (taskKey in cancelledArtifactDownloadKeys || taskKey !in artifactDownloadJobs) return
+        val clamped = progress.coerceIn(0, 100)
         _uiState.update { state ->
+            val existing = state.activeDownloadTasks.any { it.key == taskKey }
+            val tasks = if (existing) {
+                state.activeDownloadTasks.map { task ->
+                    if (task.key == taskKey) task.copy(progress = clamped) else task
+                }
+            } else {
+                val artifact = state.artifacts.firstOrNull { it.id == taskKey }
+                if (artifact != null) {
+                    state.activeDownloadTasks + artifact.toActiveDownloadTask(automatic = false)
+                        .copy(progress = clamped)
+                } else {
+                    state.activeDownloadTasks
+                }
+            }
             state.withDownloadState(
-                activeDownloadTasks = state.activeDownloadTasks
-                    .map { task ->
-                        if (task.key == taskKey) task.copy(progress = progress.coerceIn(0, 100)) else task
-                    }
-                    .sortedDownloadTasks(),
-                downloadProgress = state.downloadProgress + (taskKey to progress.coerceIn(0, 100))
+                activeDownloadTasks = tasks.sortedDownloadTasks(),
+                downloadProgress = state.downloadProgress + (taskKey to clamped)
             )
         }
     }
 
     private fun finishWorkflowDownloadTask(taskKey: Long) {
+        clearWorkflowDownloadTaskUi(taskKey)
         cancelledArtifactDownloadKeys.remove(taskKey)
+    }
+
+    private fun clearWorkflowDownloadTaskUi(taskKey: Long) {
         _uiState.update { state ->
             state.withDownloadState(
                 activeDownloadTasks = state.activeDownloadTasks.filterNot { it.key == taskKey },
                 downloadProgress = state.downloadProgress - taskKey
             )
+        }
+    }
+
+    private fun isArtifactDownloadCancelled(taskKey: Long): Boolean =
+        taskKey in cancelledArtifactDownloadKeys
+
+    private suspend fun ensureArtifactDownloadActive(taskKey: Long) {
+        currentCoroutineContext().ensureActive()
+        if (isArtifactDownloadCancelled(taskKey)) {
+            throw CancellationException("Artifact download cancelled")
         }
     }
 
@@ -2653,6 +2679,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         artifact: BuildArtifact,
         mirrorBaseUrl: String
     ): String? {
+        ensureArtifactDownloadActive(artifact.id)
         val state = _uiState.value
         val username = state.user?.login ?: return null
         val repoName = state.forkRepo?.name ?: return null
@@ -2699,8 +2726,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             else -> {}
         }
+        ensureArtifactDownloadActive(artifact.id)
         delay(5_000)
-        val run = findMirrorWorkflowRun(username, repoName, workflowId, previousRunId) ?: run {
+        val run = findMirrorWorkflowRun(username, repoName, workflowId, previousRunId, artifact.id) ?: run {
             _uiState.update { it.copy(error = text(R.string.vm_mirror_run_not_found)) }
             return null
         }
@@ -2729,9 +2757,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         owner: String,
         repoName: String,
         workflowId: Long,
-        previousRunId: Long?
+        previousRunId: Long?,
+        artifactId: Long,
     ): WorkflowRun? {
         repeat(6) { attempt ->
+            ensureArtifactDownloadActive(artifactId)
             when (val runs = github.listRecentRuns(owner, repoName, 5, workflowId)) {
                 is Result.Success -> {
                     val run = runs.data.firstOrNull { previousRunId == null || it.id > previousRunId }
@@ -2739,7 +2769,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 else -> {}
             }
-            if (attempt < 5) delay(5_000)
+            if (attempt < 5) {
+                ensureArtifactDownloadActive(artifactId)
+                delay(5_000)
+            }
         }
         return null
     }
@@ -2751,6 +2784,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         artifactId: Long
     ): WorkflowRun? {
         repeat(MIRROR_WORKFLOW_MAX_POLLS) { attempt ->
+            ensureArtifactDownloadActive(artifactId)
             when (val run = github.getWorkflowRun(owner, repoName, runId)) {
                 is Result.Success -> {
                     val data = run.data
@@ -2776,7 +2810,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 else -> {}
             }
-            if (attempt < MIRROR_WORKFLOW_MAX_POLLS - 1) delay(15_000)
+            if (attempt < MIRROR_WORKFLOW_MAX_POLLS - 1) {
+                ensureArtifactDownloadActive(artifactId)
+                delay(15_000)
+            }
         }
         _uiState.update { it.copy(error = text(R.string.vm_mirror_workflow_timeout)) }
         return null
@@ -5747,6 +5784,29 @@ internal fun MainUiState.withDownloadState(
     downloadProgress = downloadProgress,
     activeDownloadTasks = activeDownloadTasks
 )
+
+/** Flash list "Current downloads" — keeps tasks in sync when progress map updates alone. */
+internal fun mergeWorkflowActiveDownloads(
+    tasks: List<ActiveDownloadTask>,
+    progress: Map<Long, Int>,
+    artifacts: List<BuildArtifact>,
+): List<ActiveDownloadTask> {
+    val byKey = tasks.associateBy { it.key }.toMutableMap()
+    progress.forEach { (key, pct) ->
+        if (key <= 0L) return@forEach
+        val clamped = pct.coerceIn(0, 100)
+        val existing = byKey[key]
+        if (existing != null) {
+            if (existing.progress != clamped) {
+                byKey[key] = existing.copy(progress = clamped)
+            }
+        } else {
+            val artifact = artifacts.firstOrNull { it.id == key } ?: return@forEach
+            byKey[key] = artifact.toActiveDownloadTask(automatic = false).copy(progress = clamped)
+        }
+    }
+    return byKey.values.toList().sortedDownloadTasks()
+}
 
 private data class Quintuple<A, B, C, D, E>(val a: A, val b: B, val c: C, val d: D, val e: E)
 
