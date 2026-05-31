@@ -55,7 +55,7 @@ import java.util.UUID
 
 // ── UI State ─────────────────────────────────────────────────────────────────
 
-enum class AuthStep { CHECK_ROOT, LOGIN, FORK_CHECK, READY }
+enum class AuthStep { INTRO, LOGIN, FORK_CHECK }
 
 enum class ManagerAccessState {
     UNKNOWN,
@@ -78,13 +78,15 @@ data class BuildPlanImportPreview(
 )
 
 data class MainUiState(
-    val authStep: AuthStep = AuthStep.LOGIN,
+    val authStep: AuthStep = AuthStep.INTRO,
     val rootGranted: Boolean = false,
     val isLoggedIn: Boolean = false,
     val user: GitHubUser? = null,
     val forkRepo: GitHubRepo? = null,
     val behindBy: Int = 0,
-    val showSyncDialog: Boolean = false,
+    val showSyncPrompt: Boolean = false,
+    val showOobe: Boolean = false,
+    val oobeCompleted: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null,
     val snackbarMessage: String? = null,
@@ -219,6 +221,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val artifactLoadJobs = mutableMapOf<Long, Job>()
     private val artifactLoadGenerations = mutableMapOf<Long, Int>()
     private var hasCheckedWorkflowEnablementThisLaunch = false
+    private var hasShownInitialOobeThisLaunch = false
+    private var hasRefreshedGitHubSessionThisLaunch = false
     private var buildQueueJob: Job? = null
     private var recentRunsRefreshJob: Job? = null
     private var recentRunsRefreshGeneration = 0
@@ -318,8 +322,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }.collect { (token, name, avatar, autoDl, notify) ->
                 if (!token.isNullOrBlank()) {
                     github.updateToken(token)
-                    val shouldResumeSetup = !_uiState.value.isPollingToken &&
-                        _uiState.value.authStep in setOf(AuthStep.CHECK_ROOT, AuthStep.LOGIN)
                     _uiState.update {
                         it.copy(
                             isLoggedIn = true,
@@ -335,19 +337,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             )
                         }
                     }
-                    if (shouldResumeSetup) {
-                        if (name.isNullOrBlank()) {
-                            fetchUserAndContinue()
-                        } else {
-                            advanceStep()
+                    if (!_uiState.value.isPollingToken && !hasRefreshedGitHubSessionThisLaunch) {
+                        hasRefreshedGitHubSessionThisLaunch = true
+                        viewModelScope.launch {
+                            refreshGitHubSessionOnLaunch(name.isNullOrBlank())
                         }
                     }
                 } else {
+                    github.updateToken(null)
                     hasCheckedWorkflowEnablementThisLaunch = false
+                    hasRefreshedGitHubSessionThisLaunch = false
                     _uiState.update {
                         it.copy(
                             isLoggedIn = false,
                             user = null,
+                            forkRepo = null,
+                            behindBy = 0,
+                            showSyncPrompt = false,
                             autoDownload = autoDl,
                             notifyBuild = notify
                         )
@@ -363,6 +369,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         termsAccepted = version >= PreferencesRepository.CURRENT_TERMS_VERSION
                     )
                 }
+            }
+        }
+        viewModelScope.launch {
+            prefs.oobeCompleted.collect { completed ->
+                _uiState.update { state -> state.copy(oobeCompleted = completed) }
             }
         }
         viewModelScope.launch {
@@ -544,7 +555,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun checkRoot() {
         viewModelScope.launch {
-            val shouldAdvance = _uiState.value.authStep != AuthStep.READY
             val granted = RootUtils.isRootAvailable()
             val recommended = detectRecommendedBuildConfig()
             val initialConfig = applyInitialBuildConfigIfNeeded(recommended)
@@ -555,13 +565,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     buildConfig = initialConfig ?: it.buildConfig
                 )
             }
-            if (shouldAdvance) advanceStep()
         }
     }
 
     fun requestRoot() {
         viewModelScope.launch {
-            val shouldAdvance = _uiState.value.authStep != AuthStep.READY
             _uiState.update { it.copy(isLoading = true) }
             val granted = RootUtils.requestRoot()
             val recommended = detectRecommendedBuildConfig()
@@ -574,7 +582,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     buildConfig = initialConfig ?: it.buildConfig
                 )
             }
-            if (shouldAdvance) advanceStep()
         }
     }
 
@@ -1231,18 +1238,56 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return normalized
     }
 
-    private fun advanceStep() {
+    fun maybeShowInitialOobe() {
         val state = _uiState.value
-        when {
-            !state.isLoggedIn -> _uiState.update { it.copy(authStep = AuthStep.LOGIN) }
-            state.user == null -> {
-                _uiState.update { it.copy(authStep = AuthStep.LOGIN) }
-                viewModelScope.launch { fetchUserAndContinue() }
+        if (!state.termsAccepted || state.oobeCompleted || hasShownInitialOobeThisLaunch) return
+        hasShownInitialOobeThisLaunch = true
+        _uiState.update {
+            it.copy(
+                showOobe = true,
+                authStep = AuthStep.INTRO,
+                error = null
+            )
+        }
+    }
+
+    fun openBuildOobe() {
+        val state = _uiState.value
+        val nextStep = if (state.isLoggedIn && state.user != null) AuthStep.FORK_CHECK else AuthStep.LOGIN
+        _uiState.update {
+            it.copy(
+                showOobe = true,
+                authStep = nextStep,
+                error = null
+            )
+        }
+        if (state.isLoggedIn && state.user == null) {
+            viewModelScope.launch {
+                val user = fetchAuthenticatedUserAndStore() ?: return@launch
+                _uiState.update { it.copy(authStep = AuthStep.FORK_CHECK, user = user, isLoggedIn = true) }
+                checkFork(showSyncPrompt = true, closeOobeWhenReady = true)
             }
-            else -> {
-                _uiState.update { it.copy(authStep = AuthStep.FORK_CHECK) }
-                checkFork()
+        } else if (nextStep == AuthStep.FORK_CHECK) {
+            checkFork(showSyncPrompt = true, closeOobeWhenReady = true)
+        }
+    }
+
+    fun continueOobeToLogin() {
+        _uiState.update {
+            it.copy(
+                showOobe = true,
+                authStep = AuthStep.LOGIN,
+                error = null
+            )
+        }
+    }
+
+    fun skipOobe() {
+        viewModelScope.launch {
+            if (!_uiState.value.oobeCompleted) {
+                prefs.setOobeCompleted(true)
             }
+            closeOobe()
         }
     }
 
@@ -1280,10 +1325,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         when (tokenResp.error) {
                             null -> {
                                 val token = tokenResp.accessToken ?: continue
+                                hasRefreshedGitHubSessionThisLaunch = true
                                 prefs.saveToken(token)
                                 github.updateToken(token)
                                 _uiState.update { it.copy(isPollingToken = false) }
-                                fetchUserAndContinue()
+                                fetchUserAndContinueOobe()
                             }
                             "authorization_pending", "slow_down" -> {
                                 if (tokenResp.error == "slow_down") delay(5000)
@@ -1306,30 +1352,80 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun fetchUserAndContinue() {
+    private suspend fun fetchAuthenticatedUserAndStore(reportError: Boolean = true): GitHubUser? {
         when (val r = github.getAuthenticatedUser()) {
             is Result.Success -> {
                 val user = r.data
                 prefs.saveUsername(user.login)
                 prefs.saveAvatarUrl(user.avatarUrl)
                 _uiState.update { it.copy(user = user, isLoggedIn = true) }
-                advanceStep()
+                return user
             }
-            is Result.Error -> _uiState.update { it.copy(error = r.message) }
-            else -> {}
+            is Result.Error -> if (reportError) {
+                _uiState.update { it.copy(error = r.message) }
+            }
+            Result.Loading -> {}
         }
+        return null
+    }
+
+    private suspend fun refreshGitHubSessionOnLaunch(fetchUser: Boolean) {
+        val user = if (fetchUser || _uiState.value.user == null) {
+            fetchAuthenticatedUserAndStore(reportError = false)
+        } else {
+            _uiState.value.user
+        } ?: return
+        _uiState.update { it.copy(isLoggedIn = true, user = user) }
+        checkFork(showSyncPrompt = true, closeOobeWhenReady = false)
+    }
+
+    private suspend fun fetchUserAndContinueOobe() {
+        val user = fetchAuthenticatedUserAndStore() ?: return
+        _uiState.update {
+            it.copy(
+                user = user,
+                isLoggedIn = true,
+                showOobe = true,
+                authStep = AuthStep.FORK_CHECK
+            )
+        }
+        checkFork(showSyncPrompt = true, closeOobeWhenReady = true)
+    }
+
+    private fun closeOobe() {
+        _uiState.update {
+            it.copy(
+                showOobe = false,
+                authStep = AuthStep.INTRO,
+                deviceCode = null,
+                userCode = null,
+                verificationUri = null,
+                isPollingToken = false,
+                error = null
+            )
+        }
+    }
+
+    private fun completeOobe() {
+        if (!_uiState.value.oobeCompleted) {
+            viewModelScope.launch { prefs.setOobeCompleted(true) }
+        }
+        closeOobe()
     }
 
     fun logout() {
         viewModelScope.launch {
             prefs.clearAuth()
+            github.updateToken(null)
             hasCheckedWorkflowEnablementThisLaunch = false
+            hasRefreshedGitHubSessionThisLaunch = false
             _uiState.update {
                 MainUiState(
                     rootGranted = it.rootGranted,
-                    authStep = AuthStep.LOGIN,
+                    authStep = AuthStep.INTRO,
                     termsLoaded = it.termsLoaded,
                     termsAccepted = it.termsAccepted,
+                    oobeCompleted = it.oobeCompleted,
                     autoDownload = it.autoDownload,
                     notifyBuild = it.notifyBuild,
                     themeMode = it.themeMode,
@@ -1343,6 +1439,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     downloadMirrorBaseUrl = it.downloadMirrorBaseUrl,
                     prebuiltGkiEnabled = it.prebuiltGkiEnabled,
                     predictiveBackEnabled = it.predictiveBackEnabled,
+                    runtimeNavigationEnabled = it.runtimeNavigationEnabled,
+                    webViewDebugEnabled = it.webViewDebugEnabled,
                     runtimeModuleRepositories = it.runtimeModuleRepositories,
                     buildModuleRepositories = it.buildModuleRepositories
                 )
@@ -1352,17 +1450,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── Fork Management ───────────────────────────────────────────────────
 
-    fun checkFork() {
+    fun checkFork(showSyncPrompt: Boolean = true, closeOobeWhenReady: Boolean = false) {
         val username = _uiState.value.user?.login ?: return
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    error = null,
+                    authStep = if (it.showOobe) AuthStep.FORK_CHECK else it.authStep
+                )
+            }
             val forkResult = github.getUserFork(
                 BuildConfig.SOURCE_REPO_OWNER, BuildConfig.SOURCE_REPO_NAME, username
             )
             when (forkResult) {
                 is Result.Success -> {
                     if (forkResult.data == null) {
-                        _uiState.update { it.copy(isLoading = false, forkRepo = null) }
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                forkRepo = null,
+                                behindBy = 0,
+                                showSyncPrompt = false
+                            )
+                        }
                     } else {
                         val fork = forkResult.data
                         val upstreamBranch = fork.parent?.defaultBranch ?: fork.defaultBranch
@@ -1380,11 +1491,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 isLoading = false,
                                 forkRepo = fork,
                                 behindBy = behind,
-                                showSyncDialog = behind > 0
+                                showSyncPrompt = showSyncPrompt && behind > 0
                             )
                         }
-                        ensureBuildWorkflowEnabled()
-                        if (behind == 0) finishSetup()
+                        onForkContextReady()
+                        if (closeOobeWhenReady) {
+                            completeOobe()
+                        }
                     }
                 }
                 is Result.Error -> _uiState.update { it.copy(isLoading = false, error = forkResult.message) }
@@ -1399,8 +1512,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             when (val r = github.forkRepo(BuildConfig.SOURCE_REPO_OWNER, BuildConfig.SOURCE_REPO_NAME)) {
                 is Result.Success -> {
                     prefs.saveForkRepoName(r.data.name)
-                    _uiState.update { it.copy(isLoading = false, forkRepo = r.data) }
-                    finishSetup()
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            forkRepo = r.data,
+                            behindBy = 0,
+                            showSyncPrompt = false
+                        )
+                    }
+                    onForkContextReady()
+                    completeOobe()
                 }
                 is Result.Error -> _uiState.update { it.copy(isLoading = false, error = r.message) }
                 else -> {}
@@ -1413,11 +1534,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val username = state.user?.login ?: return
         val fork = state.forkRepo ?: return
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, showSyncDialog = false) }
+            _uiState.update { it.copy(isLoading = true, showSyncPrompt = false) }
             when (val r = github.syncFork(username, fork.name, fork.defaultBranch)) {
                 is Result.Success -> {
                     _uiState.update { it.copy(isLoading = false, behindBy = 0) }
-                    finishSetup()
+                    onForkContextReady()
                 }
                 is Result.Error -> _uiState.update { it.copy(isLoading = false, error = r.message) }
                 else -> {}
@@ -1425,13 +1546,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun dismissSyncDialog() {
-        _uiState.update { it.copy(showSyncDialog = false) }
-        finishSetup()
+    fun dismissSyncPrompt() {
+        _uiState.update { it.copy(showSyncPrompt = false) }
     }
 
-    private fun finishSetup() {
-        _uiState.update { it.copy(authStep = AuthStep.READY) }
+    private fun onForkContextReady() {
         loadRecentRuns()
         ensureBuildWorkflowEnabled()
         processBuildQueue()
@@ -1524,6 +1643,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ── Build ─────────────────────────────────────────────────────────────
 
     fun dispatchBuild(config: KernelBuildConfig) {
+        val state = _uiState.value
+        if (!state.isLoggedIn || state.user == null || state.forkRepo == null) {
+            _uiState.update { it.copy(error = text(R.string.vm_build_login_required)) }
+            return
+        }
         enqueueBuild(config)
     }
 
@@ -1545,7 +1669,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun processBuildQueue() {
         val snapshot = _uiState.value
-        if (!snapshot.isLoggedIn || snapshot.authStep != AuthStep.READY) return
+        if (!snapshot.isLoggedIn || snapshot.user == null || snapshot.forkRepo == null) return
         if (snapshot.buildQueueProcessing || buildQueueJob?.isActive == true) return
         val next = snapshot.buildQueue.firstOrNull { it.status == BuildQueueItemStatus.PENDING } ?: return
         val username = snapshot.user?.login ?: return
@@ -2160,7 +2284,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadPrebuiltGkiReleases(force: Boolean = false) {
         val state = _uiState.value
-        if (!state.prebuiltGkiEnabled || !state.isLoggedIn) return
+        if (!state.prebuiltGkiEnabled) return
         if (state.isLoadingPrebuiltGkiReleases || (!force && state.prebuiltGkiReleases.isNotEmpty())) return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingPrebuiltGkiReleases = true, error = null) }
@@ -2199,7 +2323,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadPrebuiltGkiAssets(release: PrebuiltGkiRelease, force: Boolean = false) {
         val state = _uiState.value
-        if (!state.prebuiltGkiEnabled || !state.isLoggedIn) return
+        if (!state.prebuiltGkiEnabled) return
         if (release.id in state.loadingPrebuiltGkiAssetReleaseIds) return
         if (!force && state.prebuiltGkiAssetsByReleaseId.containsKey(release.id)) return
         viewModelScope.launch {
@@ -4845,7 +4969,13 @@ internal fun decodeBuildPlanPayload(
         baseConfig
     }
     val ksuVariant = BUILD_PLAN_KSU_VARIANTS.valueOrDefault(reader.readByte(), versionBase.kernelsuVariant)
-    val ksuBranch = BUILD_PLAN_KSU_BRANCHES.valueOrDefault(reader.readByte(), versionBase.kernelsuBranch)
+    val rawKsuBranchWire = reader.readByte()
+    val ksuBranch = when {
+        version < BUILD_PLAN_KSU_BRANCH_V5_VERSION && rawKsuBranchWire == 2 ->
+            KSU_BRANCH_CUSTOM
+        else ->
+            BUILD_PLAN_KSU_BRANCHES.valueOrDefault(rawKsuBranchWire, versionBase.kernelsuBranch)
+    }
     val virtualizationSupport = BUILD_PLAN_VIRTUALIZATION_OPTIONS.valueOrDefault(
         reader.readByte(),
         versionBase.virtualizationSupport
@@ -5019,10 +5149,11 @@ private fun buildPlanShareScopeFromWireValue(
 
 private const val BUILD_PLAN_CODE_PREFIX = "ABKP2:"
 private const val BUILD_PLAN_LEGACY_CODE_PREFIX = "ABKP1:"
-private const val BUILD_PLAN_CODE_VERSION = 4
+private const val BUILD_PLAN_CODE_VERSION = 5
 private const val BUILD_PLAN_MIN_SUPPORTED_VERSION = 2
 private const val BUILD_PLAN_CUSTOM_REF_VERSION = 3
 private const val BUILD_PLAN_ONEPLUS_FIELDS_VERSION = 4
+private const val BUILD_PLAN_KSU_BRANCH_V5_VERSION = 5
 private const val BUILD_PLAN_NAME_LIMIT = 80
 private const val BUILD_PLAN_MAX_STRING_BYTES = 4096
 private const val BUILD_PLAN_MAX_MODULES = 32
