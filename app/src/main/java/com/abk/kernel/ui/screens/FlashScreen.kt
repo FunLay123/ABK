@@ -1364,6 +1364,8 @@ fun FlashScreen(
                                 unlinkedWorkflowTitle = unlinkedWorkflowTitle,
                                 onBack = dismiss,
                                 onCancel = { cancelConfirmRunId = routeRunId },
+                                onCancelDownload = vm::cancelDownload,
+                                onCancelAutoDownload = vm::cancelAutoDownloads,
                             )
                         } else {
                     LazyColumn(
@@ -3213,6 +3215,8 @@ private fun BuildingWorkflowDetail(
     unlinkedWorkflowTitle: String,
     onBack: () -> Unit,
     onCancel: () -> Unit,
+    onCancelDownload: (Long) -> Unit,
+    onCancelAutoDownload: (Long) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -3283,6 +3287,9 @@ private fun BuildingWorkflowDetail(
                     autoDownload = autoDownload,
                     pendingAutoDownloadRunId = pendingAutoDownloadRunId,
                     onDownload = onDownload,
+                    onCancelDownload = onCancelDownload,
+                    onCancelAutoDownload = onCancelAutoDownload,
+                    showDownloadCancelActions = true,
                     onCopyPath = onCopyPath,
                     onInstall = onInstall,
                     onFlash = onFlash,
