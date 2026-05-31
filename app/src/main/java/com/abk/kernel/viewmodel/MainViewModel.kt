@@ -23,6 +23,8 @@ import com.abk.kernel.data.repository.PreferencesRepository
 import com.abk.kernel.data.repository.Result
 import com.abk.kernel.utils.BuildMonitorService
 import com.abk.kernel.utils.BuildProgressUtils
+import com.abk.kernel.utils.isActiveFlashRun
+import com.abk.kernel.utils.isWorkflowArtifactSetComplete
 import com.abk.kernel.utils.buildDisplaySnapshot
 import com.abk.kernel.utils.computeKindBuildProgress
 import com.abk.kernel.utils.DownloadDirectoryUtils
@@ -231,6 +233,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         PreferencesRepository.DEFAULT_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC
     private var appInForeground = false
     private val lastArtifactRefreshAt = mutableMapOf<Long, Long>()
+    private val workflowStatusBurstJobs = mutableMapOf<Long, Job>()
+    private val workflowStatusBurstStartedRunIds = mutableSetOf<Long>()
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -2228,6 +2232,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun isWorkflowStatusBurstActive(runId: Long): Boolean =
+        workflowStatusBurstJobs[runId]?.isActive == true
+
+    private fun remoteArtifactsForRun(runId: Long): List<BuildArtifact> =
+        _uiState.value.artifacts.filter {
+            it.runId == runId &&
+                !it.expired &&
+                DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) != null
+        }
+
+    private fun maybeStartWorkflowStatusBurst(runId: Long) {
+        if (runId <= 0L || runId in workflowStatusBurstStartedRunIds) return
+        val state = _uiState.value
+        val owner = state.user?.login ?: return
+        val repoName = state.forkRepo?.name ?: return
+        val run = state.recentRuns.find { it.id == runId } ?: return
+        if (!run.isActiveFlashRun()) return
+        val remote = remoteArtifactsForRun(runId)
+        if (!isWorkflowArtifactSetComplete(run, remote)) return
+        workflowStatusBurstStartedRunIds += runId
+        startWorkflowStatusBurst(owner, repoName, runId)
+    }
+
+    private fun startWorkflowStatusBurst(owner: String, repoName: String, runId: Long) {
+        workflowStatusBurstJobs[runId]?.cancel()
+        workflowStatusBurstJobs[runId] = viewModelScope.launch {
+            val deadlineMs = System.currentTimeMillis() + WORKFLOW_STATUS_BURST_MAX_MS
+            try {
+                while (currentCoroutineContext().isActive && System.currentTimeMillis() < deadlineMs) {
+                    when (val result = github.getWorkflowRun(owner, repoName, runId)) {
+                        is Result.Success -> {
+                            val run = result.data
+                            _uiState.update { state ->
+                                var next = state.copy(recentRuns = state.recentRuns.replaceRun(run))
+                                if (state.activeBuildRuns.any { it.id == runId }) {
+                                    next = next.withBuildRunDisplay(
+                                        run = run,
+                                        status = run.toBuildStatus(),
+                                        progress = state.buildProgressByRunId[runId]
+                                            ?: BuildProgressUtils.defaultFor(run),
+                                    )
+                                }
+                                next
+                            }
+                            syncBuildQueueWithRun(run, run.toBuildStatus())
+                            if (!run.isActiveFlashRun()) break
+                        }
+                        else -> Unit
+                    }
+                    delay(WORKFLOW_STATUS_BURST_INTERVAL_MS)
+                }
+            } finally {
+                workflowStatusBurstJobs.remove(runId)
+            }
+        }
+    }
+
     private fun maybeLoadArtifactsWhileRunning(runId: Long) {
         if (runId <= 0L) return
         val now = System.currentTimeMillis()
@@ -2273,6 +2334,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _uiState.update { it.copy(artifacts = merged) }
                         prefs.saveRemoteArtifactsJson(gson.toJson(merged))
                         maybeAutoDownloadRun(runId, buildArtifacts, autoDownload)
+                        if (run != null) {
+                            maybeStartWorkflowStatusBurst(runId)
+                        }
                     }
                     else -> {}
                 }
@@ -3059,6 +3123,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 requestedByMonitor = true
             )
         }
+        runsToRefresh.forEach { run -> maybeStartWorkflowStatusBurst(run.id) }
     }
 
     private suspend fun maybeAutoDownloadRun(
@@ -5857,6 +5922,8 @@ private fun workflowActionsUrl(owner: String, repoName: String, workflowFile: St
 private const val MIRROR_WORKFLOW_MAX_POLLS = 40
 private const val MIRROR_RELEASE_ASSET_MAX_POLLS = 6
 private const val ACTIVE_RUN_ARTIFACT_REFRESH_MS = 20_000L
+private const val WORKFLOW_STATUS_BURST_INTERVAL_MS = 3_000L
+private const val WORKFLOW_STATUS_BURST_MAX_MS = 30_000L
 private const val CANCEL_COMPLETION_POLL_INITIAL_DELAY_MS = 2_000L
 private const val CANCEL_COMPLETION_POLL_INTERVAL_MS = 5_000L
 private const val CANCEL_COMPLETION_POLL_MAX_ATTEMPTS = 24

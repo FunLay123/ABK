@@ -1341,9 +1341,12 @@ fun FlashScreen(
                     if (!showBuilding) return@LaunchedEffect
                     vm.refreshWorkflowArtifacts(routeRunId)
                     while (true) {
-                        delay(20_000)
+                        val burstActive = vm.isWorkflowStatusBurstActive(routeRunId)
+                        delay(if (burstActive) 3_000L else 20_000L)
                         if (recentRunById[routeRunId]?.isActiveFlashRun() != true) break
-                        vm.refreshWorkflowArtifacts(routeRunId)
+                        if (!burstActive) {
+                            vm.refreshWorkflowArtifacts(routeRunId)
+                        }
                     }
                 }
                 FlashDetailBackSurface(
