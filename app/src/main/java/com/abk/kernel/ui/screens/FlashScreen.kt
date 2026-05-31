@@ -15,11 +15,8 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -103,7 +100,6 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -133,7 +129,6 @@ import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -202,6 +197,9 @@ import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.utils.FailureLogExtractor
 import com.abk.kernel.ui.components.LIVE_DURATION_MINUTE_HAND_PERIOD_MS
 import com.abk.kernel.ui.components.LiveDurationScheduleIcon
+import com.abk.kernel.ui.components.ShimmerLinearProgress
+import com.abk.kernel.ui.components.liveWorkflowShimmerBrush
+import com.abk.kernel.ui.components.rememberLiveWorkflowShimmerPhase
 import com.abk.kernel.ui.components.MinuteHandController
 import com.abk.kernel.ui.components.MinuteHandControllerHost
 import com.abk.kernel.ui.components.MinuteHandPhase
@@ -1865,9 +1863,9 @@ private fun WorkflowDownloadManagementCard(
                             }
                         )
                     }
-                    LinearProgressIndicator(
+                    ShimmerLinearProgress(
                         progress = { (task.progress / 100f).coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2604,12 +2602,17 @@ private fun PrebuiltGkiAssetCard(
 
             when {
                 progress != null -> {
-                    LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth())
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ShimmerLinearProgress(
+                            progress = { animatedProgress },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                         Text(
                             stringResource(R.string.flash_download_progress, progress),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
                 }
                 downloadedFiles.isEmpty() -> {
                     Button(
@@ -3353,8 +3356,6 @@ private fun BuildingWorkflowDetail(
     }
 }
 
-private const val LIVE_DURATION_SHIMMER_PERIOD_MS = 6_000
-
 /**
  * Workflow duration chip.
  * Running workflows tick in real time from `created_at`.
@@ -3417,19 +3418,7 @@ private fun BuildDurationChip(
             }
         }
     }
-    val shimmerTransition = if (live) rememberInfiniteTransition(label = "chip-shimmer") else null
-    val shimmerPhase by if (shimmerTransition != null) {
-        shimmerTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = LIVE_DURATION_SHIMMER_PERIOD_MS, easing = LinearEasing),
-            ),
-            label = "shimmer-phase",
-        )
-    } else {
-        remember { mutableFloatStateOf(0f) }
-    }
+    val shimmerPhase = rememberLiveWorkflowShimmerPhase(live)
     val chipContent: @Composable () -> Unit = {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -3456,8 +3445,6 @@ private fun BuildDurationChip(
         }
     }
     if (live) {
-        val base = chipAccent.copy(alpha = 0.14f)
-        val highlight = chipAccent.copy(alpha = 0.28f)
         Surface(
             shape = chipShape,
             color = Color.Transparent,
@@ -3465,14 +3452,7 @@ private fun BuildDurationChip(
         ) {
             Box(
                 Modifier.drawWithCache {
-                    val band = size.width * 1.6f
-                    val travel = size.width + band
-                    val offset = (shimmerPhase * travel) % travel - band
-                    val brush = Brush.linearGradient(
-                        colors = listOf(base, highlight, base),
-                        start = Offset(offset, 0f),
-                        end = Offset(offset + band, size.height),
-                    )
+                    val brush = liveWorkflowShimmerBrush(size, shimmerPhase, chipAccent)
                     onDrawBehind { drawRect(brush) }
                 },
             ) {
@@ -3531,17 +3511,16 @@ private fun CategoryProgressCard(progress: BuildProgress?) {
                     targetValue = (progress.percent / 100f).coerceIn(0f, 1f),
                     label = "category-progress"
                 )
-                LinearProgressIndicator(
+                ShimmerLinearProgress(
                     progress = { animatedProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 8.dp,
                 )
             } else {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
+                ShimmerLinearProgress(
+                    progress = { null },
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 8.dp,
                 )
             }
         }
@@ -3691,9 +3670,9 @@ private fun ArtifactSourceCard(
             when {
                 progress != null -> {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        LinearProgressIndicator(
+                        ShimmerLinearProgress(
                             progress = { animatedProgress },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
                         )
                         Text(
                             stringResource(R.string.flash_download_progress, progress),
