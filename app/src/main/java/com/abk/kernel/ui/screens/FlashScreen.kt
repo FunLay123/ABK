@@ -1318,11 +1318,12 @@ fun FlashScreen(
                 val minuteHandController = remember(routeRunId) { MinuteHandController() }
                 MinuteHandControllerHost(minuteHandController)
                 var wasShowingBuilding by remember(routeRunId) { mutableStateOf(false) }
-                LaunchedEffect(routeRunId, showBuilding) {
-                    if (showBuilding) {
-                        minuteHandController.beginSpinning()
-                    } else if (wasShowingBuilding) {
-                        minuteHandController.beginSettle()
+                LaunchedEffect(routeRunId, showBuilding, activeRun?.id) {
+                    when {
+                        showBuilding && !wasShowingBuilding && activeRun != null ->
+                            minuteHandController.beginSpinning()
+                        !showBuilding && wasShowingBuilding ->
+                            minuteHandController.beginSettle()
                     }
                     if (wasShowingBuilding && !showBuilding) {
                         val finishedRun = recentRunById[routeRunId]
@@ -3396,8 +3397,11 @@ private fun BuildDurationChip(
     val chipShape = RoundedCornerShape(50)
     var localMinuteHandRotationDegrees by remember { mutableFloatStateOf(0f) }
     val controllerPhase = minuteHandController?.phase
-    val useLiveIcon = live ||
-        (minuteHandController != null && controllerPhase != MinuteHandPhase.Rest)
+    val useLiveIcon = when {
+        minuteHandController != null ->
+            controllerPhase == MinuteHandPhase.Spinning || controllerPhase == MinuteHandPhase.Settling
+        else -> live
+    }
     val minuteHandRotationDegrees = minuteHandController?.rotationDegrees
         ?: localMinuteHandRotationDegrees
     if (live && minuteHandController == null) {

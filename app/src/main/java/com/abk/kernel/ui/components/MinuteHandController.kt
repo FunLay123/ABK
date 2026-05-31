@@ -65,13 +65,22 @@ class MinuteHandController {
     var phase by mutableStateOf(MinuteHandPhase.Rest)
         private set
 
+    /** Blocks [beginSpinning] after a settle until a new build session starts. */
+    private var settledOnDetail = false
+
+    /** Start spin for a new build session (not while settling or after settle completed). */
     fun beginSpinning() {
-        if (phase == MinuteHandPhase.Spinning) return
+        when (phase) {
+            MinuteHandPhase.Spinning, MinuteHandPhase.Settling -> return
+            MinuteHandPhase.Rest -> if (settledOnDetail) return
+        }
+        settledOnDetail = false
         phase = MinuteHandPhase.Spinning
     }
 
     fun beginSettle() {
         if (phase == MinuteHandPhase.Settling || phase == MinuteHandPhase.Rest) return
+        settledOnDetail = false
         phase = MinuteHandPhase.Settling
     }
 
@@ -82,6 +91,7 @@ class MinuteHandController {
     internal fun setPhaseRest() {
         phase = MinuteHandPhase.Rest
         rotationDegrees = 0f
+        settledOnDetail = true
     }
 }
 
@@ -103,13 +113,10 @@ fun MinuteHandControllerHost(controller: MinuteHandController) {
             }
 
             MinuteHandPhase.Settling -> {
+                if (controller.phase != MinuteHandPhase.Settling) return@LaunchedEffect
                 val startAngle = controller.rotationDegrees
                 val holdAngle = settleHoldAngleDegrees(startAngle)
-                val decelerateTarget = if (holdAngle == 0f) {
-                    0f
-                } else {
-                    holdAngle
-                }
+                val decelerateTarget = if (holdAngle == 0f) 0f else holdAngle
                 val decelerateDelta = shortestDeltaDegrees(startAngle, decelerateTarget)
                 val snapDelta = shortestDeltaDegrees(decelerateTarget, 0f)
 
@@ -119,20 +126,28 @@ fun MinuteHandControllerHost(controller: MinuteHandController) {
                     targetValue = startAngle + decelerateDelta,
                     animationSpec = tween(SETTLE_DECELERATE_MS, easing = FastOutSlowInEasing),
                 ) {
-                    controller.setRotation(normalizeDegrees(value))
+                    if (controller.phase == MinuteHandPhase.Settling) {
+                        controller.setRotation(normalizeDegrees(value))
+                    }
                 }
+                if (controller.phase != MinuteHandPhase.Settling) return@LaunchedEffect
                 if (decelerateTarget != 0f && SETTLE_HOLD_MS > 0) {
                     delay(SETTLE_HOLD_MS.toLong())
                 }
+                if (controller.phase != MinuteHandPhase.Settling) return@LaunchedEffect
                 rot.snapTo(normalizeDegrees(decelerateTarget))
                 controller.setRotation(rot.value)
                 rot.animateTo(
                     targetValue = normalizeDegrees(decelerateTarget + snapDelta),
                     animationSpec = tween(SETTLE_SNAP_MS, easing = LinearOutSlowInEasing),
                 ) {
-                    controller.setRotation(normalizeDegrees(value))
+                    if (controller.phase == MinuteHandPhase.Settling) {
+                        controller.setRotation(normalizeDegrees(value))
+                    }
                 }
-                controller.setPhaseRest()
+                if (controller.phase == MinuteHandPhase.Settling) {
+                    controller.setPhaseRest()
+                }
             }
 
             MinuteHandPhase.Rest -> Unit
