@@ -83,7 +83,6 @@ import coil.compose.AsyncImage
 import com.abk.kernel.ui.components.AbkSnackbarHost
 import com.abk.kernel.ui.components.animateBottomNavForChildPage
 import com.abk.kernel.ui.components.showAbkSnackbar
-import com.abk.kernel.ui.screens.AuthGateScreen
 import com.abk.kernel.ui.screens.BuildScreen
 import com.abk.kernel.ui.screens.FlashScreen
 import com.abk.kernel.ui.screens.InstalledModulesScreen
