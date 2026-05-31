@@ -129,6 +129,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -3334,6 +3335,9 @@ private fun BuildingWorkflowDetail(
     }
 }
 
+private const val LIVE_DURATION_MINUTE_HAND_PERIOD_MS = 6_000L
+private const val LIVE_DURATION_SHIMMER_PERIOD_MS = 6_000
+
 /**
  * Workflow duration chip.
  * Running workflows tick in real time from `created_at`.
@@ -3373,25 +3377,27 @@ private fun BuildDurationChip(
     }
     val chipAccent = MaterialTheme.colorScheme.primary
     val chipShape = RoundedCornerShape(50)
-    val liveTransition = if (live) rememberInfiniteTransition(label = "chip-shimmer") else null
-    val minuteHandRotationDegrees by if (liveTransition != null) {
-        liveTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 6_000, easing = LinearEasing),
-            ),
-            label = "minute-hand",
-        )
-    } else {
-        remember { mutableFloatStateOf(0f) }
+    var minuteHandRotationDegrees by remember { mutableFloatStateOf(0f) }
+    if (live) {
+        LaunchedEffect(Unit) {
+            val startTime = withFrameMillis { it }
+            while (true) {
+                withFrameMillis { frameTime ->
+                    val elapsed = (frameTime - startTime) % LIVE_DURATION_MINUTE_HAND_PERIOD_MS
+                    minuteHandRotationDegrees =
+                        elapsed / LIVE_DURATION_MINUTE_HAND_PERIOD_MS.toFloat() * 360f
+                    frameTime
+                }
+            }
+        }
     }
-    val shimmerPhase by if (liveTransition != null) {
-        liveTransition.animateFloat(
+    val shimmerTransition = if (live) rememberInfiniteTransition(label = "chip-shimmer") else null
+    val shimmerPhase by if (shimmerTransition != null) {
+        shimmerTransition.animateFloat(
             initialValue = 0f,
             targetValue = 1f,
             animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 8_000, easing = LinearEasing),
+                animation = tween(durationMillis = LIVE_DURATION_SHIMMER_PERIOD_MS, easing = LinearEasing),
             ),
             label = "shimmer-phase",
         )
