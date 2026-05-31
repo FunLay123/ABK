@@ -15,7 +15,11 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -3365,13 +3369,24 @@ private fun BuildDurationChip(
     } else {
         "%02d:%02d".format(m, s)
     }
-    val chipAccent = MaterialTheme.colorScheme.primary
-    val chipShape = RoundedCornerShape(50)
-    val secondHandDegrees = ((currentMillis % 60_000L) / 60_000f) * 360f
+    val chipTint = MaterialTheme.colorScheme.onSurface
+    val liveTransition = if (live) rememberInfiniteTransition(label = "duration-clock") else null
+    val secondHandDegrees by if (liveTransition != null) {
+        liveTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 15_000, easing = LinearEasing),
+            ),
+            label = "second-hand",
+        )
+    } else {
+        remember { mutableFloatStateOf(0f) }
+    }
     Surface(
-        shape = chipShape,
-        color = uiSurfaceColor(chipAccent.copy(alpha = 0.14f)),
-        contentColor = chipAccent,
+        shape = RoundedCornerShape(50),
+        color = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer),
+        contentColor = chipTint,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -3380,15 +3395,14 @@ private fun BuildDurationChip(
         ) {
             if (live) {
                 LiveDurationScheduleIcon(
-                    secondHandDegreesFromTwelve = secondHandDegrees,
-                    tint = chipAccent,
+                    minuteHandRotationDegrees = secondHandDegrees,
+                    tint = chipTint,
                 )
             } else {
                 Icon(
                     Icons.Default.Schedule,
                     contentDescription = null,
                     modifier = Modifier.size(14.dp),
-                    tint = chipAccent,
                 )
             }
             Text(
