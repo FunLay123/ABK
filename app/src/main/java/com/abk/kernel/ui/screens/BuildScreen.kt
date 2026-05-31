@@ -74,6 +74,7 @@ import com.abk.kernel.ui.components.childPageScrimExitTransition
 import com.abk.kernel.ui.components.rememberChildPageBackController
 import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.ui.components.ExpressiveHeroCard
+import com.abk.kernel.ui.components.ShimmerLinearProgress
 import com.abk.kernel.ui.components.ExpressiveListItem
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
@@ -2499,9 +2500,9 @@ private fun BuildProgressCard(
                 Text(stringResource(R.string.build_progress_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text("${progress.percent}%", style = MaterialTheme.typography.labelLarge)
             }
-            LinearProgressIndicator(
+            ShimmerLinearProgress(
                 progress = { animatedProgress },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
             // Top row = currently running runs, bottom row = queued runs.
             // Each chip is one workflow rendered in the compact

@@ -57,7 +57,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import com.abk.kernel.ui.components.ShimmerLinearProgress
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -776,7 +776,10 @@ private fun RuntimeModuleRepositoryListContent(
 
         if (refreshing && !showInitialLoading) {
             item(key = "refreshing") {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                ShimmerLinearProgress(
+                    progress = { null },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
 
@@ -1195,7 +1198,10 @@ private fun RuntimeModuleRepositoryCard(
         icon = Icons.Default.Dns
     ) {
         if (refreshing) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            ShimmerLinearProgress(
+                progress = { null },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -1593,7 +1599,10 @@ private fun BuildModuleRepositoryListContent(
 
         if (refreshing && !showInitialLoading) {
             item(key = "refreshing") {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                ShimmerLinearProgress(
+                    progress = { null },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
 
@@ -1860,7 +1869,10 @@ private fun BuildModuleCatalogRepositoryCard(
         icon = Icons.Default.Dns
     ) {
         if (refreshing) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            ShimmerLinearProgress(
+                progress = { null },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
         Row(
             verticalAlignment = Alignment.CenterVertically,

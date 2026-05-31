@@ -34,6 +34,7 @@ import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveTopBar
+import com.abk.kernel.ui.components.ShimmerLinearProgress
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.utils.RootUtils
 import com.abk.kernel.viewmodel.MainViewModel
@@ -175,9 +176,9 @@ fun StatusScreen(
                         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
                         label = "status-progress"
                     )
-                    LinearProgressIndicator(
+                    ShimmerLinearProgress(
                         progress = { animatedProgress },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
                         stringResource(
@@ -282,9 +283,9 @@ fun StatusScreen(
                             animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
                             label = "status-manager-progress"
                         )
-                        LinearProgressIndicator(
+                        ShimmerLinearProgress(
                             progress = { animatedProgress },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
                         )
                         Text(
                             stringResource(R.string.status_steps_complete, managerProgress.completedSteps, managerProgress.totalSteps),

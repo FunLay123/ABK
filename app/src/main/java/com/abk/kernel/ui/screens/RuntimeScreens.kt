@@ -72,6 +72,7 @@ import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveTopBar
+import com.abk.kernel.ui.components.ShimmerLinearProgress
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.ui.webui.ModuleWebUiActivity
 import com.abk.kernel.utils.RootUtils
@@ -410,7 +411,10 @@ fun InstalledModulesScreen(
             RuntimeModuleSearchField(query, onValueChange = { query = it })
 
             if (state.abkRuntimeLoading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                ShimmerLinearProgress(
+                    progress = { null },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
 
             state.abkRuntimeError?.let {
@@ -470,7 +474,10 @@ fun InstalledModulesScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.abkRuntimeModuleActionId != null) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        ShimmerLinearProgress(
+                            progress = { null },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                     Text(
                         text = state.abkRuntimeModuleActionOutput.ifEmpty {
