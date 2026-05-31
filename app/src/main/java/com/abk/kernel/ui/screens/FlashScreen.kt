@@ -200,7 +200,11 @@ import com.abk.kernel.ui.components.childPageScrimExitTransition
 import com.abk.kernel.ui.components.rememberChildPageBackController
 import com.abk.kernel.ui.components.rememberChildPageOverlayTransition
 import com.abk.kernel.utils.FailureLogExtractor
+import com.abk.kernel.ui.components.LIVE_DURATION_MINUTE_HAND_PERIOD_MS
 import com.abk.kernel.ui.components.LiveDurationScheduleIcon
+import com.abk.kernel.ui.components.MinuteHandController
+import com.abk.kernel.ui.components.MinuteHandControllerHost
+import com.abk.kernel.ui.components.MinuteHandPhase
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -1311,8 +1315,15 @@ fun FlashScreen(
                     ?: if (keepBuildingForCancel) recentRunById[routeRunId] else null
                 val showBuilding = buildingRun != null &&
                     (activeRun != null || isCancellingThis)
+                val minuteHandController = remember(routeRunId) { MinuteHandController() }
+                MinuteHandControllerHost(minuteHandController)
                 var wasShowingBuilding by remember(routeRunId) { mutableStateOf(false) }
                 LaunchedEffect(routeRunId, showBuilding) {
+                    if (showBuilding) {
+                        minuteHandController.beginSpinning()
+                    } else if (wasShowingBuilding) {
+                        minuteHandController.beginSettle()
+                    }
                     if (wasShowingBuilding && !showBuilding) {
                         val finishedRun = recentRunById[routeRunId]
                         val retryWhenEmpty = when (finishedRun?.conclusion) {
@@ -1373,6 +1384,7 @@ fun FlashScreen(
                                 onCancel = { cancelConfirmRunId = routeRunId },
                                 onCancelDownload = vm::cancelDownload,
                                 onCancelAutoDownload = vm::cancelAutoDownloads,
+                                minuteHandController = minuteHandController,
                             )
                         } else {
                     LazyColumn(
@@ -1440,6 +1452,7 @@ fun FlashScreen(
                                             createdAt = runCreatedAt,
                                             finishedAt = runFinishedAt,
                                             liveDuration = false,
+                                            minuteHandController = minuteHandController,
                                             progress = null,
                                             downloadProgress = state.downloadProgress,
                                             autoDownload = state.autoDownload,
@@ -3123,6 +3136,7 @@ private fun WorkflowCategorySection(
     createdAt: String,
     finishedAt: String? = null,
     liveDuration: Boolean,
+    minuteHandController: MinuteHandController? = null,
     progress: BuildProgress?,
     downloadProgress: Map<Long, Int>,
     autoDownload: Boolean,
@@ -3155,6 +3169,7 @@ private fun WorkflowCategorySection(
                 createdAt = createdAt,
                 finishedAt = finishedAt,
                 live = liveDuration,
+                minuteHandController = minuteHandController,
             )
         }
         if (hasArtifacts) {
@@ -3224,6 +3239,7 @@ private fun BuildingWorkflowDetail(
     onCancel: () -> Unit,
     onCancelDownload: (Long) -> Unit,
     onCancelAutoDownload: (Long) -> Unit,
+    minuteHandController: MinuteHandController? = null,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -3289,6 +3305,7 @@ private fun BuildingWorkflowDetail(
                     showDuration = category == elapsedAnchorCategory,
                     createdAt = run.createdAt,
                     liveDuration = true,
+                    minuteHandController = minuteHandController,
                     progress = progress,
                     downloadProgress = downloadProgress,
                     autoDownload = autoDownload,
@@ -3335,7 +3352,6 @@ private fun BuildingWorkflowDetail(
     }
 }
 
-private const val LIVE_DURATION_MINUTE_HAND_PERIOD_MS = 6_000L
 private const val LIVE_DURATION_SHIMMER_PERIOD_MS = 6_000
 
 /**
@@ -3348,7 +3364,8 @@ private const val LIVE_DURATION_SHIMMER_PERIOD_MS = 6_000
 private fun BuildDurationChip(
     createdAt: String,
     finishedAt: String? = null,
-    live: Boolean = finishedAt.isNullOrBlank()
+    live: Boolean = finishedAt.isNullOrBlank(),
+    minuteHandController: MinuteHandController? = null,
 ) {
     val startMillis = remember(createdAt) { parseIsoMillis(createdAt) }
     if (startMillis <= 0L) return
@@ -3377,14 +3394,19 @@ private fun BuildDurationChip(
     }
     val chipAccent = MaterialTheme.colorScheme.primary
     val chipShape = RoundedCornerShape(50)
-    var minuteHandRotationDegrees by remember { mutableFloatStateOf(0f) }
-    if (live) {
+    var localMinuteHandRotationDegrees by remember { mutableFloatStateOf(0f) }
+    val controllerPhase = minuteHandController?.phase
+    val useLiveIcon = live ||
+        (minuteHandController != null && controllerPhase != MinuteHandPhase.Rest)
+    val minuteHandRotationDegrees = minuteHandController?.rotationDegrees
+        ?: localMinuteHandRotationDegrees
+    if (live && minuteHandController == null) {
         LaunchedEffect(Unit) {
             val startTime = withFrameMillis { it }
             while (true) {
                 withFrameMillis { frameTime ->
                     val elapsed = (frameTime - startTime) % LIVE_DURATION_MINUTE_HAND_PERIOD_MS
-                    minuteHandRotationDegrees =
+                    localMinuteHandRotationDegrees =
                         elapsed / LIVE_DURATION_MINUTE_HAND_PERIOD_MS.toFloat() * 360f
                     frameTime
                 }
@@ -3410,7 +3432,7 @@ private fun BuildDurationChip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            if (live) {
+            if (useLiveIcon) {
                 LiveDurationScheduleIcon(
                     minuteHandRotationDegrees = minuteHandRotationDegrees,
                     tint = chipAccent,
@@ -3587,7 +3609,8 @@ private fun CategoryHeaderWithDuration(
     showDuration: Boolean,
     createdAt: String,
     finishedAt: String? = null,
-    live: Boolean = finishedAt.isNullOrBlank()
+    live: Boolean = finishedAt.isNullOrBlank(),
+    minuteHandController: MinuteHandController? = null,
 ) {
     if (showDuration) {
         Row(
@@ -3599,7 +3622,8 @@ private fun CategoryHeaderWithDuration(
             BuildDurationChip(
                 createdAt = createdAt,
                 finishedAt = finishedAt,
-                live = live
+                live = live,
+                minuteHandController = minuteHandController,
             )
         }
     } else {
