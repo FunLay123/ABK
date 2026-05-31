@@ -131,6 +131,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -3369,25 +3371,34 @@ private fun BuildDurationChip(
     } else {
         "%02d:%02d".format(m, s)
     }
-    val chipTint = MaterialTheme.colorScheme.onSurface
-    val liveTransition = if (live) rememberInfiniteTransition(label = "duration-clock") else null
-    val secondHandDegrees by if (liveTransition != null) {
+    val chipAccent = MaterialTheme.colorScheme.primary
+    val chipShape = RoundedCornerShape(50)
+    val liveTransition = if (live) rememberInfiniteTransition(label = "chip-shimmer") else null
+    val minuteHandRotationDegrees by if (liveTransition != null) {
         liveTransition.animateFloat(
             initialValue = 0f,
             targetValue = 360f,
             animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 15_000, easing = LinearEasing),
+                animation = tween(durationMillis = 6_000, easing = LinearEasing),
             ),
-            label = "second-hand",
+            label = "minute-hand",
         )
     } else {
         remember { mutableFloatStateOf(0f) }
     }
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer),
-        contentColor = chipTint,
-    ) {
+    val shimmerPhase by if (liveTransition != null) {
+        liveTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 8_000, easing = LinearEasing),
+            ),
+            label = "shimmer-phase",
+        )
+    } else {
+        remember { mutableFloatStateOf(0f) }
+    }
+    val chipContent: @Composable () -> Unit = {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -3395,8 +3406,8 @@ private fun BuildDurationChip(
         ) {
             if (live) {
                 LiveDurationScheduleIcon(
-                    minuteHandRotationDegrees = secondHandDegrees,
-                    tint = chipTint,
+                    minuteHandRotationDegrees = minuteHandRotationDegrees,
+                    tint = chipAccent,
                 )
             } else {
                 Icon(
@@ -3410,6 +3421,39 @@ private fun BuildDurationChip(
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
             )
+        }
+    }
+    if (live) {
+        val base = chipAccent.copy(alpha = 0.14f)
+        val highlight = chipAccent.copy(alpha = 0.28f)
+        Surface(
+            shape = chipShape,
+            color = Color.Transparent,
+            contentColor = chipAccent,
+        ) {
+            Box(
+                Modifier.drawWithCache {
+                    val band = size.width * 1.6f
+                    val travel = size.width + band
+                    val offset = (shimmerPhase * travel) % travel - band
+                    val brush = Brush.linearGradient(
+                        colors = listOf(base, highlight, base),
+                        start = Offset(offset, 0f),
+                        end = Offset(offset + band, size.height),
+                    )
+                    onDrawBehind { drawRect(brush) }
+                },
+            ) {
+                chipContent()
+            }
+        }
+    } else {
+        Surface(
+            shape = chipShape,
+            color = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ) {
+            chipContent()
         }
     }
 }
