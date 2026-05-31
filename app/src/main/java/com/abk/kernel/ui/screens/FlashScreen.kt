@@ -3452,7 +3452,8 @@ private fun BuildDurationChip(
         ) {
             Box(
                 Modifier.drawWithCache {
-                    val brush = liveWorkflowShimmerBrush(size, shimmerPhase, chipAccent)
+                    val animatedPhase = shimmerPhase
+                    val brush = liveWorkflowShimmerBrush(size, animatedPhase, chipAccent)
                     onDrawBehind { drawRect(brush) }
                 },
             ) {
