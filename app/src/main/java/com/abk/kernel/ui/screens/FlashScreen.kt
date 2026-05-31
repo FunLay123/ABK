@@ -3450,8 +3450,8 @@ private fun BuildDurationChip(
     } else {
         Surface(
             shape = chipShape,
-            color = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer),
-            contentColor = MaterialTheme.colorScheme.onSurface,
+            color = uiSurfaceColor(chipAccent.copy(alpha = 0.14f)),
+            contentColor = chipAccent,
         ) {
             chipContent()
         }
