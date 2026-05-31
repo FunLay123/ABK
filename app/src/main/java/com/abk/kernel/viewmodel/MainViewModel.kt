@@ -1858,11 +1858,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (!lightweight) {
                             autoMonitorRunningCustomBuild(username, repoName, r.data)
                         }
+                        syncActivePureManagerRunsFromRecent(username, repoName, r.data)
                         refreshArtifactsForRuns(
                             username,
                             repoName,
                             r.data,
                             includeCompleted = !lightweight,
+                            includeCompletedPureManagers = lightweight,
                         )
                     }
                     else -> {}
@@ -1956,6 +1958,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
         }
+    }
+
+    private suspend fun syncActivePureManagerRunsFromRecent(
+        owner: String,
+        repoName: String,
+        recentRuns: List<WorkflowRun>,
+    ) {
+        recentRuns
+            .filter { it.isActiveBuildRun() && it.isPureManagerBuild() }
+            .forEach { run ->
+                val needsAdopt = run.id !in monitoredRunIds ||
+                    _uiState.value.activeBuildRuns.none { it.id == run.id }
+                if (needsAdopt) {
+                    monitorExistingBuildRun(owner, repoName, run)
+                } else {
+                    _uiState.update {
+                        it.withBuildRunDisplay(
+                            run = run,
+                            status = run.toBuildStatus(),
+                            progress = it.buildProgressByRunId[run.id]
+                                ?: BuildProgressUtils.defaultFor(run),
+                        )
+                    }
+                }
+            }
     }
 
     private suspend fun monitorExistingBuildRun(owner: String, repoName: String, run: WorkflowRun) {
@@ -2985,15 +3012,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repoName: String,
         runs: List<WorkflowRun>,
         includeCompleted: Boolean = true,
+        includeCompletedPureManagers: Boolean = false,
     ) {
-        val activeStatuses = setOf("queued", "waiting", "requested", "pending", "in_progress")
-        val runsToRefresh = runs
-            .filter { run ->
-                run.status in activeStatuses || (includeCompleted && run.status == "completed")
-            }
-            .take(MAX_REMOTE_ARTIFACT_RUNS)
+        val runsToRefresh = runsNeedingArtifactRefresh(
+            runs,
+            includeCompleted = includeCompleted,
+            includeCompletedPureManagers = includeCompletedPureManagers,
+        ).take(MAX_REMOTE_ARTIFACT_RUNS)
         if (runsToRefresh.isEmpty()) return
 
+        val activeStatuses = setOf("queued", "waiting", "requested", "pending", "in_progress")
         val existingArtifacts = _uiState.value.artifacts
         val (priorityRuns, otherRuns) = runsToRefresh.partition { run ->
             run.status in activeStatuses || run.isManagerBuild()

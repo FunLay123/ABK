@@ -690,6 +690,10 @@ fun WorkflowRun.isManagerBuild(): Boolean {
     return lower.hasManagerBuildSignal()
 }
 
+/** Manager-primary workflow (Build ABK App / Dev), not a kernel build that bundles a manager APK. */
+fun WorkflowRun.isPureManagerBuild(): Boolean =
+    isManagerBuild() && !isKernelBuild()
+
 /**
  * Dev manager workflow (e.g. Build ABK App Dev). Uses workflow [name] only — not
  * [WorkflowRun.displayTitle]. Avoids bare `"dev" in text` so "device" does not match.

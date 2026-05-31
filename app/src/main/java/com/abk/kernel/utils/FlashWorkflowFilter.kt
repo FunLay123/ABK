@@ -5,6 +5,7 @@ import com.abk.kernel.data.model.WorkflowRun
 import com.abk.kernel.data.model.isKernelBuild
 import com.abk.kernel.data.model.isManagerBuild
 import com.abk.kernel.data.model.isManagerDevBuild
+import com.abk.kernel.data.model.isPureManagerBuild
 import com.abk.kernel.data.model.workflowNameIndicatesManagerDev
 
 enum class FlashFilterKernelKind { ResuKisu, SukiSu, Official, None }
@@ -137,8 +138,7 @@ object FlashWorkflowFilter {
         return run?.isKernelBuild() == true || (run == null && hasKernelArtifact)
     }
 
-    fun isPureManagerBuild(run: WorkflowRun): Boolean =
-        run.isManagerBuild() && !run.isKernelBuild()
+    fun isPureManagerBuild(run: WorkflowRun): Boolean = run.isPureManagerBuild()
 
     /** Kernel build logs carry the parameter matrix; manager-only workflows do not. */
     fun shouldShowParameterDetails(

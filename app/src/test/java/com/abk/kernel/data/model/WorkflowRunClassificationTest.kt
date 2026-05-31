@@ -65,4 +65,42 @@ class WorkflowRunClassificationTest {
         assertTrue(run.isKernelBuild())
         assertFalse(run.isManagerBuild())
     }
+
+    @Test
+    fun pureManagerBuild_isManagerNotKernel() {
+        val run = WorkflowRun(
+            id = 1L,
+            name = "Build ABK app",
+            status = "completed",
+            conclusion = "success",
+            htmlUrl = "",
+            createdAt = "",
+            updatedAt = "",
+            runNumber = 1,
+            workflowId = 1L,
+            headBranch = "main",
+            displayTitle = "Build"
+        )
+
+        assertTrue(run.isPureManagerBuild())
+    }
+
+    @Test
+    fun kernelBuild_isNotPureManager() {
+        val run = WorkflowRun(
+            id = 2L,
+            name = "Build kernel",
+            status = "completed",
+            conclusion = "success",
+            htmlUrl = "",
+            createdAt = "",
+            updatedAt = "",
+            runNumber = 2,
+            workflowId = 1L,
+            headBranch = "main",
+            displayTitle = "kernel"
+        )
+
+        assertFalse(run.isPureManagerBuild())
+    }
 }
