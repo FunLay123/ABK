@@ -187,7 +187,6 @@ import com.abk.kernel.utils.FlashFilterWorkflowState
 import com.abk.kernel.utils.FlashWorkflowFilter
 import com.abk.kernel.utils.WorkflowPrimary
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
-import com.abk.kernel.ui.components.CHILD_PAGE_BACK_DISMISS_TOTAL_MS
 import com.abk.kernel.ui.components.ObserveChildPageVisibility
 import com.abk.kernel.ui.components.childPageOverlayEnterTransition
 import com.abk.kernel.ui.components.childPageOverlayExitTransition
@@ -494,7 +493,6 @@ fun FlashScreen(
         onVisibleChange = { detailVisible ->
             onDetailPageVisibleChange(detailVisible || ghostFailedPageTransition.currentState)
         },
-        exitDelayMs = CHILD_PAGE_BACK_DISMISS_TOTAL_MS
     )
 
     ObserveChildPageVisibility(

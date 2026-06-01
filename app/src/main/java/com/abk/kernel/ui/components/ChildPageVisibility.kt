@@ -64,6 +64,11 @@ fun ObserveChildPageVisibility(
 
 /**
  * Syncs bottom navigation with NavHost detail routes (no shared overlay transition).
+ *
+ * @param exitDelayMs Extra wait after [visible] becomes false before [onVisibleChange](false).
+ * Use a positive value only when the route is popped **before** the dismiss animation finishes.
+ * Do **not** pass [CHILD_PAGE_BACK_DISMISS_TOTAL_MS] when dismiss is handled by
+ * [rememberChildPageBackController] (animation completes, then [onBack] pops the route).
  */
 @Composable
 fun ObserveChildPageVisibility(
