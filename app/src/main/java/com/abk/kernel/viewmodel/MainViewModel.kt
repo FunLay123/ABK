@@ -208,7 +208,7 @@ data class MainUiState(
     val rootGrantSavingPackage: String? = null
 )
 
-class MainViewModel(
+class MainViewModel @JvmOverloads constructor(
     application: Application,
     github: GitHubRepository = GitHubRepository(),
     private val registerStatusBroadcast: Boolean = true,
