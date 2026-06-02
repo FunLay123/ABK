@@ -2,6 +2,7 @@ package com.abk.kernel.ui.webui
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -19,9 +20,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.abk.kernel.R
 import com.abk.kernel.data.repository.PreferencesRepository
+import com.abk.kernel.utils.LocaleHelper
 import com.abk.kernel.utils.RootUtils
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -30,6 +30,10 @@ import kotlin.concurrent.thread
 class ModuleWebUiActivity : Activity() {
 
     private lateinit var webView: WebView
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.applyLocale(newBase))
+    }
     private val moduleId: String by lazy {
         intent.getStringExtra(EXTRA_MODULE_ID).orEmpty().trim()
     }
@@ -43,7 +47,7 @@ class ModuleWebUiActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (moduleId.isBlank()) {
+        if (!RootUtils.isSafeModuleIdForPath(moduleId)) {
             Toast.makeText(this, getString(R.string.runtime_module_unavailable), Toast.LENGTH_SHORT).show()
             finish()
             return
@@ -51,10 +55,17 @@ class ModuleWebUiActivity : Activity() {
 
         enterImmersiveMode()
         title = moduleName
+        thread(name = "abk-webui-init") {
+            val debugEnabled = PreferencesRepository(applicationContext).readWebViewDebugEnabledBlocking()
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                setupWebView(debugEnabled)
+            }
+        }
+    }
+
+    private fun setupWebView(debugEnabled: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            val debugEnabled = runCatching {
-                runBlocking { PreferencesRepository(this@ModuleWebUiActivity).webViewDebugEnabled.first() }
-            }.getOrDefault(false)
             WebView.setWebContentsDebuggingEnabled(debugEnabled)
         }
         webView = WebView(this).apply {
