@@ -99,9 +99,6 @@ android {
             path = file("src/main/cpp/CMakeLists.txt")
         }
     }
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
 }
 
 dependencies {
@@ -150,32 +147,4 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-}
-
-// Windows: Gradle merges PATH + JDK bin into -Djava.library.path without quoting; spaces and stray
-// quotes in PATH break the test worker ("Could not find or load main class ;C:\Users\...").
-tasks.withType<Test>().configureEach {
-    javaLauncher.set(
-        javaToolchains.launcherFor {
-            languageVersion.set(JavaLanguageVersion.of(21))
-        },
-    )
-    environment("CLASSPATH", "")
-    environment("_JAVA_OPTIONS", "")
-    environment("JAVA_TOOL_OPTIONS", "")
-    environment("JDK_JAVA_OPTIONS", "")
-
-    val jniLibDirs = listOf("src/testDebug/jniLibs", "src/test/jniLibs", ".")
-        .map { layout.projectDirectory.dir(it).asFile }
-        .filter { it.isDirectory }
-    val libraryPath = jniLibDirs.joinToString(File.pathSeparator) { it.absolutePath }
-
-    // AGP/Gradle append PATH and java.home\bin to java.library.path; a quoted or spaced PATH breaks argv on Windows.
-    val systemRoot = System.getenv("SystemRoot") ?: "C:\\Windows"
-    environment("PATH", "$systemRoot\\system32")
-
-    doFirst {
-        systemProperty("java.library.path", libraryPath)
-        jvmArgs("-Djava.library.path=$libraryPath")
-    }
 }
