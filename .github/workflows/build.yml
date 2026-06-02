@@ -874,6 +874,203 @@ jobs:
                       closes += 1
               return opens - closes
 
+          def ensure_include(text, include_line, anchors, path):
+              if include_line in text:
+                  return text
+              for anchor in anchors:
+                  if anchor in text:
+                      return text.replace(anchor, anchor + include_line, 1)
+              raise SystemExit(f"{path} missing include anchor for {include_line.strip()}")
+
+          def patch_resukisu_selinux_hide(path):
+              original = path.read_text()
+              text = original
+
+              replacements = [
+                  ("static struct selinux_state fake_state;", "struct selinux_state fake_state;"),
+                  ("__maybe_static struct selinux_state fake_state;", "struct selinux_state fake_state;"),
+                  (
+                      "static bool ksu_selinux_hide_running __read_mostly = false;",
+                      "bool ksu_selinux_hide_running __read_mostly = false;",
+                  ),
+                  (
+                      "static bool ksu_selinux_hide_enabled __read_mostly = false;",
+                      "bool ksu_selinux_hide_enabled __read_mostly = false;",
+                  ),
+                  ("__maybe_static int security_context_to_sid_with_policy(", "int security_context_to_sid_with_policy("),
+                  ("static int security_context_to_sid_with_policy(", "int security_context_to_sid_with_policy("),
+                  ("__maybe_static int security_sid_to_context_with_policy(", "int security_sid_to_context_with_policy("),
+                  ("static int security_sid_to_context_with_policy(", "int security_sid_to_context_with_policy("),
+                  (
+                      "__maybe_static void __nocfi security_compute_av_user_with_policy(",
+                      "void __nocfi security_compute_av_user_with_policy(",
+                  ),
+                  (
+                      "static void __nocfi security_compute_av_user_with_policy(",
+                      "void __nocfi security_compute_av_user_with_policy(",
+                  ),
+                  (
+                      "__maybe_static void security_compute_av_user_with_policy(",
+                      "void security_compute_av_user_with_policy(",
+                  ),
+                  (
+                      "static void security_compute_av_user_with_policy(",
+                      "void security_compute_av_user_with_policy(",
+                  ),
+              ]
+              for old, new in replacements:
+                  text = text.replace(old, new)
+
+              text = re.sub(
+                  r"(?m)^\s*(?:static\s+|__maybe_static\s+)?DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;",
+                  "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
+                  text,
+              )
+              text = re.sub(
+                  r"(?m)^\s*(?:static\s+|__maybe_static\s+)?struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;",
+                  "struct page *fake_status = NULL;",
+                  text,
+              )
+              text = re.sub(
+                  r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)",
+                  "void initialize_fake_status(void)",
+                  text,
+              )
+
+              fake_status_additions = []
+              if not re.search(r"(?m)^\s*DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;", text):
+                  fake_status_additions.append("DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);")
+              if not re.search(r"(?m)^\s*struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;", text):
+                  fake_status_additions.append("struct page *fake_status = NULL;")
+              if not re.search(r"(?m)^\s*void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)\s*\{", text):
+                  fake_status_additions.extend([
+                      "void initialize_fake_status(void)",
+                      "{",
+                      "}",
+                  ])
+              if fake_status_additions:
+                  text = ensure_include(
+                      text,
+                      "#include <linux/jump_label.h>\n",
+                      ("#include <linux/mutex.h>\n", "#include <linux/version.h>\n"),
+                      path,
+                  )
+                  anchor = "bool ksu_selinux_hide_running __read_mostly = false;\n"
+                  if anchor not in text:
+                      raise SystemExit(f"{path} missing fake status insertion anchor")
+                  block = "\n".join([
+                      "",
+                      "#ifdef CONFIG_KSU_SUSFS",
+                      *fake_status_additions,
+                      "#endif",
+                      "",
+                  ])
+                  text = text.replace(anchor, anchor + block, 1)
+
+              if text != original:
+                  path.write_text(text)
+                  print(f"Patched ReSukiSU selinux_hide compatibility exports: {path}")
+
+              final_text = path.read_text()
+              required = (
+                  "struct selinux_state fake_state;",
+                  "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
+                  "struct page *fake_status = NULL;",
+                  "bool ksu_selinux_hide_enabled __read_mostly",
+                  "bool ksu_selinux_hide_running __read_mostly",
+                  "void initialize_fake_status(",
+                  "int security_context_to_sid_with_policy(",
+                  "int security_sid_to_context_with_policy(",
+              )
+              missing = [marker for marker in required if marker not in final_text]
+              if missing:
+                  raise SystemExit(f"{path} missing ReSukiSU SELinux compatibility markers: {missing}")
+
+              forbidden = (
+                  "static struct selinux_state fake_state;",
+                  "__maybe_static struct selinux_state fake_state;",
+                  "static bool ksu_selinux_hide_running __read_mostly = false;",
+                  "static bool ksu_selinux_hide_enabled __read_mostly = false;",
+                  "__maybe_static int security_context_to_sid_with_policy(",
+                  "static int security_context_to_sid_with_policy(",
+                  "__maybe_static int security_sid_to_context_with_policy(",
+                  "static int security_sid_to_context_with_policy(",
+                  "__maybe_static void __nocfi security_compute_av_user_with_policy(",
+                  "static void __nocfi security_compute_av_user_with_policy(",
+                  "__maybe_static void security_compute_av_user_with_policy(",
+                  "static void security_compute_av_user_with_policy(",
+              )
+              present = [marker for marker in forbidden if marker in final_text]
+              if present:
+                  raise SystemExit(f"{path} still has non-exported ReSukiSU SELinux symbols: {present}")
+
+              if (
+                  "void __nocfi security_compute_av_user_with_policy(" not in final_text
+                  and "void security_compute_av_user_with_policy(" not in final_text
+              ):
+                  raise SystemExit(f"{path} missing exported security_compute_av_user_with_policy()")
+
+          def patch_resukisu_rules(path):
+              original = path.read_text()
+              text = original.replace(
+                  "static struct selinux_policy *backup_sepolicy;",
+                  "struct selinux_policy *backup_sepolicy;",
+              )
+              text = text.replace(
+                  "__maybe_static struct selinux_policy *backup_sepolicy;",
+                  "struct selinux_policy *backup_sepolicy;",
+              )
+
+              if text != original:
+                  path.write_text(text)
+                  print(f"Patched ReSukiSU backup_sepolicy owner: {path}")
+
+              final_text = path.read_text()
+              if "struct selinux_policy *backup_sepolicy;" not in final_text:
+                  raise SystemExit(f"{path} missing backup_sepolicy definition")
+              forbidden = (
+                  "static struct selinux_policy *backup_sepolicy;",
+                  "__maybe_static struct selinux_policy *backup_sepolicy;",
+              )
+              present = [marker for marker in forbidden if marker in final_text]
+              if present:
+                  raise SystemExit(f"{path} still has non-exported backup_sepolicy definition: {present}")
+
+          def patch_resukisu_selinux(path):
+              original = path.read_text()
+              text = original
+              marker = "/* ABK: simonpunk SUSFS SELinux hooks reference KernelSU selinux_hide globals. */"
+              if marker in text:
+                  start = text.index(marker)
+                  start = text.rfind("\n", 0, start) + 1 if "\n" in text[:start] else 0
+                  end_marker = "#endif\n#endif"
+                  end = text.find(end_marker, start)
+                  if end == -1:
+                      raise SystemExit(f"{path} contains stale ABK SELinux compat marker without closing guards")
+                  end += len(end_marker)
+                  while end < len(text) and text[end] == "\n":
+                      end += 1
+                  text = text[:start] + text[end:]
+
+              if text != original:
+                  path.write_text(text)
+                  print(f"Removed duplicate-prone ReSukiSU SELinux globals from {path}")
+
+              final_text = path.read_text()
+              forbidden = (
+                  marker,
+                  "struct selinux_state fake_state;",
+                  "bool ksu_selinux_hide_running __read_mostly = false;",
+                  "bool ksu_selinux_hide_enabled __read_mostly = false;",
+                  "struct selinux_policy *backup_sepolicy;",
+                  "int security_context_to_sid_with_policy(struct selinux_policy *policy, const char *scontext, u32 scontext_len,",
+                  "int security_sid_to_context_with_policy(struct selinux_policy *policy, u32 sid, char **scontext,",
+                  "void security_compute_av_user_with_policy(struct selinux_policy *policy, u32 ssid, u32 tsid, u16 tclass,",
+              )
+              present = [marker_text for marker_text in forbidden if marker_text in final_text]
+              if present:
+                  raise SystemExit(f"{path} still contains duplicate-prone ReSukiSU SELinux definitions: {present}")
+
           variant = "${{ inputs.ksu_variant }}"
           candidates = []
           seen = set()
@@ -957,67 +1154,18 @@ jobs:
                       print("Injected missing SukiSU/ReSukiSU SUSFS static key definitions:", ", ".join(missing_true + missing_false))
 
               if variant == "ReSukiSU":
+                  selinux_hide_c = kernel_dir / "feature/selinux_hide.c"
+                  rules_c = kernel_dir / "selinux/rules.c"
                   selinux_c = kernel_dir / "selinux/selinux.c"
-                  if selinux_c.exists():
-                      text = selinux_c.read_text()
-                      compat_symbols = [
-                          "ksu_selinux_hide_running",
-                          "ksu_selinux_hide_enabled",
-                          "struct selinux_state fake_state",
-                          "fake_status_initialize_key",
-                          "struct page *fake_status",
-                          "initialize_fake_status",
-                          "struct selinux_policy *backup_sepolicy",
-                          "security_context_to_sid_with_policy",
-                          "security_sid_to_context_with_policy",
-                          "security_compute_av_user_with_policy",
-                      ]
-                      if not all(symbol in tree_text for symbol in compat_symbols):
-                          if "#include <linux/jump_label.h>" not in text:
-                              for include_anchor in ('#include "linux/version.h"\n', '#include "selinux_defs.h"\n'):
-                                  if include_anchor in text:
-                                      text = text.replace(include_anchor, include_anchor + "#include <linux/jump_label.h>\n", 1)
-                                      break
-                          anchor = "u32 ksu_file_sid __read_mostly = 0;\n"
-                          block = "\n".join([
-                              "",
-                              "/* ABK: simonpunk SUSFS SELinux hooks reference KernelSU selinux_hide globals. */",
-                              "#ifdef CONFIG_KSU_SUSFS",
-                              "struct selinux_state fake_state;",
-                              "bool ksu_selinux_hide_running __read_mostly = false;",
-                              "bool ksu_selinux_hide_enabled __read_mostly = false;",
-                              "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
-                              "struct page *fake_status = NULL;",
-                              "void initialize_fake_status(void)",
-                              "{",
-                              "}",
-                              "struct selinux_policy *backup_sepolicy;",
-                              "#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)",
-                              "int security_context_to_sid_with_policy(struct selinux_policy *policy, const char *scontext, u32 scontext_len,",
-                              "                                        u32 *sid, u32 def_sid, unsigned int gfp_flags)",
-                              "{",
-                              "    return -22;",
-                              "}",
-                              "int security_sid_to_context_with_policy(struct selinux_policy *policy, u32 sid, char **scontext,",
-                              "                                        u32 *scontext_len)",
-                              "{",
-                              "    return -22;",
-                              "}",
-                              "void security_compute_av_user_with_policy(struct selinux_policy *policy, u32 ssid, u32 tsid, u16 tclass,",
-                              "                                          struct av_decision *avd)",
-                              "{",
-                              "}",
-                              "#endif",
-                              "#endif",
-                              "",
-                          ])
-                          if anchor in text:
-                              selinux_c.write_text(text.replace(anchor, anchor + block, 1))
-                          elif '#include "selinux_defs.h"\n' in text:
-                              selinux_c.write_text(text.replace('#include "selinux_defs.h"\n', '#include "selinux_defs.h"\n' + block, 1))
-                          else:
-                              raise SystemExit(f"{selinux_c} missing SELinux compatibility insertion anchor")
-                          print("Injected ReSukiSU SUSFS SELinux hide compatibility globals")
+                  if not selinux_hide_c.exists():
+                      raise SystemExit(f"{kernel_dir} missing feature/selinux_hide.c")
+                  if not rules_c.exists():
+                      raise SystemExit(f"{kernel_dir} missing selinux/rules.c")
+                  if not selinux_c.exists():
+                      raise SystemExit(f"{kernel_dir} missing selinux/selinux.c")
+                  patch_resukisu_selinux_hide(selinux_hide_c)
+                  patch_resukisu_rules(rules_c)
+                  patch_resukisu_selinux(selinux_c)
 
               sucompat_c = kernel_dir / "feature/sucompat.c"
               if sucompat_c.exists():
@@ -1034,57 +1182,23 @@ jobs:
               if sulog_event_c.exists():
                   text = sulog_event_c.read_text()
                   marker = "builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer"
-                  def detect_sulog_argv(source):
-                      match = re.search(r"(?s)\bksu_sulog_capture\s*\((.*?)\)\s*\{", source)
-                      if not match:
-                          return None
-                      params = [part.strip() for part in match.group(1).split(",")]
-                      if len(params) < 5:
-                          return None
-                      return " ".join(params[3].split())
-
-                  argv_decl = detect_sulog_argv(text)
-                  if argv_decl is None:
-                      print(f"Skip sulog argv compatibility for unexpected ksu_sulog_capture() signature: {sulog_event_c}")
-                      continue
-                  user_arg_null_is_pointer = "user_arg_null_ptr()" in text
-                  argv_is_pointer = "*" in argv_decl
-                  if argv_is_pointer:
-                      susfs_argv = "USER_ARG_NULL" if user_arg_null_is_pointer else "&USER_ARG_NULL"
-                  else:
-                      susfs_argv = "*USER_ARG_NULL" if user_arg_null_is_pointer else "USER_ARG_NULL"
                   new = "\n".join([
-                      "    /* ABK: builtin SUSFS ksu_sulog_capture() argv type compatibility. */",
+                      "    /* ABK: builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer. */",
                       "#ifdef CONFIG_KSU_SUSFS",
-                      f"    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, {susfs_argv}, gfp);",
+                      "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);",
                       "#else",
                       "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);",
                       "#endif",
                   ])
-                  pattern = re.compile(
-                      r"(?m)^    /\* ABK: builtin SUSFS ksu_sulog_capture\(\).*?\*/\n"
-                      r"#ifdef CONFIG_KSU_SUSFS\n"
-                      r"    pending = ksu_sulog_capture\(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, [^,]+, gfp\);\n"
-                      r"#else\n"
-                      r"    pending = ksu_sulog_capture\(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp\);\n"
-                      r"#endif"
-                  )
-                  text, count = pattern.subn(new, text, count=1)
-                  changed_sulog = count > 0
-                  if not changed_sulog:
+                  if marker not in text:
                       for old in (
                           "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);",
                           "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, &USER_ARG_NULL, gfp);",
-                          "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, *USER_ARG_NULL, gfp);",
-                          "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);",
                       ):
                           if old in text:
-                              text = text.replace(old, new, 1)
-                              changed_sulog = True
+                              sulog_event_c.write_text(text.replace(old, new, 1))
+                              print("Fixed SukiSU/ReSukiSU builtin sulog grant_root argv type for CONFIG_KSU_SUSFS")
                               break
-                  if changed_sulog:
-                      sulog_event_c.write_text(text)
-                      print(f"Fixed SukiSU/ReSukiSU builtin sulog grant_root argv type: {argv_decl} -> {susfs_argv}")
           PY
 
       - name: 配置 SukiSU 管理器信息
@@ -3135,43 +3249,33 @@ jobs:
                       "bool ksu_selinux_hide_running __read_mostly = false;\n",
                       "struct selinux_state fake_state;\n",
                   )
-              text = re.sub(
-                  r"(?m)^\s*(?:static\s+|__maybe_static\s+)?DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;",
+              text = text.replace(
+                  "static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
                   "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
-                  text,
               )
-              text = re.sub(
-                  r"(?m)^\s*(?:static\s+|__maybe_static\s+)?struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;",
+              text = text.replace(
+                  "static struct page *fake_status = NULL;",
                   "struct page *fake_status = NULL;",
-                  text,
               )
               text = re.sub(
-                  r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)",
+                  r"(?m)^static void initialize_fake_status\s*\(\s*(?:void)?\s*\)",
                   "void initialize_fake_status(void)",
                   text,
               )
-              fake_status_additions = []
-              if not re.search(r"(?m)^\s*DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;", text):
-                  fake_status_additions.append("DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);")
-              if not re.search(r"(?m)^\s*struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;", text):
-                  fake_status_additions.append("struct page *fake_status = NULL;")
-              if not re.search(r"(?m)^\s*void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)\s*\{", text):
-                  fake_status_additions.extend([
-                      "void initialize_fake_status(void)",
-                      "{",
-                      "}",
-                  ])
-              if fake_status_additions:
+              if "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key)" not in text:
                   if "jump_label.h" not in text:
                       text = ensure_include(text, "#include <linux/jump_label.h>", "#include <linux/mutex.h>\n")
-                  block = "\n".join([
-                      "",
-                      "#ifdef CONFIG_KSU_SUSFS",
-                      *fake_status_additions,
-                      "#endif",
-                      "",
-                  ])
+                  block = dedent("""\
 
+                  #ifdef CONFIG_KSU_SUSFS
+                  DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);
+                  struct page *fake_status = NULL;
+
+                  void initialize_fake_status(void)
+                  {
+                  }
+                  #endif
+                  """)
                   text = ensure_line_after(
                       text,
                       "struct selinux_state fake_state;\n",
@@ -3241,8 +3345,6 @@ jobs:
 
               text = kbuild.read_text()
               missing = []
-              if "feature/selinux_hide.o" not in text:
-                  missing.append("kernelsu-objs += feature/selinux_hide.o")
               if "hook/lsm_hook.o" not in text:
                   missing.append("kernelsu-objs += hook/lsm_hook.o")
               if "hook/arm64/patch_memory.o" not in text:
@@ -3435,18 +3537,16 @@ jobs:
               "static bool ksu_selinux_hide_running __read_mostly = false;",
               "bool ksu_selinux_hide_running __read_mostly = false;",
           )
-          text = re.sub(
-              r"(?m)^\s*(?:static\s+|__maybe_static\s+)?DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;",
+          text = text.replace(
+              "static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
               "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
-              text,
           )
-          text = re.sub(
-              r"(?m)^\s*(?:static\s+|__maybe_static\s+)?struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;",
+          text = text.replace(
+              "static struct page *fake_status = NULL;",
               "struct page *fake_status = NULL;",
-              text,
           )
           text = re.sub(
-              r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)",
+              r"(?m)^static void initialize_fake_status\s*\(\s*(?:void)?\s*\)",
               "void initialize_fake_status(void)",
               text,
           )
@@ -3461,12 +3561,6 @@ jobs:
           missing = [marker for marker in required if marker not in text]
           if missing:
               raise SystemExit(f"{path} 缺少 Official 6.1-6.12 SELinux 导出: {missing}")
-          if not re.search(r"(?m)^\s*DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;", text):
-              raise SystemExit(f"{path} 缺少 fake_status_initialize_key 定义")
-          if not re.search(r"(?m)^\s*struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;", text):
-              raise SystemExit(f"{path} 缺少 fake_status 定义")
-          if not re.search(r"(?m)^\s*void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)\s*\{", text):
-              raise SystemExit(f"{path} 缺少 initialize_fake_status 定义")
 
           if text != original:
               path.write_text(text)
@@ -3574,58 +3668,24 @@ jobs:
               if sulog_event_c.exists():
                   text = sulog_event_c.read_text()
                   marker = "builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer"
-                  def detect_sulog_argv(source):
-                      match = re.search(r"(?s)\bksu_sulog_capture\s*\((.*?)\)\s*\{", source)
-                      if not match:
-                          return None
-                      params = [part.strip() for part in match.group(1).split(",")]
-                      if len(params) < 5:
-                          return None
-                      return " ".join(params[3].split())
-
-                  argv_decl = detect_sulog_argv(text)
-                  if argv_decl is None:
-                      print(f"  跳过 {sulog_event_c} 的 sulog argv 兼容：未识别 ksu_sulog_capture() 签名")
-                      continue
-                  user_arg_null_is_pointer = "user_arg_null_ptr()" in text
-                  argv_is_pointer = "*" in argv_decl
-                  if argv_is_pointer:
-                      susfs_argv = "USER_ARG_NULL" if user_arg_null_is_pointer else "&USER_ARG_NULL"
-                  else:
-                      susfs_argv = "*USER_ARG_NULL" if user_arg_null_is_pointer else "USER_ARG_NULL"
                   new = "\n".join([
-                      "    /* ABK: builtin SUSFS ksu_sulog_capture() argv type compatibility. */",
+                      "    /* ABK: builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer. */",
                       "#ifdef CONFIG_KSU_SUSFS",
-                      f"    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, {susfs_argv}, gfp);",
+                      "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);",
                       "#else",
                       "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);",
                       "#endif",
                   ])
-                  pattern = re.compile(
-                      r"(?m)^    /\* ABK: builtin SUSFS ksu_sulog_capture\(\).*?\*/\n"
-                      r"#ifdef CONFIG_KSU_SUSFS\n"
-                      r"    pending = ksu_sulog_capture\(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, [^,]+, gfp\);\n"
-                      r"#else\n"
-                      r"    pending = ksu_sulog_capture\(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp\);\n"
-                      r"#endif"
-                  )
-                  text, count = pattern.subn(new, text, count=1)
-                  changed_sulog = count > 0
-                  if not changed_sulog:
+                  if marker not in text:
                       for old in (
                           "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);",
                           "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, &USER_ARG_NULL, gfp);",
-                          "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, *USER_ARG_NULL, gfp);",
-                          "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);",
                       ):
                           if old in text:
-                              text = text.replace(old, new, 1)
-                              changed_sulog = True
+                              sulog_event_c.write_text(text.replace(old, new, 1))
+                              changed = True
+                              print(f"  已修复 {sulog_event_c} 的 grant_root argv 参数类型")
                               break
-                  if changed_sulog:
-                      sulog_event_c.write_text(text)
-                      changed = True
-                      print(f"  已修复 {sulog_event_c} 的 grant_root argv 参数类型: {argv_decl} -> {susfs_argv}")
 
           if not changed:
               print("SukiSU 源码兼容修复无需修改。")
@@ -3665,9 +3725,9 @@ jobs:
           fi
 
           if [ -f "$KSU_BUILD_DIR/sulog/event.c" ]; then
-            if grep -qF 'const struct user_arg_ptr argv' "$KSU_BUILD_DIR/sulog/event.c" \
+            if grep -qF 'struct user_arg_ptr *argv_user' "$KSU_BUILD_DIR/sulog/event.c" \
               && grep -Eq 'NULL, (&)?USER_ARG_NULL, gfp' "$KSU_BUILD_DIR/sulog/event.c" \
-              && ! grep -qF 'builtin SUSFS ksu_sulog_capture() argv type compatibility' "$KSU_BUILD_DIR/sulog/event.c"; then
+              && ! grep -qF 'builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer' "$KSU_BUILD_DIR/sulog/event.c"; then
               echo "::error::SukiSU/ReSukiSU sulog/event.c 仍存在 argv 参数类型不兼容调用: $KSU_BUILD_DIR/sulog/event.c"
               exit 1
             fi
