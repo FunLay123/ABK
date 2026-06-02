@@ -1,6 +1,7 @@
 package com.abk.kernel.viewmodel
 
 import android.app.Application
+import androidx.annotation.VisibleForTesting
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -23,8 +24,6 @@ import com.abk.kernel.data.repository.PreferencesRepository
 import com.abk.kernel.data.repository.Result
 import com.abk.kernel.utils.BuildMonitorService
 import com.abk.kernel.utils.BuildProgressUtils
-import com.abk.kernel.utils.isActiveFlashRun
-import com.abk.kernel.utils.isWorkflowArtifactSetComplete
 import com.abk.kernel.utils.buildDisplaySnapshot
 import com.abk.kernel.utils.computeKindBuildProgress
 import com.abk.kernel.utils.DownloadDirectoryUtils
@@ -209,10 +208,14 @@ data class MainUiState(
     val rootGrantSavingPackage: String? = null
 )
 
-class MainViewModel(application: Application) : AndroidViewModel(application) {
+class MainViewModel(
+    application: Application,
+    github: GitHubRepository = GitHubRepository(),
+    private val registerStatusBroadcast: Boolean = true,
+) : AndroidViewModel(application) {
 
     private val prefs = PreferencesRepository(application)
-    val github = GitHubRepository()
+    val github: GitHubRepository = github
     private val gson = Gson()
     private val ksuModuleListType = object : TypeToken<List<Map<String, Any?>>>() {}.type
     private var hasSavedBuildConfig = false
@@ -220,10 +223,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val preparedMirrorArtifacts = mutableMapOf<Long, Set<String>>()
     private val artifactDownloadJobs = mutableMapOf<Long, Job>()
     private val cancelledArtifactDownloadKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
-    private val artifactLoadJobs = mutableMapOf<Long, Job>()
-    private val artifactLoadGenerations = mutableMapOf<Long, Int>()
     private var hasCheckedWorkflowEnablementThisLaunch = false
-    private var hasShownInitialOobeThisLaunch = false
     private var hasRefreshedGitHubSessionThisLaunch = false
     private var buildQueueJob: Job? = null
     private var recentRunsRefreshJob: Job? = null
@@ -232,9 +232,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var foregroundWorkflowRefreshIntervalSec =
         PreferencesRepository.DEFAULT_WORKFLOW_FOREGROUND_REFRESH_INTERVAL_SEC
     private var appInForeground = false
-    private val lastArtifactRefreshAt = mutableMapOf<Long, Long>()
-    private val workflowStatusBurstJobs = mutableMapOf<Long, Job>()
-    private val workflowStatusBurstStartedRunIds = mutableSetOf<Long>()
+
+    private lateinit var workflowBurstController: WorkflowStatusBurstController
+    private lateinit var workflowArtifacts: WorkflowArtifactCoordinator
+    private lateinit var authOobe: AuthOobeCoordinator
+    private lateinit var runtime: RuntimeCoordinator
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -308,9 +310,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
+        workflowBurstController = WorkflowStatusBurstController(
+            scope = viewModelScope,
+            github = github,
+            onRunPolled = { run ->
+                _uiState.update { state ->
+                    var next = state.copy(recentRuns = state.recentRuns.replaceRun(run))
+                    if (state.activeBuildRuns.any { it.id == run.id }) {
+                        next = next.withBuildRunDisplay(
+                            run = run,
+                            status = run.toBuildStatus(),
+                            progress = state.buildProgressByRunId[run.id]
+                                ?: BuildProgressUtils.defaultFor(run),
+                        )
+                    }
+                    next
+                }
+                syncBuildQueueWithRun(run, run.toBuildStatus())
+            },
+        )
+        workflowArtifacts = WorkflowArtifactCoordinator(
+            scope = viewModelScope,
+            github = github,
+            prefs = prefs,
+            gson = gson,
+            readState = { _uiState.value },
+            updateState = { transform -> _uiState.update(transform) },
+            workflowRunTitle = { runId -> text(R.string.vm_workflow_run_title, runId) },
+            toBuildArtifact = { artifact, runId, title -> artifact.toBuildArtifact(runId, title) },
+            burstMaybeStart = { runId, run ->
+                val state = _uiState.value
+                val owner = state.user?.login ?: return@WorkflowArtifactCoordinator
+                val repoName = state.forkRepo?.name ?: return@WorkflowArtifactCoordinator
+                workflowBurstController.maybeStart(
+                    runId,
+                    owner,
+                    repoName,
+                    run,
+                    remoteArtifactsForRun(runId),
+                )
+            },
+            maybeAutoDownload = { runId, artifacts, requestedByMonitor ->
+                maybeAutoDownloadRun(runId, artifacts, requestedByMonitor)
+            },
+        )
+        authOobe = AuthOobeCoordinator(
+            scope = viewModelScope,
+            github = github,
+            prefs = prefs,
+            readState = { _uiState.value },
+            updateState = { transform -> _uiState.update(transform) },
+            fetchUser = { reportError -> fetchAuthenticatedUserAndStore(reportError) },
+            requestForkCheck = { close -> checkFork(showSyncPrompt = true, closeOobeWhenReady = close) },
+            onGitHubSessionRefreshed = { hasRefreshedGitHubSessionThisLaunch = true },
+            text = { resId, args -> text(resId, *args) },
+        )
+        runtime = RuntimeCoordinator(
+            scope = viewModelScope,
+            app = getApplication(),
+            github = github,
+            prefs = prefs,
+            gson = gson,
+            ksuModuleListType = ksuModuleListType,
+            readState = { _uiState.value },
+            updateState = { transform -> _uiState.update(transform) },
+            resolveManagerAccess = { rootGranted -> resolveManagerAccess(rootGranted) },
+            managerAccessErrorMessage = { access, rootGranted ->
+                managerAccessErrorMessage(access, rootGranted)
+            },
+            str = { resId, args -> text(resId, *args) },
+        )
         observePreferences()
         observeForegroundWorkflowRefresh()
-        registerStatusReceiver()
+        if (registerStatusBroadcast) {
+            registerStatusReceiver()
+        }
     }
 
     private fun observePreferences() {
@@ -490,9 +564,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             prefs.runtimeModuleRepositoriesJson.collect { json ->
-                val repositories = parseRuntimeModuleRepositories(json)
-                _uiState.update { it.copy(runtimeModuleRepositories = repositories) }
-                refreshStaleRuntimeModuleRepositories(repositories)
+                runtime.onRuntimeRepositoriesJsonChanged(json)
             }
         }
         viewModelScope.launch {
@@ -589,645 +661,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setRuntimeNavigationEnabled(enabled: Boolean) {
-        _uiState.update { it.copy(runtimeNavigationEnabled = enabled) }
-        viewModelScope.launch { prefs.setRuntimeNavigationEnabled(enabled) }
-        if (enabled) refreshAbkRuntimeStatus()
-    }
+    fun setRuntimeNavigationEnabled(enabled: Boolean) = runtime.setRuntimeNavigationEnabled(enabled)
 
     fun setWebViewDebugEnabled(enabled: Boolean) {
         _uiState.update { it.copy(webViewDebugEnabled = enabled) }
         viewModelScope.launch { prefs.setWebViewDebugEnabled(enabled) }
     }
 
-    fun refreshAbkRuntimeStatus() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(abkRuntimeLoading = true, abkRuntimeError = null) }
-            val rootGranted = _uiState.value.rootGranted
-            val (access, runtimeStatus, runtimeError) = withContext(Dispatchers.IO) {
-                val managerAccess = resolveManagerAccess(rootGranted)
-                if (!managerAccess.hasNativeManagerPermission) {
-                    val snapshot = if (rootGranted) RootUtils.readManagerRuntimeSnapshot() else null
-                    val compatStatus = snapshot
-                        ?.takeIf { it.manager.active }
-                        ?.let {
-                            mergeRuntimeStatus(
-                                manager = it.manager,
-                                controlJson = it.controlStatusJson,
-                                ksuModulesJson = it.ksuModulesJson
-                            )
-                        }
-                    return@withContext Triple(
-                        managerAccess,
-                        compatStatus,
-                        managerAccessErrorMessage(managerAccess, rootGranted)
-                    )
-                }
-                val snapshot = RootUtils.readManagerRuntimeSnapshot()
-                if (!snapshot.manager.active) {
-                    Triple(
-                        managerAccess,
-                        null as AbkRuntimeStatus?,
-                        snapshot.manager.diagnostics.firstOrNull()
-                    )
-                } else {
-                    Triple(
-                        managerAccess,
-                        mergeRuntimeStatus(
-                            manager = snapshot.manager,
-                            controlJson = snapshot.controlStatusJson,
-                            ksuModulesJson = snapshot.ksuModulesJson
-                        ),
-                        null as String?
-                    )
-                }
-            }
-            _uiState.update {
-                if (runtimeStatus != null) {
-                    it.copy(
-                        managerAccessState = access.toUiState(),
-                        managerAccessError = if (access.hasNativeManagerPermission) access.diagnostic else runtimeError,
-                        hasNativeManagerPermission = access.hasNativeManagerPermission,
-                        abkRuntimeStatus = runtimeStatus,
-                        abkRuntimeLoading = false,
-                        abkRuntimeError = if (access.hasNativeManagerPermission) null else runtimeError
-                    )
-                } else {
-                    it.copy(
-                        managerAccessState = access.toUiState(),
-                        managerAccessError = runtimeError,
-                        hasNativeManagerPermission = access.hasNativeManagerPermission,
-                        abkRuntimeStatus = null,
-                        abkRuntimeLoading = false,
-                        abkRuntimeError = runtimeError ?: text(R.string.runtime_manager_inactive)
-                    )
-                }
-            }
-        }
-    }
+    fun refreshAbkRuntimeStatus() = runtime.refreshAbkRuntimeStatus()
 
-    fun refreshRootGrantApps(force: Boolean = false) {
-        val current = _uiState.value
-        val currentBackend = current.abkRuntimeStatus?.runtimeBackend?.backend
-        if (!force && current.rootGrantLoading) return
-        if (
-            !force &&
-            current.rootGrantApps.isNotEmpty() &&
-            current.rootGrantRuntimeBackend == currentBackend &&
-            current.rootGrantError == null
-        ) {
-            return
-        }
+    fun refreshRootGrantApps(force: Boolean = false) = runtime.refreshRootGrantApps(force)
 
-        viewModelScope.launch {
-            val backendAtRequest = _uiState.value.abkRuntimeStatus?.runtimeBackend?.backend
-            val rootGranted = _uiState.value.rootGranted
-            _uiState.update {
-                it.copy(rootGrantLoading = true, rootGrantError = null)
-            }
-            val (access, active, apps, diagnostic) = withContext(Dispatchers.IO) {
-                val managerAccess = resolveManagerAccess(rootGranted)
-                if (!managerAccess.hasNativeManagerPermission) {
-                    return@withContext Quadruple(
-                        managerAccess,
-                        false,
-                        emptyList<RootGrantApp>(),
-                        managerAccessErrorMessage(managerAccess, rootGranted)
-                    )
-                }
-                val rootGrantApps = if (managerAccess.hasNativeManagerPermission) {
-                    RootUtils.listRootGrantApps(getApplication<Application>())
-                } else {
-                    emptyList()
-                }
-                Quadruple(managerAccess, true, rootGrantApps, null as String?)
-            }
-            _uiState.update {
-                if (!active) {
-                    it.copy(
-                        managerAccessState = access.toUiState(),
-                        managerAccessError = diagnostic,
-                        hasNativeManagerPermission = access.hasNativeManagerPermission,
-                        rootGrantApps = emptyList(),
-                        rootGrantRuntimeBackend = backendAtRequest,
-                        rootGrantLoading = false,
-                        rootGrantError = diagnostic ?: text(R.string.runtime_manager_inactive)
-                    )
-                } else {
-                    it.copy(
-                        managerAccessState = access.toUiState(),
-                        managerAccessError = null,
-                        hasNativeManagerPermission = access.hasNativeManagerPermission,
-                        rootGrantApps = apps,
-                        rootGrantRuntimeBackend = backendAtRequest,
-                        rootGrantLoading = false,
-                        rootGrantError = null
-                    )
-                }
-            }
-        }
-    }
+    fun setRootGrantAllowed(packageName: String, allowed: Boolean) =
+        runtime.setRootGrantAllowed(packageName, allowed)
 
-    fun setRootGrantAllowed(packageName: String, allowed: Boolean) {
-        val app = _uiState.value.rootGrantApps.firstOrNull { it.packageName == packageName } ?: return
-        val updatedProfile = app.profile.copy(
-            allowSu = allowed,
-            rootUseDefault = true,
-            nonRootUseDefault = true,
-            name = app.packageName,
-            currentUid = app.uid
-        )
-        saveRootGrantProfile(updatedProfile)
-    }
+    fun saveRootGrantProfile(profile: RootGrantProfile) = runtime.saveRootGrantProfile(profile)
 
-    fun saveRootGrantProfile(profile: RootGrantProfile) {
-        val cleanPackage = profile.name.trim()
-        if (cleanPackage.isBlank() || _uiState.value.rootGrantSavingPackage != null) return
+    fun setAbkRuntimeModuleEnabled(moduleId: String, enabled: Boolean) =
+        runtime.setAbkRuntimeModuleEnabled(moduleId, enabled)
 
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(rootGrantSavingPackage = cleanPackage, rootGrantError = null)
-            }
-            val rootGranted = _uiState.value.rootGranted
-            val result = withContext(Dispatchers.IO) {
-                val access = resolveManagerAccess(rootGranted)
-                if (!access.hasNativeManagerPermission) {
-                    false to managerAccessErrorMessage(access, rootGranted)
-                } else {
-                    RootUtils.setRootGrantProfile(profile.copy(name = cleanPackage)) to null
-                }
-            }
-            _uiState.update { state ->
-                if (result.first) {
-                    state.copy(
-                        rootGrantSavingPackage = null,
-                        rootGrantError = null,
-                        rootGrantApps = state.rootGrantApps.map { app ->
-                            if (app.packageName == cleanPackage) {
-                                app.copy(profile = profile.copy(name = cleanPackage))
-                            } else {
-                                app
-                            }
-                        }
-                    )
-                } else {
-                    state.copy(
-                        rootGrantSavingPackage = null,
-                        rootGrantError = result.second ?: text(R.string.vm_save_failed)
-                    )
-                }
-            }
-            if (result.first) refreshRootGrantApps(force = true)
-        }
-    }
+    fun setAbkRuntimeModulePendingUninstall(moduleId: String, pending: Boolean) =
+        runtime.setAbkRuntimeModulePendingUninstall(moduleId, pending)
 
-    private fun mergeRuntimeStatus(
-        manager: RootUtils.ManagerRuntimeProbe,
-        controlJson: String?,
-        ksuModulesJson: String?
-    ): AbkRuntimeStatus {
-        val controlStatus = controlJson?.let { body ->
-            runCatching { gson.fromJson(body, AbkRuntimeStatus::class.java) }.getOrNull()
-        }
-        val ksuModules = parseKsuModules(ksuModulesJson)
-        val controlModules = controlStatus?.modules.orEmpty().map { module ->
-            module.copy(
-                type = module.type.ifBlank { "builtin" },
-                source = module.source.ifBlank { "abk" },
-                readonly = module.readonly || !module.controllable
-            )
-        }
-        val kpmModules = parseKpmModules()
-        val mergedModules = mergeRuntimeModules(controlModules, ksuModules, kpmModules)
-        val runtimeBackendInfo = manager.toRuntimeInfo()
-        val managerInfo = controlStatus?.manager?.let { compilerManager ->
-            val extraCaps = when (manager.backend) {
-                "native" -> listOf("native_manager", "root_policy")
-                "su", "ksud" -> listOf("root_shell")
-                else -> emptyList()
-            }
-            compilerManager.copy(
-                active = true,
-                capabilities = (compilerManager.capabilities + extraCaps).distinct(),
-                diagnostics = (compilerManager.diagnostics + manager.diagnostics).distinct()
-            )
-        } ?: runtimeBackendInfo
-        return (controlStatus ?: AbkRuntimeStatus()).copy(
-            schema = maxOf(controlStatus?.schema ?: 0, 4),
-            abkVersion = controlStatus?.abkVersion?.ifBlank { BuildConfig.VERSION_NAME } ?: BuildConfig.VERSION_NAME,
-            workMode = resolveRuntimeWorkMode(controlStatus?.workMode, manager),
-            manager = managerInfo,
-            runtimeBackend = runtimeBackendInfo,
-            modules = mergedModules
-        )
-    }
+    fun runRuntimeModuleAction(moduleId: String) = runtime.runRuntimeModuleAction(moduleId)
 
-    private fun resolveRuntimeWorkMode(
-        controlWorkMode: String?,
-        manager: RootUtils.ManagerRuntimeProbe
-    ): String {
-        normalizeRuntimeWorkMode(controlWorkMode)?.let { return it }
-        normalizeRuntimeWorkMode(manager.workMode)?.let { return it }
-        return when {
-            manager.capabilities.any { it.equals("lkm", ignoreCase = true) } -> "lkm"
-            manager.backend == "native" -> "built-in"
-            else -> ""
-        }
-    }
+    fun dismissRuntimeModuleActionOutput() = runtime.dismissRuntimeModuleActionOutput()
 
-    private fun normalizeRuntimeWorkMode(value: String?): String? {
-        return when (value?.trim()?.lowercase()) {
-            "lkm" -> "lkm"
-            "builtin", "built-in", "built_in" -> "built-in"
-            else -> null
-        }
-    }
+    fun addRuntimeModuleRepository(url: String) = runtime.addRuntimeModuleRepository(url)
 
-    private fun RootUtils.ManagerRuntimeProbe.toRuntimeInfo(): AbkRuntimeManagerInfo =
-        AbkRuntimeManagerInfo(
-            displayName = displayName.ifBlank { if (active) "Root" else "" },
-            variant = variant,
-            backend = backend,
-            version = version,
-            active = active,
-            capabilities = capabilities,
-            diagnostics = diagnostics
-        )
+    fun deleteRuntimeModuleRepository(id: String) = runtime.deleteRuntimeModuleRepository(id)
 
-    private fun parseKsuModules(json: String?): List<AbkRuntimeModule> {
-        if (json.isNullOrBlank()) return emptyList()
-        val records = runCatching {
-            gson.fromJson<List<Map<String, Any?>>>(json, ksuModuleListType)
-        }.getOrNull().orEmpty()
-        return records.mapNotNull { item ->
-            val id = item.runtimeString("id")
-            if (id.isBlank()) return@mapNotNull null
-            AbkRuntimeModule(
-                id = id,
-                name = item.runtimeString("name").ifBlank { id },
-                author = item.runtimeString("author"),
-                type = "standard",
-                version = item.runtimeString("version"),
-                versionCode = item.runtimeLong("versionCode"),
-                description = item.runtimeString("description"),
-                stage = "runtime",
-                source = "ksud",
-                moduleDir = "/data/adb/modules/$id",
-                webRoot = "/data/adb/modules/$id/webroot",
-                readonly = false,
-                controllable = true,
-                enabled = item.runtimeBoolean("enabled", true),
-                update = item.runtimeBoolean("update"),
-                remove = item.runtimeBoolean("remove"),
-                hasWebUi = item.runtimeBoolean("web"),
-                hasActionScript = item.runtimeBoolean("action"),
-                actionSupported = item.runtimeBoolean("action")
-            )
-        }
-    }
+    fun refreshRuntimeModuleRepository(id: String) = runtime.refreshRuntimeModuleRepository(id)
 
-    private fun parseKpmModules(): List<AbkRuntimeModule> {
-        val listResult = RootUtils.listKpmModules()
-        if (!listResult.success) return emptyList()
-        return parseKpmModuleNames(listResult.output.joinToString("\n"))
-            .map { name ->
-                val properties = RootUtils.getKpmModuleInfo(name)
-                    .takeIf { it.success }
-                    ?.output
-                    ?.flatMap { it.lineSequence().toList() }
-                    ?.mapNotNull { line ->
-                        val clean = line.trim()
-                        if (clean.isBlank() || clean.startsWith("#")) return@mapNotNull null
-                        val separator = when {
-                            "=" in clean -> "="
-                            ":" in clean -> ":"
-                            else -> return@mapNotNull null
-                        }
-                        val parts = clean.split(separator, limit = 2)
-                        parts[0].trim().lowercase() to parts.getOrElse(1) { "" }.trim()
-                    }
-                    ?.toMap()
-                    .orEmpty()
-                AbkRuntimeModule(
-                    id = name,
-                    name = properties["name"].orEmpty().ifBlank { name },
-                    author = properties["author"].orEmpty(),
-                    type = "kpm",
-                    version = properties["version"].orEmpty(),
-                    description = properties["description"].orEmpty(),
-                    source = "kpm",
-                    readonly = true,
-                    controllable = false,
-                    enabled = true,
-                    kpmArgs = properties["args"].orEmpty()
-                )
-            }
-    }
-
-    private fun parseKpmModuleNames(output: String): List<String> {
-        if (output.isBlank()) return emptyList()
-        val jsonNames = runCatching {
-            val root = gson.fromJson(output, Any::class.java)
-            when (root) {
-                is List<*> -> root.mapNotNull(::kpmNameFromJsonRecord)
-                is Map<*, *> -> {
-                    val modules = root["modules"] ?: root["items"] ?: root["data"]
-                    if (modules is List<*>) modules.mapNotNull(::kpmNameFromJsonRecord) else null
-                }
-                else -> null
-            }?.distinct()
-        }.getOrNull()
-        if (jsonNames != null) return jsonNames
-
-        val namePattern = Regex("""^[A-Za-z0-9_.@+-]+$""")
-        val keyValuePattern = Regex("""^(?:name|module|id)\s*[:=]\s*(\S+).*$""", RegexOption.IGNORE_CASE)
-        return output
-            .lineSequence()
-            .map { it.trim().trim('-', '*', ' ') }
-            .map { line ->
-                val keyValue = keyValuePattern.matchEntire(line)?.groupValues?.getOrNull(1)
-                keyValue ?: line
-                    .replace(Regex("""^\[\d+]\s*"""), "")
-                    .replace(Regex("""^\d+[.)]\s*"""), "")
-                    .substringBefore('\t')
-                    .substringBefore(' ')
-                    .trim()
-            }
-            .filter { it.isNotBlank() && namePattern.matches(it) }
-            .filterNot { it.equals("loaded", ignoreCase = true) || it.equals("modules", ignoreCase = true) }
-            .distinct()
-            .toList()
-    }
-
-    private fun kpmNameFromJsonRecord(record: Any?): String? =
-        when (record) {
-            is String -> record.trim()
-            is Map<*, *> -> listOf("name", "id", "module")
-                .asSequence()
-                .mapNotNull { key -> record[key]?.toString()?.trim()?.takeIf { it.isNotBlank() } }
-                .firstOrNull()
-            else -> null
-        }
-
-    private fun mergeRuntimeModules(
-        controlModules: List<AbkRuntimeModule>,
-        ksuModules: List<AbkRuntimeModule>,
-        kpmModules: List<AbkRuntimeModule>
-    ): List<AbkRuntimeModule> {
-        val merged = linkedMapOf<String, AbkRuntimeModule>()
-
-        fun put(module: AbkRuntimeModule) {
-            val keyId = module.id.ifBlank { module.name }.trim()
-            val key = if (module.normalizedType() == "kpm") "kpm:$keyId" else keyId
-            if (key.isBlank()) return
-            val current = merged[key]
-            merged[key] = if (current == null) {
-                module
-            } else {
-                current.copy(
-                    name = current.name.ifBlank { module.name },
-                    author = current.author.ifBlank { module.author },
-                    version = current.version.ifBlank { module.version },
-                    versionCode = current.versionCode.takeIf { it > 0 } ?: module.versionCode,
-                    description = current.description.ifBlank { module.description },
-                    repoUrl = current.repoUrl.ifBlank { module.repoUrl },
-                    type = mergeRuntimeModuleType(current, module),
-                    stage = listOf(current.stage, module.stage)
-                        .flatMap { it.split(',') }
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() }
-                        .distinct()
-                        .joinToString(","),
-                    source = listOf(current.source, module.source)
-                        .flatMap { it.split(',') }
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() }
-                        .distinct()
-                        .joinToString(","),
-                    moduleDir = current.moduleDir.ifBlank { module.moduleDir },
-                    webRoot = current.webRoot.ifBlank { module.webRoot },
-                    readonly = current.readonly && module.readonly,
-                    controllable = current.controllable || module.controllable,
-                    enabled = current.enabled && module.enabled,
-                    update = current.update || module.update,
-                    remove = current.remove || module.remove,
-                    hasWebUi = current.hasWebUi || module.hasWebUi,
-                    hasActionScript = current.hasActionScript || module.hasActionScript,
-                    actionSupported = current.actionSupported || module.actionSupported,
-                    kpmArgs = current.kpmArgs.ifBlank { module.kpmArgs }
-                )
-            }
-        }
-
-        ksuModules.forEach(::put)
-        controlModules.forEach(::put)
-        kpmModules.forEach(::put)
-
-        return merged.values.toList()
-    }
-
-    private fun mergeRuntimeModuleType(current: AbkRuntimeModule, next: AbkRuntimeModule): String =
-        when {
-            current.normalizedType() == "kpm" || next.normalizedType() == "kpm" -> "kpm"
-            current.normalizedType() == "standard" || next.normalizedType() == "standard" -> "standard"
-            else -> "builtin"
-        }
-
-    private fun AbkRuntimeModule.normalizedType(): String =
-        type.ifBlank {
-            when {
-                source.split(',').any { it.trim() == "kpm" } -> "kpm"
-                source.split(',').any { it.trim() == "ksud" } -> "standard"
-                else -> "builtin"
-            }
-        }
-
-    private fun Map<String, Any?>.runtimeString(key: String): String =
-        this[key]?.toString()?.trim().orEmpty()
-
-    private fun Map<String, Any?>.runtimeBoolean(key: String, default: Boolean = false): Boolean {
-        val value = this[key] ?: return default
-        return when (value) {
-            is Boolean -> value
-            is Number -> value.toInt() != 0
-            else -> when (value.toString().trim().lowercase()) {
-                "1", "y", "yes", "true", "on", "enabled" -> true
-                "0", "n", "no", "false", "off", "disabled" -> false
-                else -> default
-            }
-        }
-    }
-
-    private fun Map<String, Any?>.runtimeLong(key: String): Long {
-        val value = this[key] ?: return 0L
-        return when (value) {
-            is Number -> value.toLong()
-            else -> value.toString().trim().toLongOrNull() ?: 0L
-        }
-    }
-
-    private fun AbkRuntimeModule.isKsuBacked(): Boolean =
-        normalizedType() == "standard" || source.split(',').any { it.trim() == "ksud" }
-
-    fun setAbkRuntimeModuleEnabled(moduleId: String, enabled: Boolean) {
-        val cleanId = moduleId.trim()
-        if (cleanId.isBlank() || _uiState.value.abkRuntimeModuleActionId != null) return
-
-        viewModelScope.launch {
-            val hasRoot = _uiState.value.rootGranted || withContext(Dispatchers.IO) {
-                RootUtils.refreshRootState()
-            }
-            if (!hasRoot) {
-                _uiState.update { it.copy(abkRuntimeError = text(R.string.settings_operation_incomplete)) }
-                return@launch
-            }
-            val module = _uiState.value.abkRuntimeStatus?.modules?.firstOrNull { it.id == cleanId }
-            _uiState.update {
-                it.copy(
-                    rootGranted = true,
-                    abkRuntimeModuleActionId = cleanId,
-                    abkRuntimeError = null
-                )
-            }
-            val result = withContext(Dispatchers.IO) {
-                when {
-                    module?.isAbkMetaMount() == true -> RootUtils.setAbkMetaMountEnabled(enabled)
-                    module?.preferredControlBackend() == RuntimeModuleControlBackend.ABK_CONTROL -> {
-                        val command = if (enabled) "enable $cleanId" else "disable $cleanId"
-                        val controlResult = RootUtils.writeAbkControlCommand(command)
-                        if (controlResult.success) {
-                            controlResult
-                        } else if (module.isKsuBacked()) {
-                            RootUtils.setKsuModuleEnabled(cleanId, enabled)
-                        } else {
-                            controlResult
-                        }
-                    }
-                    module?.preferredControlBackend() == RuntimeModuleControlBackend.KSU -> {
-                        RootUtils.setKsuModuleEnabled(cleanId, enabled)
-                    }
-                    else -> RootUtils.writeAbkControlCommand(
-                        if (enabled) "enable $cleanId" else "disable $cleanId"
-                    )
-                }
-            }
-            if (!result.success) {
-                _uiState.update {
-                    it.copy(
-                        abkRuntimeModuleActionId = null,
-                        abkRuntimeError = text(R.string.settings_operation_incomplete)
-                    )
-                }
-            } else {
-                _uiState.update { it.copy(abkRuntimeModuleActionId = null) }
-                refreshAbkRuntimeStatus()
-            }
-        }
-    }
-
-    fun setAbkRuntimeModulePendingUninstall(moduleId: String, pending: Boolean) {
-        val cleanId = moduleId.trim()
-        if (cleanId.isBlank() || _uiState.value.abkRuntimeModuleActionId != null) return
-
-        viewModelScope.launch {
-            val hasRoot = _uiState.value.rootGranted || withContext(Dispatchers.IO) {
-                RootUtils.refreshRootState()
-            }
-            if (!hasRoot) {
-                _uiState.update { it.copy(abkRuntimeError = text(R.string.settings_operation_incomplete)) }
-                return@launch
-            }
-            val module = _uiState.value.abkRuntimeStatus?.modules?.firstOrNull { it.id == cleanId }
-            if (module?.isKsuBacked() != true) {
-                _uiState.update { it.copy(abkRuntimeError = text(R.string.vm_runtime_module_uninstall_unsupported)) }
-                return@launch
-            }
-            _uiState.update {
-                it.copy(
-                    rootGranted = true,
-                    abkRuntimeModuleActionId = cleanId,
-                    abkRuntimeError = null
-                )
-            }
-            val result = withContext(Dispatchers.IO) {
-                RootUtils.setKsuModulePendingUninstall(cleanId, pending)
-            }
-            if (!result.success) {
-                _uiState.update {
-                    it.copy(
-                        abkRuntimeModuleActionId = null,
-                        abkRuntimeError = text(R.string.settings_operation_incomplete)
-                    )
-                }
-            } else {
-                _uiState.update { it.copy(abkRuntimeModuleActionId = null) }
-                refreshAbkRuntimeStatus()
-            }
-        }
-    }
-
-    fun runRuntimeModuleAction(moduleId: String) {
-        val cleanId = moduleId.trim()
-        val module = _uiState.value.abkRuntimeStatus?.modules?.firstOrNull { it.id == cleanId } ?: return
-        if (cleanId.isBlank() || (!module.actionSupported && !module.hasActionScript) || _uiState.value.abkRuntimeModuleActionId != null) return
-        viewModelScope.launch(Dispatchers.IO) {
-            _uiState.update {
-                it.copy(
-                    abkRuntimeModuleActionId = cleanId,
-                    abkRuntimeModuleActionTitle = "${module.displayNameForRuntime()} Action",
-                    abkRuntimeModuleActionOutput = emptyList(),
-                    abkRuntimeError = null
-                )
-            }
-            val result = when (module.preferredActionBackend()) {
-                RuntimeModuleActionBackend.ABK_ACTION_SCRIPT -> {
-                    RootUtils.runModuleActionScript(
-                        module.moduleDir.ifBlank { "/data/adb/modules/$cleanId" }
-                    ) { line ->
-                        _uiState.update { state ->
-                            state.copy(abkRuntimeModuleActionOutput = state.abkRuntimeModuleActionOutput + line)
-                        }
-                    }
-                }
-                RuntimeModuleActionBackend.KSU_ACTION -> {
-                    RootUtils.runKsuModuleAction(cleanId) { line ->
-                        _uiState.update { state ->
-                            state.copy(abkRuntimeModuleActionOutput = state.abkRuntimeModuleActionOutput + line)
-                        }
-                    }
-                }
-                RuntimeModuleActionBackend.NONE -> {
-                    RootUtils.runModuleActionScript(
-                        module.moduleDir.ifBlank { "/data/adb/modules/$cleanId" }
-                    ) { line ->
-                        _uiState.update { state ->
-                            state.copy(abkRuntimeModuleActionOutput = state.abkRuntimeModuleActionOutput + line)
-                        }
-                    }
-                }
-            }
-            _uiState.update { state ->
-                val output = state.abkRuntimeModuleActionOutput.ifEmpty { result.output }
-                state.copy(
-                    abkRuntimeModuleActionId = null,
-                    abkRuntimeModuleActionOutput = output,
-                    abkRuntimeError = if (result.success) null else text(R.string.settings_operation_incomplete)
-                )
-            }
-        }
-    }
-
-    fun dismissRuntimeModuleActionOutput() {
-        _uiState.update {
-            it.copy(
-                abkRuntimeModuleActionTitle = null,
-                abkRuntimeModuleActionOutput = emptyList()
-            )
-        }
-    }
-
-    private fun AbkRuntimeModule.displayNameForRuntime(): String =
-        name.ifBlank { id.ifBlank { text(R.string.vm_runtime_module_default_name) } }
+    fun refreshAllRuntimeModuleRepositories() = runtime.refreshAllRuntimeModuleRepositories()
 
     private suspend fun applyInitialBuildConfigIfNeeded(recommended: KernelBuildConfig?): KernelBuildConfig? {
         if (recommended == null || hasSavedBuildConfig) return null
@@ -1242,119 +708,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return normalized
     }
 
-    fun maybeShowInitialOobe() {
-        val state = _uiState.value
-        if (!state.termsAccepted || state.oobeCompleted || hasShownInitialOobeThisLaunch) return
-        hasShownInitialOobeThisLaunch = true
-        _uiState.update {
-            it.copy(
-                showOobe = true,
-                authStep = AuthStep.INTRO,
-                error = null
-            )
-        }
-    }
+    fun maybeShowInitialOobe() = authOobe.maybeShowInitialOobe()
 
-    fun openBuildOobe() {
-        val state = _uiState.value
-        val nextStep = if (state.isLoggedIn && state.user != null) AuthStep.FORK_CHECK else AuthStep.LOGIN
-        _uiState.update {
-            it.copy(
-                showOobe = true,
-                authStep = nextStep,
-                error = null
-            )
-        }
-        if (state.isLoggedIn && state.user == null) {
-            viewModelScope.launch {
-                val user = fetchAuthenticatedUserAndStore() ?: return@launch
-                _uiState.update { it.copy(authStep = AuthStep.FORK_CHECK, user = user, isLoggedIn = true) }
-                checkFork(showSyncPrompt = true, closeOobeWhenReady = true)
-            }
-        } else if (nextStep == AuthStep.FORK_CHECK) {
-            checkFork(showSyncPrompt = true, closeOobeWhenReady = true)
-        }
-    }
+    fun openBuildOobe() = authOobe.openBuildOobe()
 
-    fun continueOobeToLogin() {
-        _uiState.update {
-            it.copy(
-                showOobe = true,
-                authStep = AuthStep.LOGIN,
-                error = null
-            )
-        }
-    }
+    fun continueOobeToLogin() = authOobe.continueOobeToLogin()
 
-    fun skipOobe() {
-        viewModelScope.launch {
-            if (!_uiState.value.oobeCompleted) {
-                prefs.setOobeCompleted(true)
-            }
-            closeOobe()
-        }
-    }
+    fun skipOobe() = authOobe.skipOobe()
 
     // ── GitHub Auth (Device Flow) ─────────────────────────────────────────
 
-    fun startDeviceFlow() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
-            when (val r = github.requestDeviceCode()) {
-                is Result.Success -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            deviceCode = r.data.deviceCode,
-                            userCode = r.data.userCode,
-                            verificationUri = r.data.verificationUri,
-                            isPollingToken = true
-                        )
-                    }
-                    pollToken(r.data.deviceCode, r.data.interval.toLong())
-                }
-                is Result.Error -> _uiState.update { it.copy(isLoading = false, error = r.message) }
-                else -> {}
-            }
-        }
-    }
-
-    private fun pollToken(deviceCode: String, intervalSeconds: Long) {
-        viewModelScope.launch {
-            while (_uiState.value.isPollingToken) {
-                delay(intervalSeconds * 1000)
-                when (val r = github.pollToken(deviceCode)) {
-                    is Result.Success -> {
-                        val tokenResp = r.data
-                        when (tokenResp.error) {
-                            null -> {
-                                val token = tokenResp.accessToken ?: continue
-                                hasRefreshedGitHubSessionThisLaunch = true
-                                prefs.saveToken(token)
-                                github.updateToken(token)
-                                _uiState.update { it.copy(isPollingToken = false) }
-                                fetchUserAndContinueOobe()
-                            }
-                            "authorization_pending", "slow_down" -> {
-                                if (tokenResp.error == "slow_down") delay(5000)
-                            }
-                            "expired_token", "access_denied" -> {
-                                _uiState.update {
-                                    it.copy(
-                                        isPollingToken = false,
-                                        error = text(R.string.vm_auth_failed, tokenResp.error.orEmpty())
-                                    )
-                                }
-                            }
-                            else -> _uiState.update { it.copy(isPollingToken = false, error = tokenResp.error) }
-                        }
-                    }
-                    is Result.Error -> delay(intervalSeconds * 1000)
-                    else -> {}
-                }
-            }
-        }
-    }
+    fun startDeviceFlow() = authOobe.startDeviceFlow()
 
     private suspend fun fetchAuthenticatedUserAndStore(reportError: Boolean = true): GitHubUser? {
         when (val r = github.getAuthenticatedUser()) {
@@ -1381,40 +745,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } ?: return
         _uiState.update { it.copy(isLoggedIn = true, user = user) }
         checkFork(showSyncPrompt = true, closeOobeWhenReady = false)
-    }
-
-    private suspend fun fetchUserAndContinueOobe() {
-        val user = fetchAuthenticatedUserAndStore() ?: return
-        _uiState.update {
-            it.copy(
-                user = user,
-                isLoggedIn = true,
-                showOobe = true,
-                authStep = AuthStep.FORK_CHECK
-            )
-        }
-        checkFork(showSyncPrompt = true, closeOobeWhenReady = true)
-    }
-
-    private fun closeOobe() {
-        _uiState.update {
-            it.copy(
-                showOobe = false,
-                authStep = AuthStep.INTRO,
-                deviceCode = null,
-                userCode = null,
-                verificationUri = null,
-                isPollingToken = false,
-                error = null
-            )
-        }
-    }
-
-    private fun completeOobe() {
-        if (!_uiState.value.oobeCompleted) {
-            viewModelScope.launch { prefs.setOobeCompleted(true) }
-        }
-        closeOobe()
     }
 
     fun logout() {
@@ -1453,6 +783,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ── Fork Management ───────────────────────────────────────────────────
+
+    @VisibleForTesting
+    internal fun setTestUser(user: GitHubUser) {
+        _uiState.update { it.copy(user = user, isLoggedIn = true) }
+    }
 
     fun checkFork(showSyncPrompt: Boolean = true, closeOobeWhenReady: Boolean = false) {
         val username = _uiState.value.user?.login ?: return
@@ -1499,9 +834,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             )
                         }
                         onForkContextReady()
-                        if (closeOobeWhenReady) {
-                            completeOobe()
-                        }
+                        authOobe.completeIfRequested(closeOobeWhenReady)
                     }
                 }
                 is Result.Error -> _uiState.update { it.copy(isLoading = false, error = forkResult.message) }
@@ -1525,7 +858,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
                     onForkContextReady()
-                    completeOobe()
+                    authOobe.completeIfRequested(closeOobeWhenReady = true)
                 }
                 is Result.Error -> _uiState.update { it.copy(isLoading = false, error = r.message) }
                 else -> {}
@@ -1955,7 +1288,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             workflowRuns
-                .filter { it.isActiveBuildRun() }
+                .filter { it.isActive() }
                 .forEach { run ->
                     if (run.id !in monitoredRunIds || _uiState.value.activeBuildRuns.none { it.id == run.id }) {
                         monitorExistingBuildRun(owner, repoName, run)
@@ -1970,7 +1303,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         recentRuns: List<WorkflowRun>,
     ) {
         recentRuns
-            .filter { it.isActiveBuildRun() && it.isPureManagerBuild() }
+            .filter { it.isActive() && it.isPureManagerBuild() }
             .forEach { run ->
                 val needsAdopt = run.id !in monitoredRunIds ||
                     _uiState.value.activeBuildRuns.none { it.id == run.id }
@@ -2233,7 +1566,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun isWorkflowStatusBurstActive(runId: Long): Boolean =
-        workflowStatusBurstJobs[runId]?.isActive == true
+        workflowBurstController.isBurstActive(runId)
 
     private fun remoteArtifactsForRun(runId: Long): List<BuildArtifact> =
         _uiState.value.artifacts.filter {
@@ -2242,60 +1575,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) != null
         }
 
-    private fun maybeStartWorkflowStatusBurst(runId: Long) {
-        if (runId <= 0L || runId in workflowStatusBurstStartedRunIds) return
-        val state = _uiState.value
-        val owner = state.user?.login ?: return
-        val repoName = state.forkRepo?.name ?: return
-        val run = state.recentRuns.find { it.id == runId } ?: return
-        if (!run.isActiveFlashRun()) return
-        val remote = remoteArtifactsForRun(runId)
-        if (!isWorkflowArtifactSetComplete(run, remote)) return
-        workflowStatusBurstStartedRunIds += runId
-        startWorkflowStatusBurst(owner, repoName, runId)
-    }
-
-    private fun startWorkflowStatusBurst(owner: String, repoName: String, runId: Long) {
-        workflowStatusBurstJobs[runId]?.cancel()
-        workflowStatusBurstJobs[runId] = viewModelScope.launch {
-            val deadlineMs = System.currentTimeMillis() + WORKFLOW_STATUS_BURST_MAX_MS
-            try {
-                while (currentCoroutineContext().isActive && System.currentTimeMillis() < deadlineMs) {
-                    when (val result = github.getWorkflowRun(owner, repoName, runId)) {
-                        is Result.Success -> {
-                            val run = result.data
-                            _uiState.update { state ->
-                                var next = state.copy(recentRuns = state.recentRuns.replaceRun(run))
-                                if (state.activeBuildRuns.any { it.id == runId }) {
-                                    next = next.withBuildRunDisplay(
-                                        run = run,
-                                        status = run.toBuildStatus(),
-                                        progress = state.buildProgressByRunId[runId]
-                                            ?: BuildProgressUtils.defaultFor(run),
-                                    )
-                                }
-                                next
-                            }
-                            syncBuildQueueWithRun(run, run.toBuildStatus())
-                            if (!run.isActiveFlashRun()) break
-                        }
-                        else -> Unit
-                    }
-                    delay(WORKFLOW_STATUS_BURST_INTERVAL_MS)
-                }
-            } finally {
-                workflowStatusBurstJobs.remove(runId)
-            }
-        }
-    }
-
     private fun maybeLoadArtifactsWhileRunning(runId: Long) {
-        if (runId <= 0L) return
-        val now = System.currentTimeMillis()
-        val last = lastArtifactRefreshAt[runId] ?: 0L
-        if (now - last < ACTIVE_RUN_ARTIFACT_REFRESH_MS) return
-        lastArtifactRefreshAt[runId] = now
-        loadArtifacts(runId, autoDownload = false)
+        workflowArtifacts.maybeLoadWhileRunning(runId)
     }
 
     fun loadArtifacts(
@@ -2304,67 +1585,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         retryWhenEmpty: Boolean = autoDownload,
         force: Boolean = false,
     ) {
-        if (runId <= 0L) return
-        val state = _uiState.value
-        val username = state.user?.login ?: return
-        val repoName = state.forkRepo?.name ?: return
-        if (!force && artifactLoadJobs[runId]?.isActive == true) return
-
-        artifactLoadJobs[runId]?.cancel()
-        val generation = (artifactLoadGenerations[runId] ?: 0) + 1
-        artifactLoadGenerations[runId] = generation
-        artifactLoadJobs[runId] = viewModelScope.launch {
-            try {
-                when (val r = listArtifactsWithRetry(username, repoName, runId, retryWhenEmpty = retryWhenEmpty)) {
-                    is Result.Success -> {
-                        if (generation != artifactLoadGenerations[runId]) return@launch
-                        val run = _uiState.value.recentRuns.find { it.id == runId }
-                            ?: _uiState.value.currentRun?.takeIf { it.id == runId }
-                            ?: when (val runResult = github.getWorkflowRun(username, repoName, runId)) {
-                                is Result.Success -> runResult.data
-                                else -> null
-                            }
-                        val buildArtifacts = r.data.map { artifact ->
-                            if (run != null) artifact.withRun(run) else artifact.toBuildArtifact(
-                                runId,
-                                text(R.string.vm_workflow_run_title, runId)
-                            )
-                        }
-                        val merged = mergeRemoteArtifacts(_uiState.value.artifacts, buildArtifacts)
-                        _uiState.update { it.copy(artifacts = merged) }
-                        prefs.saveRemoteArtifactsJson(gson.toJson(merged))
-                        maybeAutoDownloadRun(runId, buildArtifacts, autoDownload)
-                        if (run != null) {
-                            maybeStartWorkflowStatusBurst(runId)
-                        }
-                    }
-                    else -> {}
-                }
-            } finally {
-                if (generation == artifactLoadGenerations[runId]) {
-                    artifactLoadJobs.remove(runId)
-                }
-            }
-        }
-    }
-
-    private suspend fun listArtifactsWithRetry(
-        owner: String,
-        repoName: String,
-        runId: Long,
-        retryWhenEmpty: Boolean
-    ): Result<List<Artifact>> {
-        var result = github.listArtifacts(owner, repoName, runId)
-        if (!retryWhenEmpty) return result
-        repeat(3) {
-            when (val current = result) {
-                is Result.Success -> if (current.data.isNotEmpty()) return current
-                else -> {}
-            }
-            delay(5_000)
-            result = github.listArtifacts(owner, repoName, runId)
-        }
-        return result
+        workflowArtifacts.loadArtifacts(
+            runId = runId,
+            autoDownload = autoDownload,
+            retryWhenEmpty = retryWhenEmpty,
+            force = force,
+        )
     }
 
     fun downloadArtifact(
@@ -3078,52 +2304,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         includeCompleted: Boolean = true,
         includeCompletedPureManagers: Boolean = false,
     ) {
-        val runsToRefresh = runsNeedingArtifactRefresh(
-            runs,
+        workflowArtifacts.refreshForRuns(
+            owner = owner,
+            repoName = repoName,
+            runs = runs,
             includeCompleted = includeCompleted,
             includeCompletedPureManagers = includeCompletedPureManagers,
-        ).take(MAX_REMOTE_ARTIFACT_RUNS)
-        if (runsToRefresh.isEmpty()) return
-
-        val activeStatuses = setOf("queued", "waiting", "requested", "pending", "in_progress")
-        val existingArtifacts = _uiState.value.artifacts
-        val (priorityRuns, otherRuns) = runsToRefresh.partition { run ->
-            run.status in activeStatuses || run.isManagerBuild()
-        }
-        val (merged, pendingRunId) = withContext(Dispatchers.IO) {
-            suspend fun fetchArtifacts(batch: List<WorkflowRun>): List<BuildArtifact> = coroutineScope {
-                batch.map { run ->
-                    async {
-                        when (val artifacts = github.listArtifacts(owner, repoName, run.id)) {
-                            is Result.Success -> artifacts.data.map { it.withRun(run) }
-                            else -> emptyList()
-                        }
-                    }
-                }.awaitAll().flatten()
-            }
-
-            var mergedArtifacts = existingArtifacts
-            mergedArtifacts = mergeRemoteArtifacts(mergedArtifacts, fetchArtifacts(priorityRuns))
-            prefs.saveRemoteArtifactsJson(gson.toJson(mergedArtifacts))
-            _uiState.update { it.copy(artifacts = mergedArtifacts) }
-
-            ensureActive()
-            if (otherRuns.isNotEmpty()) {
-                mergedArtifacts = mergeRemoteArtifacts(mergedArtifacts, fetchArtifacts(otherRuns))
-                prefs.saveRemoteArtifactsJson(gson.toJson(mergedArtifacts))
-            }
-            mergedArtifacts to prefs.pendingAutoDownloadRunId.first()
-        }
-        _uiState.update { it.copy(artifacts = merged) }
-
-        if (pendingRunId > 0L && runsToRefresh.any { it.id == pendingRunId }) {
-            maybeAutoDownloadRun(
-                pendingRunId,
-                merged.filter { it.runId == pendingRunId },
-                requestedByMonitor = true
-            )
-        }
-        runsToRefresh.forEach { run -> maybeStartWorkflowStatusBurst(run.id) }
+        )
     }
 
     private suspend fun maybeAutoDownloadRun(
@@ -4315,84 +3502,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    fun addRuntimeModuleRepository(url: String) {
-        val cleanUrl = normalizeModuleCatalogUrl(url)
-        if (cleanUrl.isBlank()) {
-            _uiState.update { it.copy(error = text(R.string.vm_module_repo_url_empty)) }
-            return
-        }
-
-        val current = _uiState.value.runtimeModuleRepositories
-        val existing = current.firstOrNull { it.url.equals(cleanUrl, ignoreCase = true) }
-        if (existing != null) {
-            refreshRuntimeModuleRepository(existing.id)
-            return
-        }
-
-        val repository = RuntimeModuleRepository(
-            id = UUID.randomUUID().toString(),
-            url = cleanUrl,
-            name = cleanUrl.moduleCatalogFallbackName(localizedRuntimeModuleRepoTitle())
-        )
-        saveRuntimeModuleRepositories(current + repository)
-        refreshRuntimeModuleRepository(repository.id)
-    }
-
-    fun deleteRuntimeModuleRepository(id: String) {
-        saveRuntimeModuleRepositories(_uiState.value.runtimeModuleRepositories.filterNot { it.id == id })
-    }
-
-    fun refreshRuntimeModuleRepository(id: String) {
-        val repository = _uiState.value.runtimeModuleRepositories.firstOrNull { it.id == id } ?: return
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(refreshingRuntimeModuleRepositoryIds = it.refreshingRuntimeModuleRepositoryIds + id)
-            }
-            when (val result = github.fetchRuntimeModuleCatalog(repository.url)) {
-                is Result.Success -> {
-                    val data = result.data
-                    val updated = repository.copy(
-                        indexJsonUrl = data.indexUrl,
-                        name = data.name,
-                        modules = data.modules,
-                        lastUpdated = System.currentTimeMillis(),
-                        error = null,
-                        skippedCount = data.skippedCount
-                    )
-                    saveRuntimeModuleRepositories(
-                        _uiState.value.runtimeModuleRepositories.map {
-                            if (it.id == id) updated else it
-                        }
-                    )
-                }
-                is Result.Error -> {
-                    val updated = repository.copy(error = result.message)
-                    saveRuntimeModuleRepositories(
-                        _uiState.value.runtimeModuleRepositories.map {
-                            if (it.id == id) updated else it
-                        }
-                    )
-                }
-                Result.Loading -> Unit
-            }
-            _uiState.update {
-                it.copy(refreshingRuntimeModuleRepositoryIds = it.refreshingRuntimeModuleRepositoryIds - id)
-            }
-        }
-    }
-
-    fun refreshAllRuntimeModuleRepositories() {
-        _uiState.value.runtimeModuleRepositories.forEach { repository ->
-            refreshRuntimeModuleRepository(repository.id)
-        }
-    }
-
-    private fun refreshStaleRuntimeModuleRepositories(repositories: List<RuntimeModuleRepository>) {
-        repositories
-            .filter { it.lastUpdated <= 0L && it.error == null }
-            .forEach { repository -> refreshRuntimeModuleRepository(repository.id) }
-    }
-
     private fun refreshStaleBuildModuleRepositories(repositories: List<ModuleCatalogRepository>) {
         repositories
             .filter { it.lastUpdated <= 0L && it.error == null }
@@ -4495,12 +3604,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (item.runId == runId) item.copy(status = status) else item
             }
         )
-    }
-
-    private fun saveRuntimeModuleRepositories(repositories: List<RuntimeModuleRepository>) {
-        val sanitized = sanitizeRuntimeModuleRepositories(repositories)
-        _uiState.update { it.copy(runtimeModuleRepositories = sanitized) }
-        viewModelScope.launch { prefs.saveRuntimeModuleRepositoriesJson(gson.toJson(sanitized)) }
     }
 
     private fun saveBuildModuleRepositories(repositories: List<ModuleCatalogRepository>) {
@@ -4653,73 +3756,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             error = item.error?.takeIf { it.isNotBlank() }
         )
     }
-
-    private fun parseRuntimeModuleRepositories(json: String?): List<RuntimeModuleRepository> {
-        if (json.isNullOrBlank()) return defaultRuntimeModuleRepositories()
-        return runCatching<List<RuntimeModuleRepository>> {
-            val type = object : TypeToken<List<RuntimeModuleRepository>>() {}.type
-            sanitizeRuntimeModuleRepositories(
-                gson.fromJson<List<RuntimeModuleRepository>>(json, type).orEmpty()
-            )
-        }.getOrDefault(defaultRuntimeModuleRepositories())
-    }
-
-    private fun sanitizeRuntimeModuleRepositories(
-        repositories: List<RuntimeModuleRepository>
-    ): List<RuntimeModuleRepository> {
-        return repositories
-            .mapNotNull { repository ->
-                val url = normalizeModuleCatalogUrl(repository.url)
-                if (url.isBlank()) return@mapNotNull null
-                val modules = repository.modules
-                    .mapNotNull(::sanitizeRuntimeModuleCatalogItem)
-                    .distinctBy { it.id.trim().lowercase().ifBlank { it.name.trim().lowercase() } }
-                    .sortedBy { it.name.lowercase() }
-                repository.copy(
-                    id = repository.id.ifBlank { UUID.randomUUID().toString() },
-                    url = url,
-                    indexJsonUrl = repository.indexJsonUrl.trim(),
-                    name = repository.name.trim().ifBlank { url.moduleCatalogFallbackName(localizedRuntimeModuleRepoTitle()) },
-                    modules = modules,
-                    lastUpdated = repository.lastUpdated.takeIf { it > 0L } ?: 0L,
-                    error = repository.error?.takeIf { it.isNotBlank() },
-                    skippedCount = repository.skippedCount.coerceAtLeast(0)
-                )
-            }
-            .distinctBy { it.url.lowercase() }
-            .sortedWith(compareByDescending<RuntimeModuleRepository> {
-                if (it.url == OFFICIAL_RUNTIME_MODULE_REPOSITORY_URL) 1 else 0
-            }
-                .thenBy { it.name.lowercase() })
-    }
-
-    private fun sanitizeRuntimeModuleCatalogItem(item: RuntimeModuleCatalogItem): RuntimeModuleCatalogItem? {
-        val name = item.name.trim()
-        val zipUrl = item.zipUrl.trim()
-        if (name.isBlank() || zipUrl.isBlank()) return null
-        return item.copy(
-            id = item.id.trim().ifBlank { name.lowercase().replace(' ', '_') },
-            name = name,
-            version = item.version.trim(),
-            author = item.author.trim(),
-            description = item.description.trim(),
-            zipUrl = zipUrl,
-            changelog = item.changelog.trim(),
-            support = item.support.trim(),
-            donate = item.donate.trim(),
-            website = item.website.trim(),
-            cover = item.cover.trim(),
-            icon = item.icon.trim()
-        )
-    }
-
-    private fun defaultRuntimeModuleRepositories(): List<RuntimeModuleRepository> = listOf(
-        RuntimeModuleRepository(
-            id = OFFICIAL_RUNTIME_MODULE_REPOSITORY_ID,
-            url = OFFICIAL_RUNTIME_MODULE_REPOSITORY_URL,
-            name = localizedRuntimeModuleRepoTitle()
-        )
-    )
 
     private fun parseBuildModuleRepositories(json: String?): List<ModuleCatalogRepository> {
         if (json.isNullOrBlank()) return defaultBuildModuleRepositories()
@@ -4902,7 +3938,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 private fun resolveManagerAccess(rootGranted: Boolean): RootUtils.ManagerAccessInfo =
     RootUtils.resolveManagerAccess(rootGranted)
 
-private fun RootUtils.ManagerAccessInfo.toUiState(): ManagerAccessState =
+internal fun RootUtils.ManagerAccessInfo.toUiState(): ManagerAccessState =
     when (kind) {
         RootUtils.ManagerAccessKind.NATIVE_MANAGER -> ManagerAccessState.NATIVE_MANAGER
         RootUtils.ManagerAccessKind.ROOT_ONLY -> ManagerAccessState.ROOT_ONLY
@@ -4933,13 +3969,6 @@ internal fun String.moduleCatalogFallbackName(fallback: String = "Module reposit
     .removeSuffix(".git")
     .removeSuffix(".json")
     .ifBlank { fallback }
-
-private fun MainViewModel.localizedRuntimeModuleRepoTitle(): String =
-    when (LocaleHelper.getLanguage(getApplication())) {
-        LocaleHelper.LANG_ZH -> "普通模块仓库"
-        LocaleHelper.LANG_RU -> "Репозиторий обычных модулей"
-        else -> "Standard Module Repo"
-    }
 
 private fun MainViewModel.localizedBuildModuleRepoTitle(): String =
     when (LocaleHelper.getLanguage(getApplication())) {
@@ -5250,9 +4279,6 @@ private const val BUILD_PLAN_KSU_BRANCH_V5_VERSION = 5
 private const val BUILD_PLAN_NAME_LIMIT = 80
 private const val BUILD_PLAN_MAX_STRING_BYTES = 4096
 private const val BUILD_PLAN_MAX_MODULES = 32
-private const val OFFICIAL_RUNTIME_MODULE_REPOSITORY_ID = "official-runtime-module-repository"
-private const val OFFICIAL_RUNTIME_MODULE_REPOSITORY_URL =
-    "https://raw.githubusercontent.com/Magisk-Modules-Alt-Repo/json-v2/refs/heads/main/json/modules.json"
 private const val OFFICIAL_BUILD_MODULE_CATALOG_ID = "official-abk-module-catalog"
 private const val OFFICIAL_BUILD_MODULE_CATALOG_URL = "https://github.com/xingguangcuican6666/ABK_repo"
 
@@ -5537,239 +4563,6 @@ internal fun prebuiltRecommendationScore(asset: PrebuiltGkiAsset, recommended: K
     return 10 + (if (hasAndroid) 5 else 0) + (if (hasPatch) 8 else 0)
 }
 
-private fun MainUiState.withBuildRunDisplay(
-    run: WorkflowRun,
-    status: BuildStatus,
-    progress: BuildProgress,
-    cancellingWorkflowRunIds: Set<Long> = this.cancellingWorkflowRunIds
-): MainUiState {
-    val updatedRuns = if (run.isActiveBuildRun()) {
-        (activeBuildRuns.filterNot { it.id == run.id } + run)
-            .distinctBy { it.id }
-            .sortedByDescending { it.id }
-    } else {
-        activeBuildRuns.filterNot { it.id == run.id }
-    }
-    val updatedProgressByRunId = if (run.isActiveBuildRun()) {
-        buildProgressByRunId + (run.id to progress)
-    } else {
-        buildProgressByRunId - run.id
-    }
-    val display = buildDisplaySnapshot(
-        activeRuns = updatedRuns,
-        progressByRunId = updatedProgressByRunId,
-        fallbackRun = run,
-        fallbackStatus = status,
-        fallbackProgress = progress,
-        descriptors = buildRunDescriptors(updatedRuns)
-    )
-    val kernelActive = updatedRuns.filter { it.isKernelBuild() }
-    val kernelDisplay = kernelBuildDisplaySnapshot(
-        kernelActiveRuns = kernelActive,
-        fallbackRun = if (run.isKernelBuild()) run else kernelCurrentRun,
-        fallbackStatus = if (run.isKernelBuild()) status else kernelBuildStatus
-    )
-    val managerActive = updatedRuns.filter { it.isManagerBuild() }
-    val managerDisplay = kernelBuildDisplaySnapshot(
-        kernelActiveRuns = managerActive,
-        fallbackRun = if (run.isManagerBuild()) run else managerCurrentRun,
-        fallbackStatus = if (run.isManagerBuild()) status else managerBuildStatus
-    )
-    val descriptors = buildRunDescriptors(updatedRuns)
-    val kernelBuildProgressMerged = computeKindBuildProgress(
-        forKernel = true,
-        activeRuns = updatedRuns,
-        progressByRunId = updatedProgressByRunId,
-        fallbackRun = if (run.isKernelBuild()) run else kernelCurrentRun,
-        fallbackStatus = if (run.isKernelBuild()) status else kernelBuildStatus,
-        fallbackProgress = if (run.isKernelBuild()) progress else kernelBuildProgress,
-        descriptors = descriptors
-    )
-    val managerBuildProgressMerged = computeKindBuildProgress(
-        forKernel = false,
-        activeRuns = updatedRuns,
-        progressByRunId = updatedProgressByRunId,
-        fallbackRun = if (run.isManagerBuild()) run else managerCurrentRun,
-        fallbackStatus = if (run.isManagerBuild()) status else managerBuildStatus,
-        fallbackProgress = if (run.isManagerBuild()) progress else managerBuildProgress,
-        descriptors = descriptors
-    )
-    val withDisplay = copy(
-        buildStatus = display.status,
-        currentRun = display.currentRun,
-        buildProgress = display.progress,
-        activeBuildRuns = updatedRuns,
-        buildProgressByRunId = updatedProgressByRunId,
-        cancellingWorkflowRunIds = cancellingWorkflowRunIds,
-        kernelBuildStatus = kernelDisplay.status,
-        kernelCurrentRun = kernelDisplay.currentRun,
-        kernelActiveBuildRuns = kernelActive,
-        kernelBuildProgress = kernelBuildProgressMerged,
-        managerBuildStatus = managerDisplay.status,
-        managerCurrentRun = managerDisplay.currentRun,
-        managerActiveBuildRuns = managerActive,
-        managerBuildProgress = managerBuildProgressMerged
-    )
-    return if (status == BuildStatus.FAILURE && run.isFailedFlashRun() && run.id !in dismissedFailedRunIds) {
-        withDisplay.copy(sessionGhostFailedRuns = withDisplay.sessionGhostFailedRuns + (run.id to run))
-    } else {
-        withDisplay
-    }
-}
-
-private fun MainUiState.withoutActiveBuildRun(
-    runId: Long,
-    fallbackStatus: BuildStatus,
-    fallbackProgress: BuildProgress,
-    fallbackRun: WorkflowRun? = currentRun
-): MainUiState {
-    val updatedRuns = activeBuildRuns.filterNot { it.id == runId }
-    val updatedProgressByRunId = buildProgressByRunId - runId
-    val display = buildDisplaySnapshot(
-        activeRuns = updatedRuns,
-        progressByRunId = updatedProgressByRunId,
-        fallbackRun = fallbackRun,
-        fallbackStatus = fallbackStatus,
-        fallbackProgress = fallbackProgress,
-        descriptors = buildRunDescriptors(updatedRuns)
-    )
-    val kernelActive = updatedRuns.filter { it.isKernelBuild() }
-    val kernelFallbackRun = (fallbackRun?.takeIf { it.isKernelBuild() && it.id != runId })
-        ?: kernelCurrentRun?.takeUnless { it.id == runId }
-    val kernelFallbackStatus = if (kernelCurrentRun?.id == runId) fallbackStatus else kernelBuildStatus
-    val kernelDisplay = kernelBuildDisplaySnapshot(
-        kernelActiveRuns = kernelActive,
-        fallbackRun = kernelFallbackRun,
-        fallbackStatus = kernelFallbackStatus
-    )
-    val managerActive = updatedRuns.filter { it.isManagerBuild() }
-    val managerFallbackRun = (fallbackRun?.takeIf { it.isManagerBuild() && it.id != runId })
-        ?: managerCurrentRun?.takeUnless { it.id == runId }
-    val managerFallbackStatus = if (managerCurrentRun?.id == runId) fallbackStatus else managerBuildStatus
-    val managerDisplay = kernelBuildDisplaySnapshot(
-        kernelActiveRuns = managerActive,
-        fallbackRun = managerFallbackRun,
-        fallbackStatus = managerFallbackStatus
-    )
-    val descriptors = buildRunDescriptors(updatedRuns)
-    val kernelBuildProgressMerged = computeKindBuildProgress(
-        forKernel = true,
-        activeRuns = updatedRuns,
-        progressByRunId = updatedProgressByRunId,
-        fallbackRun = kernelFallbackRun,
-        fallbackStatus = kernelFallbackStatus,
-        fallbackProgress = if (kernelCurrentRun?.id == runId) fallbackProgress else kernelBuildProgress,
-        descriptors = descriptors
-    )
-    val managerBuildProgressMerged = computeKindBuildProgress(
-        forKernel = false,
-        activeRuns = updatedRuns,
-        progressByRunId = updatedProgressByRunId,
-        fallbackRun = managerFallbackRun,
-        fallbackStatus = managerFallbackStatus,
-        fallbackProgress = if (managerCurrentRun?.id == runId) fallbackProgress else managerBuildProgress,
-        descriptors = descriptors
-    )
-    return copy(
-        buildStatus = display.status,
-        currentRun = display.currentRun,
-        buildProgress = display.progress,
-        activeBuildRuns = updatedRuns,
-        buildProgressByRunId = updatedProgressByRunId,
-        kernelBuildStatus = kernelDisplay.status,
-        kernelCurrentRun = kernelDisplay.currentRun,
-        kernelActiveBuildRuns = kernelActive,
-        kernelBuildProgress = kernelBuildProgressMerged,
-        managerBuildStatus = managerDisplay.status,
-        managerCurrentRun = managerDisplay.currentRun,
-        managerActiveBuildRuns = managerActive,
-        managerBuildProgress = managerBuildProgressMerged
-    )
-}
-
-private data class KernelBuildDisplaySnapshot(
-    val status: BuildStatus,
-    val currentRun: WorkflowRun?
-)
-
-private fun kernelBuildDisplaySnapshot(
-    kernelActiveRuns: List<WorkflowRun>,
-    fallbackRun: WorkflowRun?,
-    fallbackStatus: BuildStatus
-): KernelBuildDisplaySnapshot {
-    val sortedRuns = kernelActiveRuns
-        .filter { it.isActiveBuildRun() }
-        .distinctBy { it.id }
-        .sortedByDescending { it.id }
-    if (sortedRuns.isEmpty()) {
-        return KernelBuildDisplaySnapshot(fallbackStatus, fallbackRun)
-    }
-    val status = if (sortedRuns.any { it.status == "in_progress" }) {
-        BuildStatus.IN_PROGRESS
-    } else {
-        BuildStatus.QUEUED
-    }
-    return KernelBuildDisplaySnapshot(
-        status = status,
-        currentRun = sortedRuns.firstOrNull()
-    )
-}
-
-/**
- * Build per-run descriptors from the current queue + active runs. Used by
- * [buildDisplaySnapshot] to produce the compact "#42 SukiSU SUSFS 6.6.89-…"
- * style merged-progress text instead of the old chatty wall.
- *
- * Kernel runs pull their fields from BuildQueueItem.config (the dispatched
- * intent, never lies). Manager-only runs detected via run name fall back to
- * a Manager / Manager Dev label from the workflow name (not displayTitle).
- */
-private fun MainUiState.buildRunDescriptors(
-    runs: List<WorkflowRun>
-): Map<Long, BuildProgressUtils.RunDescriptor> {
-    val queueByRunId = buildQueue.filter { it.runId > 0L }.associateBy { it.runId }
-    return runs.mapNotNull { run ->
-        val item = queueByRunId[run.id]
-        when {
-            run.isKernelBuild() && item != null -> {
-                val cfg = item.config
-                val variant = cfg.kernelsuVariant.takeIf { it != KSU_VARIANT_NONE }.orEmpty()
-                val susfs = !cfg.cancelSusfs && cfg.kernelsuVariant != KSU_VARIANT_NONE
-                val kernelLabel = "${cfg.kernelVersion}.${cfg.subLevel}-${cfg.androidVersion}-${cfg.osPatchLevel}"
-                run.id to BuildProgressUtils.RunDescriptor(
-                    isManager = false,
-                    ksuVariant = variant,
-                    susfs = susfs,
-                    kernelLabel = kernelLabel
-                )
-            }
-            run.isManagerBuild() -> {
-                run.id to BuildProgressUtils.RunDescriptor(
-                    isManager = true,
-                    managerIsDev = run.isManagerDevBuild()
-                )
-            }
-            else -> null
-        }
-    }.toMap()
-}
-
-private fun WorkflowRun.isActiveBuildRun(): Boolean =
-    status in setOf("queued", "waiting", "requested", "pending", "in_progress")
-
-private fun List<WorkflowRun>.replaceRun(run: WorkflowRun): List<WorkflowRun> {
-    var replaced = false
-    val updated = map { existing ->
-        if (existing.id == run.id) {
-            replaced = true
-            run
-        } else {
-            existing
-        }
-    }
-    return if (replaced) updated else updated + run
-}
-
 private fun WorkflowRun.toBuildStatus(): BuildStatus = when (status) {
     "queued", "waiting", "requested", "pending" -> BuildStatus.QUEUED
     "in_progress" -> BuildStatus.IN_PROGRESS
@@ -5848,9 +4641,6 @@ private fun List<CustomExternalModule>?.toWorkflowInput(): String = this.orEmpty
     }
     .joinToString("|")
 
-private const val RECENT_WORKFLOW_RUNS_PAGE_SIZE = 40
-private const val MAX_REMOTE_ARTIFACT_RUNS = RECENT_WORKFLOW_RUNS_PAGE_SIZE
-private const val MAX_PERSISTED_REMOTE_ARTIFACTS = 240
 private const val KERNEL_WORKFLOW_FILE = "kernel-custom.yml"
 private const val ONEPLUS_WORKFLOW_FILE = "oneplus-custom.yml"
 private val buildWorkflowFiles = listOf(KERNEL_WORKFLOW_FILE, ONEPLUS_WORKFLOW_FILE)
@@ -5921,9 +4711,6 @@ private fun workflowActionsUrl(owner: String, repoName: String, workflowFile: St
     "https://github.com/$owner/$repoName/actions/workflows/$workflowFile"
 private const val MIRROR_WORKFLOW_MAX_POLLS = 40
 private const val MIRROR_RELEASE_ASSET_MAX_POLLS = 6
-private const val ACTIVE_RUN_ARTIFACT_REFRESH_MS = 20_000L
-private const val WORKFLOW_STATUS_BURST_INTERVAL_MS = 3_000L
-private const val WORKFLOW_STATUS_BURST_MAX_MS = 30_000L
 private const val CANCEL_COMPLETION_POLL_INITIAL_DELAY_MS = 2_000L
 private const val CANCEL_COMPLETION_POLL_INTERVAL_MS = 5_000L
 private const val CANCEL_COMPLETION_POLL_MAX_ATTEMPTS = 24
@@ -5954,24 +4741,6 @@ private fun Artifact.toBuildArtifact(runId: Long, runTitle: String): BuildArtifa
     runNumber = 0,
     runCreatedAt = createdAt
 )
-
-private fun mergeRemoteArtifacts(
-    existing: List<BuildArtifact>,
-    incoming: List<BuildArtifact>
-): List<BuildArtifact> {
-    val incomingRunIds = incoming.map { it.runId }.toSet()
-    return (incoming + existing.filterNot { it.runId in incomingRunIds })
-        .distinctBy { it.id }
-        .sortedForDisplay()
-        .take(MAX_PERSISTED_REMOTE_ARTIFACTS)
-}
-
-private fun List<BuildArtifact>.sortedForDisplay(): List<BuildArtifact> =
-    sortedWith(
-        compareByDescending<BuildArtifact> { it.runNumber }
-            .thenByDescending { it.runId }
-            .thenBy { it.name }
-    )
 
 private fun List<DownloadedArtifact>.sortedDownloadedForDisplay(): List<DownloadedArtifact> =
     sortedWith(

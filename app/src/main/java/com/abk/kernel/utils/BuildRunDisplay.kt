@@ -3,6 +3,7 @@ package com.abk.kernel.utils
 import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.BuildStatus
 import com.abk.kernel.data.model.WorkflowRun
+import com.abk.kernel.data.model.isActive
 import com.abk.kernel.data.model.isKernelBuild
 import com.abk.kernel.data.model.isManagerBuild
 
@@ -21,7 +22,7 @@ internal fun buildDisplaySnapshot(
     descriptors: Map<Long, BuildProgressUtils.RunDescriptor> = emptyMap()
 ): BuildDisplaySnapshot {
     val sortedRuns = activeRuns
-        .filter { it.isActiveBuildRun() }
+        .filter { it.isActive() }
         .distinctBy { it.id }
         .sortedByDescending { it.id }
     if (sortedRuns.isEmpty()) {
@@ -58,6 +59,3 @@ internal fun computeKindBuildProgress(
         descriptors = descriptors
     ).progress
 }
-
-private fun WorkflowRun.isActiveBuildRun(): Boolean =
-    status in setOf("queued", "waiting", "requested", "pending", "in_progress")

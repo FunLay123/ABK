@@ -72,9 +72,24 @@ goto fail
 
 set CLASSPATH=
 
+@rem Windows: PATH entries with spaces or stray quotes break Gradle test workers (-Djava.library.path).
+if "%OS%"=="Windows_NT" call :abkMaybeNarrowPathForTests %*
 
 @rem Execute Gradle
 "%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" -jar "%APP_HOME%\gradle\wrapper\gradle-wrapper.jar" %*
+goto abkGradleDone
+
+:abkMaybeNarrowPathForTests
+echo %* | findstr /i /r "test" >nul 2>&1
+if errorlevel 1 goto :eof
+if defined ABK_TEST_PATH goto :eof
+set "ABK_TEST_PATH=E:\Misc\jdk-24\bin"
+if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" set "ABK_TEST_PATH=%JAVA_HOME%\bin"
+set "PATH=%SystemRoot%\system32;%ABK_TEST_PATH%"
+set "JAVA_EXE=%ABK_TEST_PATH%\java.exe"
+goto :eof
+
+:abkGradleDone
 
 :end
 @rem End local scope for the variables with windows NT shell

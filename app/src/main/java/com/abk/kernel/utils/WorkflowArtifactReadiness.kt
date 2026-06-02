@@ -25,6 +25,3 @@ fun isWorkflowArtifactSetComplete(run: WorkflowRun, remoteArtifacts: List<BuildA
         else -> false
     }
 }
-
-internal fun WorkflowRun.isActiveFlashRun(): Boolean =
-    status in setOf("queued", "waiting", "requested", "pending", "in_progress")
