@@ -590,6 +590,8 @@ object DownloadUtils {
         token: String?,
         url: String,
         preferredLine: String,
+        workflowRunId: Long = 0L,
+        githubRepoFullName: String? = null,
         onProgress: (Int) -> Unit = {}
     ): AppUpdatePackageResult = withContext(Dispatchers.IO) {
         var stageDir: File? = null
@@ -598,45 +600,37 @@ object DownloadUtils {
                 deleteRecursively()
                 mkdirs()
             }
-            val fileName = safeFileName(url.substringAfterLast('/').ifBlank { "app-update.zip" })
-            val archive = File(stageDir, fileName)
-            val request = Request.Builder()
-                .url(url)
-                .header("Accept", "application/octet-stream")
-                .apply {
-                    if (!token.isNullOrBlank()) {
-                        header("Authorization", "Bearer $token")
-                    }
-                }
-                .build()
-
-            val call = client.newCall(request)
-            val cancellationHandle = coroutineContext.job.invokeOnCompletion { cause ->
-                if (cause is CancellationException) {
-                    call.cancel()
-                }
-            }
-            try {
-                call.execute().use { handled ->
-                    if (!handled.isSuccessful) {
-                        return@withContext AppUpdatePackageResult(
-                            errorMessage = downloadHttpErrorMessage(context, handled.code)
-                        )
-                    }
-                    val body = handled.body
-                        ?: return@withContext AppUpdatePackageResult(
-                            errorMessage = context.getString(R.string.download_empty_response)
-                        )
-                    writeStreamToFile(
-                        input = body.byteStream(),
-                        destination = archive,
-                        totalBytes = body.contentLength().coerceAtLeast(1L),
-                        onProgress = onProgress
+            val resolvedRunId = workflowRunId.takeIf { it > 0L } ?: parseNightlyLinkRunId(url)
+            val resolvedRepo = githubRepoFullName?.trim()?.takeIf { it.isNotEmpty() }
+                ?: parseNightlyLinkRepo(url)
+            val archive = when {
+                resolvedRunId != null &&
+                    !resolvedRepo.isNullOrBlank() &&
+                    !token.isNullOrBlank() -> {
+                    downloadWorkflowAppUpdateArchive(
+                        token = token,
+                        repoFullName = resolvedRepo,
+                        runId = resolvedRunId,
+                        stageDir = stageDir,
+                        onProgress = onProgress,
+                    ) ?: downloadHttpArchive(
+                        context = context,
+                        token = token,
+                        url = url,
+                        stageDir = stageDir,
+                        onProgress = onProgress,
                     )
                 }
-            } finally {
-                cancellationHandle.dispose()
-            }
+                else -> downloadHttpArchive(
+                    context = context,
+                    token = token,
+                    url = url,
+                    stageDir = stageDir,
+                    onProgress = onProgress,
+                )
+            } ?: return@withContext AppUpdatePackageResult(
+                errorMessage = context.getString(R.string.download_empty_response)
+            )
 
             val apkFile = if (archive.extension.equals("apk", ignoreCase = true)) {
                 archive
@@ -664,6 +658,134 @@ object DownloadUtils {
             AppUpdatePackageResult(errorMessage = downloadExceptionMessage(context, e))
         }
     }
+
+    private suspend fun downloadHttpArchive(
+        context: Context,
+        token: String?,
+        url: String,
+        stageDir: File,
+        onProgress: (Int) -> Unit,
+    ): File? {
+        val fileName = safeFileName(url.substringAfterLast('/').ifBlank { "app-update.zip" })
+        val archive = File(stageDir, fileName)
+        val request = Request.Builder()
+            .url(url)
+            .header("Accept", "application/octet-stream")
+            .apply {
+                if (!token.isNullOrBlank()) {
+                    header("Authorization", "Bearer $token")
+                }
+            }
+            .build()
+
+        val call = client.newCall(request)
+        val cancellationHandle = coroutineContext.job.invokeOnCompletion { cause ->
+            if (cause is CancellationException) {
+                call.cancel()
+            }
+        }
+        try {
+            call.execute().use { handled ->
+                if (!handled.isSuccessful) {
+                    return null
+                }
+                val body = handled.body ?: return null
+                writeStreamToFile(
+                    input = body.byteStream(),
+                    destination = archive,
+                    totalBytes = body.contentLength().coerceAtLeast(1L),
+                    onProgress = onProgress
+                )
+            }
+        } finally {
+            cancellationHandle.dispose()
+        }
+        return archive
+    }
+
+    private suspend fun downloadWorkflowAppUpdateArchive(
+        token: String,
+        repoFullName: String,
+        runId: Long,
+        stageDir: File,
+        onProgress: (Int) -> Unit,
+    ): File? {
+        val slash = repoFullName.indexOf('/')
+        if (slash <= 0 || slash >= repoFullName.lastIndex) return null
+        val owner = repoFullName.substring(0, slash)
+        val repo = repoFullName.substring(slash + 1)
+        val listRequest = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/runs/$runId/artifacts")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $token")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .build()
+        val artifactId = client.newCall(listRequest).execute().use { response ->
+            if (!response.isSuccessful) return null
+            val body = response.body?.string().orEmpty()
+            val artifacts = JSONObject(body).optJSONArray("artifacts") ?: return null
+            var selectedId = 0L
+            for (index in 0 until artifacts.length()) {
+                val artifact = artifacts.optJSONObject(index) ?: continue
+                if (artifact.optString("name") == APP_UPDATE_ARTIFACT_NAME) {
+                    selectedId = artifact.optLong("id")
+                    break
+                }
+            }
+            selectedId.takeIf { it > 0L }
+        } ?: return null
+
+        val archive = File(stageDir, "$APP_UPDATE_ARTIFACT_NAME.zip")
+        val downloadRequest = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/artifacts/$artifactId/zip")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $token")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .build()
+        val call = client.newCall(downloadRequest)
+        val cancellationHandle = coroutineContext.job.invokeOnCompletion { cause ->
+            if (cause is CancellationException) {
+                call.cancel()
+            }
+        }
+        try {
+            call.execute().use { response ->
+                if (!response.isSuccessful) return null
+                val body = response.body ?: return null
+                writeStreamToFile(
+                    input = body.byteStream(),
+                    destination = archive,
+                    totalBytes = body.contentLength().coerceAtLeast(1L),
+                    onProgress = onProgress
+                )
+            }
+        } finally {
+            cancellationHandle.dispose()
+        }
+        return archive
+    }
+
+    internal fun parseNightlyLinkRepo(url: String): String? {
+        val marker = "nightly.link/"
+        val index = url.indexOf(marker, ignoreCase = true)
+        if (index < 0) return null
+        val rest = url.substring(index + marker.length)
+        val parts = rest.split('/')
+        if (parts.size < 2) return null
+        val owner = parts[0].trim()
+        val repo = parts[1].trim()
+        if (owner.isEmpty() || repo.isEmpty()) return null
+        return "$owner/$repo"
+    }
+
+    internal fun parseNightlyLinkRunId(url: String): Long? =
+        Regex("/actions/runs/(\\d+)/", RegexOption.IGNORE_CASE)
+            .find(url)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toLongOrNull()
+
+    private const val APP_UPDATE_ARTIFACT_NAME = "abk-apks"
 
     fun prepareDownloadedArtifact(
         context: Context,

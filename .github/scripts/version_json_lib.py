@@ -20,29 +20,73 @@ STABLE_RELEASE_ASSETS = {
     PACKAGE_LINE_NORMAL: "abk-app-abk-apks.zip",
     PACKAGE_LINE_DEV: "abk-app-dev-abk-apks.zip",
 }
+UNSTABLE_ARTIFACT_ZIP = "abk-apks.zip"
+UNSTABLE_WORKFLOW_BY_CHANNEL = {
+    PACKAGE_LINE_NORMAL: "build-abk-app",
+    PACKAGE_LINE_DEV: "build-abk-app-dev",
+}
+NIGHTLY_LINK_PREFIX = "https://nightly.link/"
+DEFAULT_UNSTABLE_BRANCH = "dev"
+
+
+def _normalize_github_repo(github_repo: str) -> str:
+    repo = github_repo.strip().strip("/")
+    if not repo or "/" not in repo:
+        raise ValueError(f"Invalid GitHub repo slug: {github_repo!r}")
+    return repo
+
+
+def unstable_download_url(
+    github_repo: str,
+    channel: str,
+    *,
+    run_id: int | None = None,
+    branch: str = DEFAULT_UNSTABLE_BRANCH,
+) -> str:
+    if channel not in UNSTABLE_WORKFLOW_BY_CHANNEL:
+        raise ValueError(f"Unsupported channel: {channel}")
+    repo = _normalize_github_repo(github_repo)
+    if run_id is not None and run_id > 0:
+        return f"{NIGHTLY_LINK_PREFIX}{repo}/actions/runs/{run_id}/{UNSTABLE_ARTIFACT_ZIP}"
+    workflow = UNSTABLE_WORKFLOW_BY_CHANNEL[channel]
+    branch_name = branch.strip() or DEFAULT_UNSTABLE_BRANCH
+    return (
+        f"{NIGHTLY_LINK_PREFIX}{repo}/workflows/{workflow}/{branch_name}/{UNSTABLE_ARTIFACT_ZIP}"
+    )
+
+
+def unstable_download_urls(
+    github_repo: str = DEFAULT_GITHUB_REPO,
+    *,
+    branch: str = DEFAULT_UNSTABLE_BRANCH,
+) -> dict[str, str]:
+    return {
+        channel: unstable_download_url(github_repo, channel, branch=branch)
+        for channel in (PACKAGE_LINE_NORMAL, PACKAGE_LINE_DEV)
+    }
+
+
+def rewrite_nightly_link_repo(url: str, github_repo: str) -> str:
+    trimmed = url.strip()
+    if not trimmed.startswith(NIGHTLY_LINK_PREFIX):
+        return trimmed
+    suffix = trimmed[len(NIGHTLY_LINK_PREFIX) :]
+    parts = suffix.split("/", 2)
+    if len(parts) < 3:
+        return trimmed
+    repo = _normalize_github_repo(github_repo)
+    return f"{NIGHTLY_LINK_PREFIX}{repo}/{parts[2]}"
 
 
 def stable_download_url(github_repo: str, release_tag: str, channel: str) -> str:
     if channel not in STABLE_RELEASE_ASSETS:
         raise ValueError(f"Unsupported channel: {channel}")
-    repo = github_repo.strip().strip("/")
-    if not repo or "/" not in repo:
-        raise ValueError(f"Invalid GitHub repo slug: {github_repo!r}")
+    repo = _normalize_github_repo(github_repo)
     tag = release_tag.strip()
     if not tag:
         raise ValueError("Release tag is required")
     asset_name = STABLE_RELEASE_ASSETS[channel]
     return f"https://github.com/{repo}/releases/download/{tag}/{asset_name}"
-
-
-def unstable_download_urls(github_repo: str = DEFAULT_GITHUB_REPO) -> dict[str, str]:
-    repo = github_repo.strip().strip("/")
-    if not repo or "/" not in repo:
-        raise ValueError(f"Invalid GitHub repo slug: {github_repo!r}")
-    return {
-        "normal": f"https://nightly.link/{repo}/workflows/build-abk-app/dev/abk-apks.zip",
-        "dev": f"https://nightly.link/{repo}/workflows/build-abk-app-dev/dev/abk-apks.zip",
-    }
 
 
 def read_app_version(build_file: Path) -> tuple[int, str]:
@@ -99,12 +143,23 @@ def apply_unstable_download_urls(
     github_repo: str,
 ) -> dict[str, Any]:
     document = normalize_version_json_document(data)
-    urls = unstable_download_urls(github_repo)
     for channel in (PACKAGE_LINE_NORMAL, PACKAGE_LINE_DEV):
         channel_obj = dict(document["unstable"][channel])
         if not channel_obj:
             continue
-        channel_obj["downloadUrl"] = urls[channel]
+        run_id = channel_obj.get("runId")
+        if isinstance(run_id, int) and run_id > 0:
+            channel_obj["downloadUrl"] = unstable_download_url(
+                github_repo,
+                channel,
+                run_id=run_id,
+            )
+        else:
+            existing_url = channel_obj.get("downloadUrl")
+            if isinstance(existing_url, str) and existing_url.strip().startswith(NIGHTLY_LINK_PREFIX):
+                channel_obj["downloadUrl"] = rewrite_nightly_link_repo(existing_url, github_repo)
+            else:
+                channel_obj["downloadUrl"] = unstable_download_urls(github_repo)[channel]
         document["unstable"][channel] = channel_obj
     return document
 
@@ -188,13 +243,12 @@ def build_updated_unstable_document(
     build_timestamp_epoch_millis: int,
 ) -> dict[str, Any]:
     version_code, version_name = read_app_version(build_file)
-    download_urls = unstable_download_urls(github_repo)
     return update_unstable_channel(
         base,
         channel=channel,
         version_name=version_name,
         version_code=version_code,
-        download_url=download_urls[channel],
+        download_url=unstable_download_url(github_repo, channel, run_id=run_id),
         published_at=published_at,
         build_timestamp_epoch_millis=build_timestamp_epoch_millis,
         workflow_name=workflow_name,

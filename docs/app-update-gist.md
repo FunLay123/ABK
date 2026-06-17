@@ -30,6 +30,7 @@ After each successful `Build ABK App` / `Build ABK App Dev` run:
 
 - `build-abk-app.yml` updates `unstable.normal` from `app/build.gradle.kts`
 - `build-abk-app-dev.yml` updates `unstable.dev` from `app_dev/build.gradle.kts`
+- Unstable `downloadUrl` points at the **exact workflow run** that published the metadata (`nightly.link/.../actions/runs/<runId>/abk-apks.zip`), not just the latest build on `dev`
 
 ### Stable (GitHub Releases)
 

@@ -2923,7 +2923,9 @@ class MainViewModel @JvmOverloads constructor(
                     getApplication(),
                     token = token,
                     url = downloadUrl,
-                    preferredLine = info.line
+                    preferredLine = info.line,
+                    workflowRunId = info.remote.runId,
+                    githubRepoFullName = state.forkRepo?.fullName,
                 ) { progress ->
                     _uiState.update { state ->
                         state.copy(appUpdateDownloading = true, appUpdateDownloadProgress = progress)

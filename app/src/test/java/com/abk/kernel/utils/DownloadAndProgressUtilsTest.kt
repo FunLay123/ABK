@@ -24,6 +24,14 @@ class DownloadAndProgressUtilsTest {
     }
 
     @Test
+    fun parsesNightlyLinkRunAndRepoFromAppUpdateUrl() {
+        val url =
+            "https://nightly.link/FunLay123/ABK_english_translation/actions/runs/27699254683/abk-apks.zip"
+        assertEquals("FunLay123/ABK_english_translation", DownloadUtils.parseNightlyLinkRepo(url))
+        assertEquals(27699254683L, DownloadUtils.parseNightlyLinkRunId(url))
+    }
+
+    @Test
     fun classifiesKnownArtifactNames() {
         assertEquals(ArtifactType.KERNEL_PACKAGE, DownloadUtils.classifyArtifact("GKI_kernel-android14-6.1.zip"))
         assertEquals(ArtifactType.KERNEL_IMG, DownloadUtils.classifyArtifact("boot-android14-6.1.162.img"))
