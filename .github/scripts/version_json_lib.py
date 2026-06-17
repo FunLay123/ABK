@@ -93,6 +93,22 @@ def normalize_version_json_document(raw: Any) -> dict[str, Any]:
     return data
 
 
+def apply_unstable_download_urls(
+    data: dict[str, Any],
+    *,
+    github_repo: str,
+) -> dict[str, Any]:
+    document = normalize_version_json_document(data)
+    urls = unstable_download_urls(github_repo)
+    for channel in (PACKAGE_LINE_NORMAL, PACKAGE_LINE_DEV):
+        channel_obj = dict(document["unstable"][channel])
+        if not channel_obj:
+            continue
+        channel_obj["downloadUrl"] = urls[channel]
+        document["unstable"][channel] = channel_obj
+    return document
+
+
 def update_stable_channel(
     data: dict[str, Any],
     *,
@@ -208,7 +224,7 @@ def build_updated_stable_release_document(
             version_code=version_code,
             download_url=stable_download_url(github_repo, release_tag, channel),
         )
-    return document
+    return apply_unstable_download_urls(document, github_repo=github_repo)
 
 
 def build_updated_document(
