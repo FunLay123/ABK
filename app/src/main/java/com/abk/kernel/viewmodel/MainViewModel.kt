@@ -2908,6 +2908,7 @@ class MainViewModel @JvmOverloads constructor(
             showSnackbar(message, longDuration = true)
             return
         }
+        val forkRepoFullName = _uiState.value.forkRepo?.fullName
         appUpdateDownloadJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -2925,7 +2926,7 @@ class MainViewModel @JvmOverloads constructor(
                     url = downloadUrl,
                     preferredLine = info.line,
                     workflowRunId = info.remote.runId,
-                    githubRepoFullName = state.forkRepo?.fullName,
+                    githubRepoFullName = forkRepoFullName,
                 ) { progress ->
                     _uiState.update { state ->
                         state.copy(appUpdateDownloading = true, appUpdateDownloadProgress = progress)
