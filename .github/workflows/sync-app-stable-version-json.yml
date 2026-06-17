@@ -1,0 +1,64 @@
+name: Sync App Stable version.json
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: GitHub release tag (for example app_v1.2.3)
+        required: true
+        type: string
+
+jobs:
+  sync-stable-metadata:
+    if: ${{ github.repository == 'xingguangcuican6666/ABK' && (github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'app_v')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      gists: write
+    steps:
+      - name: Checkout release tree
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'dev' || github.event.release.tag_name }}
+
+      - name: Resolve release tag
+        id: release
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.release_tag }}"
+          else
+            tag="${{ github.event.release.tag_name }}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish stable metadata to gist
+        if: ${{ vars.ABK_VERSION_GIST_ID != '' }}
+        uses: ./.github/actions/publish-app-update-metadata
+        with:
+          stability: stable
+          release-tag: ${{ steps.release.outputs.tag }}
+          gist-id: ${{ vars.ABK_VERSION_GIST_ID }}
+          github-repo: ${{ github.repository }}
+          gist-update-token: ${{ secrets.ABK_GIST_UPDATE_TOKEN }}
+
+      - name: Commit stable version.json
+        if: ${{ vars.ABK_VERSION_GIST_ID == '' }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin dev
+          git checkout dev
+          git pull --rebase origin dev
+          python .github/scripts/update-version-json.py \
+            --stability stable \
+            --release-tag "${{ steps.release.outputs.tag }}"
+          if git diff --quiet -- version.json; then
+            echo "version.json unchanged"
+            exit 0
+          fi
+          git add version.json
+          git commit -m "chore(app): update stable version metadata for ${{ steps.release.outputs.tag }}"
+          git push origin HEAD:dev

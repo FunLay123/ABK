@@ -1,0 +1,80 @@
+name: Publish app update metadata
+description: Publish version.json metadata (stable or unstable) to a configured GitHub Gist.
+
+inputs:
+  stability:
+    description: Metadata section to update (stable or unstable).
+    required: false
+    default: unstable
+  channel:
+    description: Package line for unstable updates (normal = app, dev = app_dev).
+    required: false
+    default: ""
+  workflow-name:
+    description: GitHub Actions workflow display name (unstable only).
+    required: false
+    default: ""
+  run-id:
+    description: Current workflow run id (unstable only).
+    required: false
+    default: ""
+  commit-sha:
+    description: Commit SHA that triggered the build (unstable only).
+    required: false
+    default: ""
+  published-at:
+    description: UTC build timestamp ISO-8601 (unstable only).
+    required: false
+    default: ""
+  build-timestamp-epoch-millis:
+    description: Build timestamp in epoch milliseconds (unstable only).
+    required: false
+    default: ""
+  release-tag:
+    description: GitHub release tag for stable updates (for example app_v1.2.3).
+    required: false
+    default: ""
+  build-file:
+    description: Gradle file to read app version from (unstable only).
+    required: false
+    default: app/build.gradle.kts
+  gist-id:
+    description: Target gist id from repository variables.
+    required: true
+  github-repo:
+    description: owner/repo slug used for download URLs.
+    required: true
+  gist-update-token:
+    description: Optional PAT with gist scope. Falls back to GITHUB_TOKEN.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Publish metadata to gist
+      shell: bash
+      env:
+        ABK_VERSION_GIST_ID: ${{ inputs.gist-id }}
+        ABK_GIST_UPDATE_TOKEN: ${{ inputs.gist-update-token }}
+        GITHUB_TOKEN: ${{ github.token }}
+        ABK_GITHUB_REPO: ${{ inputs.github-repo }}
+      run: |
+        set -euo pipefail
+        args=(
+          --stability "${{ inputs.stability }}"
+        )
+        if [ "${{ inputs.stability }}" = "stable" ]; then
+          args+=(--release-tag "${{ inputs.release-tag }}")
+        else
+          args+=(
+            --channel "${{ inputs.channel }}"
+            --workflow-name "${{ inputs.workflow-name }}"
+            --run-id "${{ inputs.run-id }}"
+            --commit-sha "${{ inputs.commit-sha }}"
+            --published-at "${{ inputs.published-at }}"
+            --build-timestamp-epoch-millis "${{ inputs.build-timestamp-epoch-millis }}"
+            --build-file "${{ inputs.build-file }}"
+          )
+        fi
+        python .github/scripts/publish-version-json-gist.py "${args[@]}"
