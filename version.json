@@ -1,36 +1,36 @@
 {
   "stable": {
     "normal": {
-      "versionName": "1.2.1",
-      "versionCode": 10021,
-      "downloadUrl": "https://github.com/xingguangcuican6666/ABK/releases/download/app_v1.2.1/abk-app-abk-apks.zip"
+      "versionName": "1.2.3",
+      "versionCode": 10023,
+      "downloadUrl": "https://github.com/xingguangcuican6666/ABK/releases/download/app_v1.2.3/abk-app-abk-apks.zip"
     },
     "dev": {
-      "versionName": "1.2.1-dev",
-      "versionCode": 10021,
-      "downloadUrl": "https://github.com/xingguangcuican6666/ABK/releases/download/app_v1.2.1/abk-app-dev-abk-apks.zip"
+      "versionName": "1.2.3-dev",
+      "versionCode": 10023,
+      "downloadUrl": "https://github.com/xingguangcuican6666/ABK/releases/download/app_v1.2.3/abk-app-dev-abk-apks.zip"
     }
   },
   "unstable": {
     "normal": {
-      "versionName": "1.2.2",
-      "versionCode": 10022,
+      "versionName": "1.2.3",
+      "versionCode": 10023,
       "downloadUrl": "https://nightly.link/xingguangcuican6666/ABK/workflows/build-abk-app/dev/abk-apks.zip",
-      "publishedAt": "2026-06-08T07:02:23Z",
-      "buildTimestampEpochMillis": 1780902143000,
+      "publishedAt": "2026-06-17T14:04:20Z",
+      "buildTimestampEpochMillis": 1781705060000,
       "sourceWorkflow": "Build ABK App",
-      "commitSha": "571b7c40019d0236e1f0cad0a797fd1aa39635e9",
-      "runId": 27121364734
+      "commitSha": "73fa9a6f7f566f42da21774dee92c701e25f4375",
+      "runId": 27694788246
     },
     "dev": {
-      "versionName": "1.2.2",
-      "versionCode": 10022,
+      "versionName": "1.2.3",
+      "versionCode": 10023,
       "downloadUrl": "https://nightly.link/xingguangcuican6666/ABK/workflows/build-abk-app-dev/dev/abk-apks.zip",
-      "publishedAt": "2026-06-08T07:02:23Z",
-      "buildTimestampEpochMillis": 1780902143000,
+      "publishedAt": "2026-06-17T14:04:27Z",
+      "buildTimestampEpochMillis": 1781705067000,
       "sourceWorkflow": "Build ABK App Dev",
-      "commitSha": "571b7c40019d0236e1f0cad0a797fd1aa39635e9",
-      "runId": 27121364750
+      "commitSha": "73fa9a6f7f566f42da21774dee92c701e25f4375",
+      "runId": 27694788272
     }
   }
 }

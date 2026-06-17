@@ -7,6 +7,7 @@ import com.abk.kernel.data.api.GitHubApiService
 import com.abk.kernel.data.api.GitHubAuthService
 import com.abk.kernel.data.api.NetworkClient
 import com.abk.kernel.data.model.*
+import com.abk.kernel.utils.ForkSigningManager
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -16,6 +17,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.ResponseBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.MediaType.Companion.toMediaType
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
 
@@ -30,12 +33,14 @@ open class GitHubRepository(
     private var apiService: GitHubApiService = NetworkClient.createApiService()
 ) {
     private val clientId = BuildConfig.GITHUB_CLIENT_ID
+    private var currentToken: String? = null
     private val publicHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
     fun updateToken(token: String?) {
+        currentToken = token
         apiService = NetworkClient.createApiService(token)
     }
 
@@ -255,6 +260,55 @@ open class GitHubRepository(
             val resp = api.forkRepo(owner, repo)
             if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
             else Result.Error("Fork failed: ${resp.code()}", resp.code())
+        }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+    }
+
+    suspend fun getRepositorySecretPublicKey(owner: String, repo: String): Result<GitHubSecretPublicKey> {
+        val api = apiService
+        return runCatching {
+            val resp = api.getRepositorySecretPublicKey(owner, repo)
+            if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
+            else Result.Error("Get repo secret public key failed: ${resp.code()}", resp.code())
+        }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+    }
+
+    suspend fun listRepositorySecrets(owner: String, repo: String): Result<List<GitHubRepositorySecret>> {
+        val api = apiService
+        return runCatching {
+            val resp = api.listRepositorySecrets(owner, repo)
+            if (resp.isSuccessful) {
+                Result.Success(resp.body()?.secrets.orEmpty())
+            } else {
+                Result.Error("List repo secrets failed: ${resp.code()}", resp.code())
+            }
+        }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+    }
+
+    suspend fun createOrUpdateRepositorySecret(
+        owner: String,
+        repo: String,
+        secretName: String,
+        secretValue: String
+    ): Result<Unit> {
+        val publicKey = when (val result = getRepositorySecretPublicKey(owner, repo)) {
+            is Result.Success -> result.data
+            is Result.Error -> return result
+            Result.Loading -> return Result.Error("Repository secret public key is still loading")
+        }
+        val encryptedValue = ForkSigningManager.encryptSecretForGitHub(secretValue, publicKey)
+        val api = apiService
+        return runCatching {
+            val resp = api.createOrUpdateRepositorySecret(
+                owner,
+                repo,
+                secretName,
+                CreateOrUpdateRepositorySecretRequest(
+                    encryptedValue = encryptedValue,
+                    keyId = publicKey.keyId
+                )
+            )
+            if (resp.isSuccessful) Result.Success(Unit)
+            else Result.Error("Update repo secret failed: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -495,6 +549,92 @@ open class GitHubRepository(
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
+    suspend fun createRelease(owner: String, repo: String, request: CreateReleaseRequest): Result<GitHubRelease> {
+        val api = apiService
+        return runCatching {
+            val resp = api.createRelease(owner, repo, request)
+            if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
+            else Result.Error("Create release failed: ${resp.code()}", resp.code())
+        }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+    }
+
+    suspend fun updateRelease(owner: String, repo: String, releaseId: Long, request: CreateReleaseRequest): Result<GitHubRelease> {
+        val api = apiService
+        return runCatching {
+            val resp = api.updateRelease(owner, repo, releaseId, request)
+            if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
+            else Result.Error("Update release failed: ${resp.code()}", resp.code())
+        }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+    }
+
+    suspend fun deleteReleaseAsset(owner: String, repo: String, assetId: Long): Result<Unit> {
+        val api = apiService
+        return runCatching {
+            val resp = api.deleteReleaseAsset(owner, repo, assetId)
+            when {
+                resp.isSuccessful || resp.code() == 404 -> Result.Success(Unit)
+                else -> Result.Error("Delete release asset failed: ${resp.code()}", resp.code())
+            }
+        }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+    }
+
+    suspend fun uploadReleaseAsset(
+        uploadUrlTemplate: String,
+        fileName: String,
+        contentType: String,
+        content: ByteArray
+    ): Result<ReleaseAsset> = withContext(Dispatchers.IO) {
+        val uploadUrl = uploadUrlTemplate.substringBefore('{')
+        val encodedName = java.net.URLEncoder.encode(fileName, "UTF-8")
+        val request = Request.Builder()
+            .url("$uploadUrl?name=$encodedName")
+            .header("Accept", "application/vnd.github+json")
+            .apply {
+                currentToken?.takeIf { it.isNotBlank() }?.let { header("Authorization", "Bearer $it") }
+            }
+            .post(content.toRequestBody(contentType.toMediaType()))
+            .build()
+        val response = runCatching { publicHttpClient.newCall(request).execute() }
+            .getOrElse { return@withContext Result.Error(it.message ?: "Unknown error") }
+        response.use { resp ->
+            if (!resp.isSuccessful) {
+                return@withContext Result.Error("Upload release asset failed: ${resp.code}", resp.code)
+            }
+            val body = resp.body?.string().orEmpty()
+            val json = runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull()
+                ?: return@withContext Result.Error("Upload release asset returned invalid JSON")
+            Result.Success(
+                ReleaseAsset(
+                    id = json.get("id")?.asLong ?: 0L,
+                    name = json.get("name")?.asString ?: fileName,
+                    size = json.get("size")?.asLong ?: content.size.toLong(),
+                    contentType = json.get("content_type")?.asString,
+                    browserDownloadUrl = json.get("browser_download_url")?.asString.orEmpty()
+                )
+            )
+        }
+    }
+
+    suspend fun downloadReleaseAssetText(owner: String, repo: String, releaseId: Long, assetName: String): Result<String> {
+        return when (val assets = listReleaseAssets(owner, repo, releaseId)) {
+            is Result.Success -> {
+                val asset = assets.data.firstOrNull { it.name == assetName }
+                    ?: return Result.Error("Release asset $assetName not found")
+                val api = apiService
+                runCatching {
+                    val resp = api.downloadReleaseAssetById(owner, repo, asset.id)
+                    if (resp.isSuccessful) {
+                        Result.Success(resp.body()?.string().orEmpty())
+                    } else {
+                        Result.Error("Download release asset failed: ${resp.code()}", resp.code())
+                    }
+                }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+            }
+            is Result.Error -> assets
+            Result.Loading -> Result.Loading
+        }
+    }
+
     private fun ResponseBody.readZipText(): String {
         val output = StringBuilder()
         ZipInputStream(byteStream()).use { zip ->
@@ -668,6 +808,12 @@ open class GitHubRepository(
     private fun sanitizeCatalogItem(raw: JsonObject): ModuleCatalogItem? {
         val repoUrl = raw.stringOrEmpty("repoUrl")
         if (repoUrl.isBlank()) return null
+        val kind = ModuleCatalogItemKind.normalize(
+            raw.stringOrEmpty("kind").ifBlank { raw.stringOrEmpty("type") }
+        )
+        val moduleSetId = raw.stringOrEmpty("moduleSetId")
+            .ifBlank { raw.stringOrEmpty("module_set_id") }
+            .ifBlank { if (kind == ModuleCatalogItemKind.MODULE_SET) repoUrl.toCatalogFallbackName() else "" }
         val supportedStages = raw.stringList("supportedStages")
             .map { CustomExternalModuleStage.normalize(it) }
             .distinct()
@@ -689,6 +835,8 @@ open class GitHubRepository(
             name = raw.stringOrEmpty("name").ifBlank { repoUrl.toCatalogFallbackName() },
             version = raw.stringOrEmpty("version"),
             description = raw.stringOrEmpty("description"),
+            kind = kind,
+            moduleSetId = moduleSetId,
             repoUrl = repoUrl,
             defaultStage = defaultStage,
             supportedStages = supportedStages,
@@ -727,8 +875,16 @@ open class GitHubRepository(
 
     internal fun parseExternalModuleConf(body: String): ExternalModuleMetadata {
         val values = parseShellLikeConf(body)
-        val name = values["ABK_MODULE_NAME"].orEmpty().trim()
+        val kind = ModuleCatalogItemKind.normalize(values["ABK_MODULE_KIND"])
+        val name = (
+            if (kind == ModuleCatalogItemKind.MODULE_SET) {
+                values["ABK_MODULE_SET_NAME"]
+            } else {
+                values["ABK_MODULE_NAME"]
+            }
+        ).orEmpty().trim()
         if (name.isBlank()) error(tr(R.string.gh_missing_module_name))
+        val moduleSetId = values["ABK_MODULE_SET_ID"].orEmpty().trim()
         val supportedStages = values["ABK_MODULE_SUPPORTED_STAGES"]
             ?.takeIf { it.isNotBlank() }
             ?.split(',')
@@ -757,26 +913,130 @@ open class GitHubRepository(
             ?.filter { it in supportedStages }
             .orEmpty()
             .ifEmpty { listOf(defaultStage) }
+        val children = if (kind == ModuleCatalogItemKind.MODULE_SET) {
+            parseModuleSetChildren(values["ABK_MODULE_SET_ITEMS"].orEmpty())
+        } else {
+            emptyList()
+        }
+        if (kind == ModuleCatalogItemKind.MODULE_SET && children.isEmpty()) {
+            error(tr(R.string.gh_missing_module_name))
+        }
         return ExternalModuleMetadata(
             name = name,
-            version = values["ABK_MODULE_VERSION"].orEmpty().trim(),
-            description = values["ABK_MODULE_DESCRIPTION"].orEmpty().trim(),
+            version = (
+                if (kind == ModuleCatalogItemKind.MODULE_SET) {
+                    values["ABK_MODULE_SET_VERSION"]
+                } else {
+                    values["ABK_MODULE_VERSION"]
+                }
+            ).orEmpty().trim(),
+            description = (
+                if (kind == ModuleCatalogItemKind.MODULE_SET) {
+                    values["ABK_MODULE_SET_DESCRIPTION"]
+                } else {
+                    values["ABK_MODULE_DESCRIPTION"]
+                }
+            ).orEmpty().trim(),
+            kind = kind,
+            moduleSetId = moduleSetId,
             supportedStages = supportedStages,
             defaultStage = defaultStage,
-            recommendedStages = recommendedStages
+            recommendedStages = recommendedStages,
+            children = children,
+            magiskModuleName = values["ABK_MAGISK_MODULE_NAME"].orEmpty().trim(),
+            magiskModuleDownloadUrl = values["ABK_MAGISK_MODULE_DOWNLOAD_URL"].orEmpty().trim()
         )
     }
 
-    private fun parseShellLikeConf(body: String): Map<String, String> =
-        body.lineSequence()
+    private fun parseModuleSetChildren(raw: String): List<ModuleSetChildMetadata> =
+        raw.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() && !it.startsWith("#") }
             .mapNotNull { line ->
-                val clean = line.substringBefore('#').trim()
-                if (clean.isBlank() || '=' !in clean) return@mapNotNull null
-                val key = clean.substringBefore('=').trim()
-                val value = clean.substringAfter('=').trim().trimShellQuotes()
-                if (key.isBlank()) null else key to value
+                val parts = line.split('|')
+                if (parts.size < 6) return@mapNotNull null
+                val id = parts.getOrNull(0).orEmpty().trim()
+                val name = parts.getOrNull(1).orEmpty().trim()
+                val description = parts.getOrNull(2).orEmpty().trim()
+                val repoUrl = parts.getOrNull(3).orEmpty().trim()
+                if (id.isBlank() || name.isBlank() || repoUrl.isBlank()) return@mapNotNull null
+                val supportedStages = parts.getOrNull(4)
+                    .orEmpty()
+                    .split(',')
+                    .map { CustomExternalModuleStage.normalize(it) }
+                    .filter { it in CustomExternalModuleStage.options }
+                    .distinct()
+                    .ifEmpty { listOf(CustomExternalModuleStage.AFTER_PATCH) }
+                val defaultStage = CustomExternalModuleStage.normalize(parts.getOrNull(5).orEmpty())
+                    .takeIf { it in supportedStages }
+                    ?: supportedStages.first()
+                val recommendedStages = parts.getOrNull(6)
+                    .orEmpty()
+                    .split(',')
+                    .mapNotNull { token ->
+                        token.trim().takeIf { it.isNotBlank() }?.let(CustomExternalModuleStage::normalize)
+                    }
+                    .filter { it in supportedStages }
+                    .distinct()
+                    .ifEmpty { listOf(defaultStage) }
+                val groupRole = parts.getOrNull(7).orEmpty().trim()
+                val controllable = parts.getOrNull(8).orEmpty().trim().lowercase() in setOf("1", "true", "yes", "on")
+                val hasWebUi = parts.getOrNull(9).orEmpty().trim().lowercase() in setOf("1", "true", "yes", "on")
+                val magiskModuleName = parts.getOrNull(10).orEmpty().trim()
+                val magiskModuleDownloadUrl = parts.getOrNull(11).orEmpty().trim()
+                ModuleSetChildMetadata(
+                    id = id,
+                    name = name,
+                    description = description,
+                    repoUrl = repoUrl,
+                    supportedStages = supportedStages,
+                    defaultStage = defaultStage,
+                    recommendedStages = recommendedStages,
+                    groupRole = groupRole,
+                    controllable = controllable,
+                    hasWebUi = hasWebUi,
+                    magiskModuleName = magiskModuleName,
+                    magiskModuleDownloadUrl = magiskModuleDownloadUrl
+                )
             }
-            .toMap()
+            .distinctBy { it.id.lowercase() }
+            .toList()
+
+    private fun parseShellLikeConf(body: String): Map<String, String> {
+        val result = linkedMapOf<String, String>()
+        val lines = body.lines()
+        var index = 0
+        while (index < lines.size) {
+            val clean = lines[index].substringBefore('#').trim()
+            if (clean.isBlank() || '=' !in clean) {
+                index++
+                continue
+            }
+            val key = clean.substringBefore('=').trim()
+            var value = clean.substringAfter('=').trim()
+            if (key.isBlank()) {
+                index++
+                continue
+            }
+            if ((value == "'" || value == "\"") && index + 1 < lines.size) {
+                val quote = value
+                val collected = mutableListOf<String>()
+                index++
+                while (index < lines.size) {
+                    val rawLine = lines[index]
+                    if (rawLine.trim() == quote) break
+                    collected += rawLine
+                    index++
+                }
+                value = collected.joinToString("\n")
+            } else {
+                value = value.trimShellQuotes()
+            }
+            result[key] = value
+            index++
+        }
+        return result
+    }
 
     private fun String.trimShellQuotes(): String {
         val clean = trim()
