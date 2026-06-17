@@ -5,8 +5,10 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.abk.kernel.data.model.APP_UPDATE_LINE_NORMAL
+import com.abk.kernel.data.model.APP_UPDATE_SOURCE_UPSTREAM
 import com.abk.kernel.data.model.APP_UPDATE_STABILITY_STABLE
 import com.abk.kernel.data.model.normalizeAppUpdateLine
+import com.abk.kernel.data.model.normalizeAppUpdateSource
 import com.abk.kernel.data.model.normalizeAppUpdateStability
 import com.abk.kernel.utils.DownloadDirectoryUtils
 import kotlinx.coroutines.Dispatchers
@@ -57,6 +59,7 @@ class PreferencesRepository(private val context: Context) {
         val KEY_PREBUILT_GKI_ENABLED = booleanPreferencesKey("prebuilt_gki_enabled")
         val KEY_APP_UPDATE_STABILITY = stringPreferencesKey("app_update_stability")
         val KEY_APP_UPDATE_LINE = stringPreferencesKey("app_update_line")
+        val KEY_APP_UPDATE_SOURCE = stringPreferencesKey("app_update_source")
         val KEY_PREDICTIVE_BACK_ENABLED = booleanPreferencesKey("predictive_back_enabled")
         val KEY_RUNTIME_NAVIGATION_ENABLED = booleanPreferencesKey("runtime_navigation_enabled")
         val KEY_WEBVIEW_DEBUG_ENABLED = booleanPreferencesKey("webview_debug_enabled")
@@ -110,6 +113,9 @@ class PreferencesRepository(private val context: Context) {
     }
     val appUpdateLine: Flow<String> = context.dataStore.data.map {
         normalizeAppUpdateLine(it[KEY_APP_UPDATE_LINE] ?: APP_UPDATE_LINE_NORMAL)
+    }
+    val appUpdateSource: Flow<String> = context.dataStore.data.map {
+        normalizeAppUpdateSource(it[KEY_APP_UPDATE_SOURCE] ?: APP_UPDATE_SOURCE_UPSTREAM)
     }
     val predictiveBackEnabled: Flow<Boolean> = context.dataStore.data.map { it[KEY_PREDICTIVE_BACK_ENABLED] ?: true }
     val runtimeNavigationEnabled: Flow<Boolean> = context.dataStore.data.map {
@@ -214,6 +220,9 @@ class PreferencesRepository(private val context: Context) {
     }
     suspend fun setAppUpdateLine(value: String) = context.dataStore.edit {
         it[KEY_APP_UPDATE_LINE] = normalizeAppUpdateLine(value)
+    }
+    suspend fun setAppUpdateSource(value: String) = context.dataStore.edit {
+        it[KEY_APP_UPDATE_SOURCE] = normalizeAppUpdateSource(value)
     }
     suspend fun setPredictiveBackEnabled(v: Boolean) = context.dataStore.edit { it[KEY_PREDICTIVE_BACK_ENABLED] = v }
     suspend fun setRuntimeNavigationEnabled(v: Boolean) = context.dataStore.edit {

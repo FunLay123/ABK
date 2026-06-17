@@ -663,12 +663,15 @@
     <string name="settings_group_app_update_desc">Выберите стабильность и линию пакета, затем вручную проверьте обновления через version.json.</string>
     <string name="settings_app_update_stability">Стабильность обновлений</string>
     <string name="settings_app_update_line">Линия пакета</string>
+    <string name="settings_app_update_source">Источник</string>
     <string name="settings_app_update_stable">Stable</string>
     <string name="settings_app_update_unstable">Unstable</string>
     <string name="settings_app_update_line_normal">Normal</string>
     <string name="settings_app_update_line_dev">Dev</string>
+    <string name="settings_app_update_source_upstream">Upstream</string>
+    <string name="settings_app_update_source_fork">Fork</string>
     <string name="settings_check_app_update">Проверить обновления</string>
-    <string name="settings_app_update_desc">Прочитать version.json из канала %1$s / %2$s и проверить обновления.</string>
+    <string name="settings_app_update_desc">Прочитать version.json из канала %1$s / %2$s (%3$s) и проверить обновления.</string>
     <string name="settings_app_update_checking">Чтение version.json…</string>
     <string name="settings_app_update_available">Доступно обновление</string>
     <string name="settings_app_update_latest">Уже актуальная версия</string>
@@ -988,6 +991,7 @@
     <string name="vm_prebuilt_gki_assets_failed">Не удалось получить файлы для %1$s: %2$s</string>
     <string name="vm_prebuilt_gki_download_failed">Не удалось скачать предсобранный GKI: %1$s</string>
     <string name="vm_app_update_channel_missing">Для выбранного канала обновлений нет метаданных. Проверьте version.json.</string>
+    <string name="vm_app_update_fork_source_missing">Выбран источник Fork, но fork-репозиторий недоступен.</string>
     <string name="vm_app_update_available">Найдена новая версия: %1$s</string>
     <string name="vm_app_update_latest">Это приложение уже обновлено</string>
     <string name="vm_app_update_check_failed">Не удалось проверить обновления приложения: %1$s</string>

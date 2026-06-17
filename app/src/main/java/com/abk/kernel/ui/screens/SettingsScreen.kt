@@ -66,6 +66,8 @@ import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.data.model.APP_UPDATE_LINE_DEV
 import com.abk.kernel.data.model.APP_UPDATE_LINE_NORMAL
+import com.abk.kernel.data.model.APP_UPDATE_SOURCE_FORK
+import com.abk.kernel.data.model.APP_UPDATE_SOURCE_UPSTREAM
 import com.abk.kernel.data.model.APP_UPDATE_STABILITY_STABLE
 import com.abk.kernel.data.model.APP_UPDATE_STABILITY_UNSTABLE
 import com.abk.kernel.data.model.AppUpdateCheckResult
@@ -73,6 +75,7 @@ import com.abk.kernel.data.repository.PreferencesRepository
 import com.abk.kernel.data.model.ManagerSettingItem
 import com.abk.kernel.data.model.ManagerSettingKind
 import com.abk.kernel.data.model.normalizeAppUpdateLine
+import com.abk.kernel.data.model.normalizeAppUpdateSource
 import com.abk.kernel.data.model.normalizeAppUpdateStability
 import com.abk.kernel.viewmodel.MainUiState
 import com.abk.kernel.viewmodel.MainViewModel
@@ -621,6 +624,10 @@ private fun SettingsMainContent(
             AppUpdateLinePicker(
                 selected = state.appUpdateLine,
                 onSelect = vm::setAppUpdateLine
+            )
+            AppUpdateSourcePicker(
+                selected = state.appUpdateSource,
+                onSelect = vm::setAppUpdateSource
             )
             ExpressiveListItem(
                 title = stringResource(R.string.settings_check_app_update),
@@ -2106,6 +2113,44 @@ private fun AppUpdateLinePicker(
 }
 
 @Composable
+private fun AppUpdateSourcePicker(
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    val options = listOf(
+        APP_UPDATE_SOURCE_UPSTREAM to stringResource(R.string.settings_app_update_source_upstream),
+        APP_UPDATE_SOURCE_FORK to stringResource(R.string.settings_app_update_source_fork)
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp, end = 8.dp, bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.settings_app_update_source),
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            options.forEach { (value, label) ->
+                FilterChip(
+                    selected = normalizeAppUpdateSource(selected) == value,
+                    onClick = { onSelect(value) },
+                    label = { Text(label, maxLines = 1) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun appUpdateCheckSubtitle(state: MainUiState): String = when {
     state.appUpdateDownloading -> stringResource(
         R.string.settings_app_update_downloading_progress,
@@ -2117,7 +2162,8 @@ private fun appUpdateCheckSubtitle(state: MainUiState): String = when {
     else -> stringResource(
         R.string.settings_app_update_desc,
         appUpdateStabilityLabel(state.appUpdateStability),
-        appUpdateLineLabel(state.appUpdateLine)
+        appUpdateLineLabel(state.appUpdateLine),
+        appUpdateSourceLabel(state.appUpdateSource)
     )
 }
 
@@ -2152,6 +2198,12 @@ private fun appUpdateStabilityLabel(value: String): String = when (normalizeAppU
 private fun appUpdateLineLabel(value: String): String = when (normalizeAppUpdateLine(value)) {
     APP_UPDATE_LINE_DEV -> stringResource(R.string.settings_app_update_line_dev)
     else -> stringResource(R.string.settings_app_update_line_normal)
+}
+
+@Composable
+private fun appUpdateSourceLabel(value: String): String = when (normalizeAppUpdateSource(value)) {
+    APP_UPDATE_SOURCE_FORK -> stringResource(R.string.settings_app_update_source_fork)
+    else -> stringResource(R.string.settings_app_update_source_upstream)
 }
 
 @Composable

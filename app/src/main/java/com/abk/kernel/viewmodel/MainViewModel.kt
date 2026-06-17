@@ -23,6 +23,7 @@ import com.abk.kernel.data.model.*
 import com.abk.kernel.data.repository.GitHubRepository
 import com.abk.kernel.data.repository.PreferencesRepository
 import com.abk.kernel.data.repository.Result
+import com.abk.kernel.utils.AppUpdateMetadataUrls
 import com.abk.kernel.utils.BuildMonitorService
 import com.abk.kernel.utils.BuildProgressUtils
 import com.abk.kernel.utils.buildDisplaySnapshot
@@ -180,6 +181,7 @@ data class MainUiState(
     val prebuiltGkiEnabled: Boolean = true,
     val appUpdateStability: String = APP_UPDATE_STABILITY_STABLE,
     val appUpdateLine: String = APP_UPDATE_LINE_NORMAL,
+    val appUpdateSource: String = APP_UPDATE_SOURCE_UPSTREAM,
     val appUpdateChecking: Boolean = false,
     val appUpdateDownloading: Boolean = false,
     val appUpdateDownloadProgress: Int = 0,
@@ -547,15 +549,19 @@ class MainViewModel @JvmOverloads constructor(
         viewModelScope.launch {
             combine(
                 prefs.appUpdateStability,
-                prefs.appUpdateLine
-            ) { stability, line ->
-                stability to line
-            }.collect { (stability, line) ->
+                prefs.appUpdateLine,
+                prefs.appUpdateSource,
+            ) { stability, line, source ->
+                Triple(stability, line, source)
+            }.collect { (stability, line, source) ->
                 _uiState.update { state ->
-                    val resetResult = state.appUpdateStability != stability || state.appUpdateLine != line
+                    val resetResult = state.appUpdateStability != stability ||
+                        state.appUpdateLine != line ||
+                        state.appUpdateSource != source
                     state.copy(
                         appUpdateStability = stability,
                         appUpdateLine = line,
+                        appUpdateSource = source,
                         appUpdateInfo = if (resetResult) null else state.appUpdateInfo,
                         appUpdateError = if (resetResult) null else state.appUpdateError
                     )
@@ -2544,12 +2550,34 @@ class MainViewModel @JvmOverloads constructor(
     fun setAppUpdateLine(value: String) = viewModelScope.launch {
         prefs.setAppUpdateLine(value)
     }
+    fun setAppUpdateSource(value: String) = viewModelScope.launch {
+        prefs.setAppUpdateSource(value)
+    }
 
     fun checkAppUpdate() {
         if (_uiState.value.appUpdateChecking) return
         viewModelScope.launch {
-            val stability = normalizeAppUpdateStability(_uiState.value.appUpdateStability)
-            val line = normalizeAppUpdateLine(_uiState.value.appUpdateLine)
+            val state = _uiState.value
+            val stability = normalizeAppUpdateStability(state.appUpdateStability)
+            val line = normalizeAppUpdateLine(state.appUpdateLine)
+            val source = normalizeAppUpdateSource(state.appUpdateSource)
+            val metadataUrl = AppUpdateMetadataUrls.resolve(
+                source = source,
+                forkRepoFullName = state.forkRepo?.fullName,
+                forkDefaultBranch = state.forkRepo?.defaultBranch,
+            )
+            if (metadataUrl.isNullOrBlank()) {
+                val message = text(R.string.vm_app_update_fork_source_missing)
+                _uiState.update {
+                    it.copy(
+                        appUpdateChecking = false,
+                        appUpdateInfo = null,
+                        appUpdateError = message
+                    )
+                }
+                showSnackbar(message, longDuration = true)
+                return@launch
+            }
             _uiState.update {
                 it.copy(
                     appUpdateChecking = true,
@@ -2557,7 +2585,7 @@ class MainViewModel @JvmOverloads constructor(
                 )
             }
 
-            when (val result = github.fetchAppUpdateMetadata()) {
+            when (val result = github.fetchAppUpdateMetadata(metadataUrl)) {
                 is Result.Success -> {
                     val remote = result.data.entryFor(stability, line)
                     if (remote == null) {

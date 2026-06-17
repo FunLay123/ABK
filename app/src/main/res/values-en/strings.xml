@@ -663,12 +663,15 @@
     <string name="settings_group_app_update_desc">Choose stability and package line, then check version.json for updates manually.</string>
     <string name="settings_app_update_stability">Update stability</string>
     <string name="settings_app_update_line">Package line</string>
+    <string name="settings_app_update_source">Source</string>
     <string name="settings_app_update_stable">Stable</string>
     <string name="settings_app_update_unstable">Unstable</string>
     <string name="settings_app_update_line_normal">Normal</string>
     <string name="settings_app_update_line_dev">Dev</string>
+    <string name="settings_app_update_source_upstream">Upstream</string>
+    <string name="settings_app_update_source_fork">Fork</string>
     <string name="settings_check_app_update">Check for updates</string>
-    <string name="settings_app_update_desc">Read version.json from the %1$s / %2$s channel and check for updates.</string>
+    <string name="settings_app_update_desc">Read version.json from the %1$s / %2$s channel (%3$s) and check for updates.</string>
     <string name="settings_app_update_checking">Reading version.json…</string>
     <string name="settings_app_update_available">Update available</string>
     <string name="settings_app_update_latest">Already up to date</string>
@@ -988,6 +991,7 @@
     <string name="vm_prebuilt_gki_assets_failed">Failed to fetch assets for %1$s: %2$s</string>
     <string name="vm_prebuilt_gki_download_failed">Failed to download prebuilt GKI: %1$s</string>
     <string name="vm_app_update_channel_missing">No metadata is available for the selected update channel. Check version.json.</string>
+    <string name="vm_app_update_fork_source_missing">Fork source is selected, but no fork repository is available.</string>
     <string name="vm_app_update_available">New version found: %1$s</string>
     <string name="vm_app_update_latest">This app is already up to date</string>
     <string name="vm_app_update_check_failed">Failed to check for app updates: %1$s</string>

@@ -257,6 +257,8 @@ const val APP_UPDATE_STABILITY_STABLE = "stable"
 const val APP_UPDATE_STABILITY_UNSTABLE = "unstable"
 const val APP_UPDATE_LINE_NORMAL = "normal"
 const val APP_UPDATE_LINE_DEV = "dev"
+const val APP_UPDATE_SOURCE_UPSTREAM = "upstream"
+const val APP_UPDATE_SOURCE_FORK = "fork"
 
 val APP_UPDATE_STABILITY_OPTIONS = listOf(
     APP_UPDATE_STABILITY_STABLE,
@@ -266,6 +268,11 @@ val APP_UPDATE_STABILITY_OPTIONS = listOf(
 val APP_UPDATE_LINE_OPTIONS = listOf(
     APP_UPDATE_LINE_NORMAL,
     APP_UPDATE_LINE_DEV,
+)
+
+val APP_UPDATE_SOURCE_OPTIONS = listOf(
+    APP_UPDATE_SOURCE_UPSTREAM,
+    APP_UPDATE_SOURCE_FORK,
 )
 
 data class AppUpdateMetadata(
@@ -320,6 +327,11 @@ fun normalizeAppUpdateStability(value: String): String = when (value.trim().lowe
 fun normalizeAppUpdateLine(value: String): String = when (value.trim().lowercase()) {
     APP_UPDATE_LINE_DEV -> APP_UPDATE_LINE_DEV
     else -> APP_UPDATE_LINE_NORMAL
+}
+
+fun normalizeAppUpdateSource(value: String): String = when (value.trim().lowercase()) {
+    APP_UPDATE_SOURCE_FORK -> APP_UPDATE_SOURCE_FORK
+    else -> APP_UPDATE_SOURCE_UPSTREAM
 }
 
 fun shouldOfferAppUpdate(
