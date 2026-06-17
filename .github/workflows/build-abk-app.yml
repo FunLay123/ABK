@@ -28,7 +28,6 @@ jobs:
     permissions:
       contents: write
       actions: read
-      gists: write
     env:
       HAS_RELEASE_SIGNING: ${{ secrets.ABK_RELEASE_KEYSTORE_BASE64 != '' && secrets.ABK_RELEASE_STORE_PASSWORD != '' && secrets.ABK_RELEASE_KEY_ALIAS != '' && secrets.ABK_RELEASE_KEY_PASSWORD != '' }}
       SUKISU_ULTRA_REPO: https://github.com/SukiSU-Ultra/SukiSU-Ultra.git

@@ -64,7 +64,7 @@ https://gist.githubusercontent.com/<owner>/<gist-id>/raw/version.json
 |------|---------|---------|
 | `ABK_VERSION_GIST_ID` | `abc123def456...` | Target gist |
 
-**Secret** (recommended for upstream; optional if `GITHUB_TOKEN` is enough):
+**Secret** (required for gist updates — `GITHUB_TOKEN` cannot write gists from Actions workflows):
 
 | Name | Purpose |
 |------|---------|

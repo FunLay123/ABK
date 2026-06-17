@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      gists: write
     steps:
       - name: Checkout release tree
         uses: actions/checkout@v6
