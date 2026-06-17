@@ -338,11 +338,14 @@ fun normalizeAppUpdateSource(value: String): String = when (value.trim().lowerca
 fun shouldOfferAppUpdate(
     remote: AppUpdateEntry,
     currentVersionCode: Long,
-    currentBuildTimestampEpochMillis: Long
+    currentBuildTimestampEpochMillis: Long,
+    currentRunId: Long = 0L,
 ): Boolean = when {
     remote.versionCode > currentVersionCode -> true
     remote.versionCode < currentVersionCode -> false
     remote.buildTimestampEpochMillis > currentBuildTimestampEpochMillis -> true
+    remote.buildTimestampEpochMillis < currentBuildTimestampEpochMillis -> false
+    remote.runId > currentRunId -> true
     else -> false
 }
 

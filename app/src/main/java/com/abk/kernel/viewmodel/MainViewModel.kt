@@ -2863,7 +2863,8 @@ class MainViewModel @JvmOverloads constructor(
                         hasUpdate = shouldOfferAppUpdate(
                             remote = remote,
                             currentVersionCode = BuildConfig.APP_VERSION_CODE,
-                            currentBuildTimestampEpochMillis = BuildConfig.APP_BUILD_TIMESTAMP_EPOCH_MILLIS
+                            currentBuildTimestampEpochMillis = BuildConfig.APP_BUILD_TIMESTAMP_EPOCH_MILLIS,
+                            currentRunId = BuildConfig.APP_BUILD_RUN_ID,
                         )
                     )
                     _uiState.update {
