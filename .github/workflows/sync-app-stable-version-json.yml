@@ -12,7 +12,7 @@ on:
 
 jobs:
   sync-stable-metadata:
-    if: ${{ github.repository == 'xingguangcuican6666/ABK' && (github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'app_v')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'app_v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

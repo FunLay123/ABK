@@ -552,7 +552,7 @@ jobs:
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose "$signed_apk"
 
       - name: Publish unstable metadata to gist
-        if: ${{ vars.ABK_VERSION_GIST_ID != '' && github.repository == 'xingguangcuican6666/ABK' && github.event_name != 'pull_request' && startsWith(github.ref, 'refs/heads/') }}
+        if: ${{ vars.ABK_VERSION_GIST_ID != '' && github.event_name != 'pull_request' && startsWith(github.ref, 'refs/heads/') }}
         uses: ./.github/actions/publish-app-update-metadata
         with:
           stability: unstable
@@ -568,7 +568,7 @@ jobs:
           gist-update-token: ${{ secrets.ABK_GIST_UPDATE_TOKEN }}
 
       - name: Commit version.json
-        if: ${{ vars.ABK_VERSION_GIST_ID == '' && github.repository == 'xingguangcuican6666/ABK' && github.event_name != 'pull_request' && startsWith(github.ref, 'refs/heads/') }}
+        if: ${{ vars.ABK_VERSION_GIST_ID == '' && github.event_name != 'pull_request' && startsWith(github.ref, 'refs/heads/') }}
         run: |
           set -euo pipefail
           branch="${GITHUB_REF_NAME}"
